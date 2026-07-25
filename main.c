@@ -66,6 +66,113 @@ static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t
 
 #include "blake2s-ref.c"
 
+/*
+ * The stack keeps parsed L3/L4 headers in struct pb, while application
+ * callbacks and the test packet builders still exchange opaque packet
+ * objects.  Keep the test assertions usable with either representation.
+ */
+static struct iip_ip4_hdr *test_pkt_ip4(void *pkt)
+{
+	return (struct iip_ip4_hdr *)((uint8_t *)iip_ops_pkt_get_data(pkt, NULL) +
+			iip_ops_l2_hdr_len(pkt, NULL));
+}
+
+static struct iip_ip4_hdr *test_pb_ip4(struct pb *p)
+{
+	return (struct iip_ip4_hdr *)p->l3_hdr;
+}
+
+static void *test_pkt_l4(void *pkt)
+{
+	struct iip_ip4_hdr *ip4 = test_pkt_ip4(pkt);
+	return (uint8_t *)ip4 + ((ip4->vl & 0x0f) << 2);
+}
+
+static void *test_pb_l4(struct pb *p)
+{
+	return p->l4_hdr;
+}
+
+#undef PB_IP4
+#undef PB_IP4_HDR_LEN
+#undef PB_IP4_TOTAL_LEN
+#undef PB_ARP
+#undef PB_ARP_HW_SENDER
+#undef PB_ARP_IP_SENDER
+#undef PB_ARP_HW_TARGET
+#undef PB_ARP_IP_TARGET
+#undef PB_ICMP
+#undef PB_ICMP_DATA
+#undef PB_TCP
+#undef PB_TCP_HDR_LEN
+#undef PB_TCP_HDR_HAS_FIN
+#undef PB_TCP_HDR_HAS_SYN
+#undef PB_TCP_HDR_HAS_RST
+#undef PB_TCP_HDR_HAS_PSH
+#undef PB_TCP_HDR_HAS_ACK
+#undef PB_TCP_HDR_HAS_URG
+#undef PB_TCP_HDR_HAS_ECE
+#undef PB_TCP_HDR_HAS_CWR
+#undef PB_TCP_HDR_SET_LEN
+#undef PB_TCP_HDR_SET_FLAGS
+#undef PB_TCP_PAYLOAD
+#undef PB_TCP_PAYLOAD_LEN
+#undef PB_TCP_OPT
+#undef PB_TCP_OPTLEN
+#undef PB_UDP
+#undef PB_UDP_PAYLOAD
+#undef PB_UDP_TOTAL_LEN
+#undef PB_UDP_PAYLOAD_LEN
+
+#define TEST_L3(_b) _Generic((_b), \
+		struct pb *: test_pb_ip4, \
+		default: test_pkt_ip4)(_b)
+#define TEST_L4(_b) _Generic((_b), \
+		struct pb *: test_pb_l4, \
+		default: test_pkt_l4)(_b)
+#define PB_IP4(_b) TEST_L3(_b)
+#define PB_IP4_HDR_LEN(_b) ((PB_IP4(_b)->vl & 0x0f) << 2)
+#define PB_IP4_TOTAL_LEN(_b) (__iip_ntohs(PB_IP4(_b)->len_be))
+#define PB_ARP(_b) ((struct iip_arp_hdr *)TEST_L4(_b))
+#define PB_ARP_HW_SENDER(_b) ((uint8_t *)PB_ARP(_b) + sizeof(struct iip_arp_hdr))
+#define PB_ARP_IP_SENDER(_b) (PB_ARP_HW_SENDER(_b) + PB_ARP(_b)->lhw)
+#define PB_ARP_HW_TARGET(_b) (PB_ARP_IP_SENDER(_b) + PB_ARP(_b)->lproto)
+#define PB_ARP_IP_TARGET(_b) (PB_ARP_HW_TARGET(_b) + PB_ARP(_b)->lhw)
+#define PB_ICMP(_b) ((struct iip_icmp_hdr *)TEST_L4(_b))
+#define PB_ICMP_DATA(_b) ((uint8_t *)PB_ICMP(_b) + sizeof(struct iip_icmp_hdr))
+#define PB_TCP(_b) ((struct iip_tcp_hdr *)TEST_L4(_b))
+#define PB_TCP_HDR_LEN(_b) \
+	(((uint16_t)__iip_ntohs(PB_TCP(_b)->flags)) >> 12)
+#define PB_TCP_HDR_HAS_FIN(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x01U) != 0)
+#define PB_TCP_HDR_HAS_SYN(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x02U) != 0)
+#define PB_TCP_HDR_HAS_RST(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x04U) != 0)
+#define PB_TCP_HDR_HAS_PSH(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x08U) != 0)
+#define PB_TCP_HDR_HAS_ACK(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x10U) != 0)
+#define PB_TCP_HDR_HAS_URG(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x20U) != 0)
+#define PB_TCP_HDR_HAS_ECE(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x40U) != 0)
+#define PB_TCP_HDR_HAS_CWR(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x80U) != 0)
+#define PB_TCP_HDR_SET_LEN(_b, _l) do { \
+	PB_TCP(_b)->flags = __iip_htons(((_l) << 12) | \
+			(__iip_ntohs(PB_TCP(_b)->flags) & 0xffU)); \
+} while (0)
+#define PB_TCP_HDR_SET_FLAGS(_b, _f) do { \
+	PB_TCP(_b)->flags = (PB_TCP(_b)->flags & __iip_htons(~0xffU)) | \
+			__iip_htons(_f); \
+} while (0)
+#define PB_TCP_PAYLOAD(_b) ((uint8_t *)PB_TCP(_b) + PB_TCP_HDR_LEN(_b) * 4)
+#define PB_TCP_PAYLOAD_LEN(_b) ((uint16_t)(PB_IP4_TOTAL_LEN(_b) - \
+		PB_IP4_HDR_LEN(_b) - PB_TCP_HDR_LEN(_b) * 4))
+#define PB_TCP_OPT(_b) ((uint8_t *)PB_TCP(_b) + sizeof(struct iip_tcp_hdr))
+#define PB_TCP_OPTLEN(_b) \
+	(PB_TCP_HDR_LEN(_b) * 4 - sizeof(struct iip_tcp_hdr))
+#define PB_UDP(_b) ((struct iip_udp_hdr *)TEST_L4(_b))
+#define PB_UDP_PAYLOAD(_b) ((uint8_t *)PB_UDP(_b) + sizeof(struct iip_udp_hdr))
+#define PB_UDP_TOTAL_LEN(_b) (__iip_ntohs(PB_UDP(_b)->len_be))
+#define PB_UDP_PAYLOAD_LEN(_b) \
+	((uint16_t)(PB_UDP_TOTAL_LEN(_b) - sizeof(struct iip_udp_hdr)))
+
+static void *test_pb_take_packet(struct pb *, void *);
+
 static uint8_t _iss_key[32];
 
 static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t _src_port, uint16_t _dst_port)
@@ -255,7 +362,7 @@ static struct test_source_route *test_source_route_add(
 }
 
 static const uint8_t *test_ip4_source_route_option(void *pkt,
-		uint16_t *padded_len, void *opaque)
+		uint16_t *padded_len)
 {
 	uint8_t *option = (uint8_t *)PB_IP4(pkt) + sizeof(struct iip_ip4_hdr);
 	uint16_t left = ((PB_IP4(pkt)->vl & 0x0f) * 4) -
@@ -285,7 +392,6 @@ static const uint8_t *test_ip4_source_route_option(void *pkt,
 static struct test_source_route *test_capture_return_route(
 		struct test_state *state, void *handle, void *pkt)
 {
-	void *opaque = state;
 	const uint8_t *received;
 	uint16_t padded_len = 0;
 	uint8_t option[40] = { 0 };
@@ -298,7 +404,7 @@ static struct test_source_route *test_capture_return_route(
 			PB_IP4(pkt)->src_be, PB_TCP(pkt)->src_be);
 	if (existing && existing->application_defined)
 		return existing;
-	received = test_ip4_source_route_option(pkt, &padded_len, opaque);
+	received = test_ip4_source_route_option(pkt, &padded_len);
 	if (!received)
 		return existing;
 	len = received[1];
@@ -592,7 +698,7 @@ static void fake_clock_use_real_time(struct test_state *state)
 
 static void *iip_ops_pkt_alloc(void *opaque)
 {
-	long *pkt = malloc(2048);
+	long *pkt = malloc(2048 + 2);
 	assert(pkt);
 	pkt[0] = 1; /* ref */
 	pkt[1] = (long) pkt; /* ptr */
@@ -624,7 +730,11 @@ static void iip_ops_pkt_free(void *pkt, void *opaque)
 static void *iip_ops_pkt_get_data(void *pkt, void *opaque)
 {
 	long *buf = (long *)((long *) pkt)[1];
-	return (void *)((uintptr_t) &buf[8] + ((long *) pkt)[3]);
+	/*
+	 * Start Ethernet frames two bytes past the allocation alignment so the
+	 * IPv4 header following the 14-byte Ethernet header is 4-byte aligned.
+	 */
+	return (void *)((uintptr_t) &buf[8] + 2 + ((long *) pkt)[3]);
 	{ /* unused */
 		(void) opaque;
 	}
@@ -896,29 +1006,97 @@ static void *iip_ops_tcp_connected(void *mem, void *handle, void *m, void *opaqu
 	return route;
 }
 
-static void iip_ops_tcp_payload(void *mem, void *handle, void *m, void *tcp_opaque, uint16_t head_off, uint16_t tail_off, void *opaque)
+static uint16_t test_ip4_fragment_payload_len(void *pkt, void *next)
 {
-	struct test_state *state = opaque;
+	struct iip_ip4_hdr *ip4 = test_pkt_ip4(pkt);
+	uint16_t ip_header_len = (uint16_t)(ip4->vl & 0x0f) << 2;
+
+	if (next) {
+		struct iip_ip4_hdr *next_ip4 = test_pkt_ip4(next);
+		uint16_t fragment_offset =
+			(__iip_ntohs(ip4->off_be) & 0x1fffU) << 3;
+		uint16_t next_offset =
+			(__iip_ntohs(next_ip4->off_be) & 0x1fffU) << 3;
+
+		/*
+		 * Reassembly rewrites the first IPv4 Total Length to the complete
+		 * datagram length.  The next fragment's offset remains the reliable
+		 * boundary for every non-final scatter-gather element.
+		 */
+		assert(next_offset >= fragment_offset);
+		return next_offset - fragment_offset;
+	} else {
+		uint16_t ip_total_len = __iip_ntohs(ip4->len_be);
+
+		assert(ip_total_len >= ip_header_len);
+		return ip_total_len - ip_header_len;
+	}
+}
+
+static void test_record_tcp_payload(struct test_state *state, void *handle,
+		const uint8_t *data, uint16_t len)
+{
+	uint16_t i;
+
 	state->payload_count++;
 	test_event_append(state, TEST_EVENT_CALLBACK, TEST_CALLBACK_PAYLOAD,
-			handle, PB_TCP_PAYLOAD_LEN(m), head_off, tail_off, 0);
-	printf("tcp payload len %u (head_off %u, tail_off %u)\n", PB_TCP_PAYLOAD_LEN(m), head_off, tail_off);
-	{
-		int i;
-		for (i = 0; i < PB_TCP_PAYLOAD_LEN(m) - head_off - tail_off; i++) {
-			uint8_t value = ((uint8_t *) PB_TCP_PAYLOAD(m))[i + head_off];
-			printf("%hhu\n", value);
-			assert(value == state->next_payload);
-			state->next_payload++;
-		}
+			handle, len, 0, 0, 0);
+	printf("tcp payload len %u\n", len);
+	for (i = 0; i < len; i++) {
+		printf("%hhu\n", data[i]);
+		assert(data[i] == state->next_payload);
+		state->next_payload++;
 	}
+}
+
+static void iip_ops_tcp_payload(void *mem, void *handle, void *m,
+		void *tcp_opaque, uint16_t increment_head,
+		uint16_t decrement_tail, void *opaque)
+{
+	struct test_state *state = opaque;
+	void *pkt = m;
+	uint32_t consumed = 0;
+	uint8_t first = 1;
+
+	while (pkt) {
+		struct iip_ip4_hdr *ip4 = test_pkt_ip4(pkt);
+		uint16_t ip_header_len = (uint16_t)(ip4->vl & 0x0f) << 2;
+		void *next = iip_ops_pkt_scatter_gather_chain_get_next(pkt,
+				opaque);
+		uint16_t ip_payload_len =
+			test_ip4_fragment_payload_len(pkt, next);
+		uint16_t skip = 0;
+		uint16_t len;
+		uint8_t *data;
+
+		if (first) {
+			struct iip_tcp_hdr *tcp =
+				(struct iip_tcp_hdr *)((uint8_t *)ip4 +
+						ip_header_len);
+			skip = (uint16_t)((__iip_ntohs(tcp->flags) >> 12) << 2);
+			assert(skip <= UINT16_MAX - increment_head);
+			skip += increment_head;
+		}
+		assert(ip_payload_len >= skip);
+		len = ip_payload_len - skip;
+		if (!next) {
+			assert(len >= decrement_tail);
+			len -= decrement_tail;
+		}
+		data = (uint8_t *)ip4 + ip_header_len + skip;
+
+		test_record_tcp_payload(state, handle, data, len);
+		consumed += len;
+		first = 0;
+		pkt = next;
+	}
+
+	assert(consumed <= UINT16_MAX);
 	if (!state->defer_payload_consumption)
-		iip_tcp_rxbuf_consumed(mem, handle,
-				PB_TCP_PAYLOAD_LEN(m) - head_off - tail_off, opaque);
+		iip_tcp_rxbuf_consumed(mem, handle, (uint16_t)consumed, opaque);
 	else {
 		assert(!state->deferred_payload_len);
-		state->deferred_payload_len =
-			PB_TCP_PAYLOAD_LEN(m) - head_off - tail_off;
+		state->deferred_payload_len = consumed;
 	}
 	{ /* unused */
 		(void) tcp_opaque;
@@ -977,7 +1155,7 @@ static void *output_nth_ethertype(const struct test_state *state,
 	return NULL;
 }
 
-static uint8_t *find_sack(void *pkt, uint8_t *sack_len, void *opaque)
+static uint8_t *find_sack(void *pkt, uint8_t *sack_len)
 {
 	uint8_t *opt = PB_TCP_OPT(pkt);
 	uint16_t off = 0, opt_len = PB_TCP_OPTLEN(pkt);
@@ -1013,7 +1191,6 @@ static uint32_t load_be32(const uint8_t *p)
 static void expect_ack(struct test_state *state, uint32_t ack,
 		const uint32_t blocks[][2], unsigned int block_cnt)
 {
-	void *opaque = state;
 	unsigned int i;
 	int found = 0;
 	for (i = 0; i < state->out_cnt; i++) {
@@ -1024,7 +1201,7 @@ static void expect_ack(struct test_state *state, uint32_t ack,
 		if (!PB_TCP_HDR_HAS_ACK(pkt) || PB_TCP_HDR_HAS_SYN(pkt) ||
 				__iip_ntohl(PB_TCP(pkt)->ack_seq_be) != ack)
 			continue;
-		sack = find_sack(pkt, &sack_len, opaque);
+		sack = find_sack(pkt, &sack_len);
 		if (!block_cnt) {
 			assert(!sack);
 			found = 1;
@@ -1059,8 +1236,7 @@ static void *make_segment(struct workspace *ws, struct iip_tcp_conn *conn,
 	assert(out_p == conn->head[1][1]);
 	__iip_dequeue_obj(conn->head[1], out_p, 0);
 	{
-		void *pkt = out_p->pkt;
-		out_p->pkt = NULL;
+		void *pkt = test_pb_take_packet(out_p, opaque);
 		__iip_free_pb(ws, out_p, opaque);
 		return pkt;
 	}
@@ -1075,7 +1251,6 @@ static void deliver(struct workspace *ws, uint8_t mac[], uint32_t ip4_be,
 
 static void update_ip4_checksum(void *pkt)
 {
-	void *opaque = NULL;
 	uint8_t *buf[1] = { (uint8_t *) PB_IP4(pkt) };
 	uint16_t len[1] = { (uint16_t) ((PB_IP4(pkt)->vl & 0x0f) * 4) };
 
@@ -1088,7 +1263,6 @@ static void update_tcp_checksum(void *pkt)
 	struct iip_l4_ip4_pseudo_hdr pseudo;
 	uint8_t *buf[3];
 	uint16_t len[3];
-	void *opaque = NULL;
 
 	pseudo.ip4_src_be = PB_IP4(pkt)->src_be;
 	pseudo.ip4_dst_be = PB_IP4(pkt)->dst_be;
@@ -1108,13 +1282,21 @@ static void update_tcp_checksum(void *pkt)
 
 static void update_icmp_checksum(void *pkt)
 {
-	void *opaque = NULL;
 	uint8_t *buf[1] = { (uint8_t *)PB_ICMP(pkt) };
 	uint16_t len[1] = { (uint16_t)(__iip_ntohs(PB_IP4(pkt)->len_be) -
 			(PB_IP4(pkt)->vl & 0x0f) * 4) };
 
 	PB_ICMP(pkt)->csum_be = 0;
 	PB_ICMP(pkt)->csum_be = __iip_htons(__iip_netcsum16(buf, len, 1, 0));
+}
+
+static void *test_pb_take_packet(struct pb *p, void *opaque)
+{
+	void *pkt = p->pkt;
+
+	(void)opaque;
+	p->pkt = NULL;
+	return pkt;
 }
 
 #define TEST_IP4_OPT_MAX 40
@@ -1388,9 +1570,8 @@ static int legacy_test_main(void)
 				{
 					struct pb *out_p = conn.head[1][0];
 					assert(out_p == conn.head[1][1]);
-					pkt[0] = out_p->pkt;
+					pkt[0] = test_pb_take_packet(out_p, opaque);
 					__iip_dequeue_obj(conn.head[1], out_p, 0);
-					out_p->pkt = NULL;
 					__iip_free_pb(&ws[0], out_p, opaque);
 				}
 			}
@@ -1422,9 +1603,8 @@ static int legacy_test_main(void)
 				{
 					struct pb *out_p = conn.head[1][0];
 					assert(out_p == conn.head[1][1]);
-					pkt[0] = out_p->pkt;
+					pkt[0] = test_pb_take_packet(out_p, opaque);
 					__iip_dequeue_obj(conn.head[1], out_p, 0);
-					out_p->pkt = NULL;
 					__iip_free_pb(&ws[0], out_p, opaque);
 				}
 			}
@@ -1568,8 +1748,7 @@ static void *fixture_packet(struct fixture *f, uint8_t syn, uint16_t flags,
 		return NULL;
 	__iip_dequeue_obj(f->conn.head[1], p, 0);
 	{
-		void *pkt = p->pkt;
-		p->pkt = NULL;
+		void *pkt = test_pb_take_packet(p, &f->state);
 		__iip_free_pb(f->ws, p, &f->state);
 		return pkt;
 	}
@@ -1577,7 +1756,6 @@ static void *fixture_packet(struct fixture *f, uint8_t syn, uint16_t flags,
 
 static int checksum_valid(void *pkt)
 {
-	void *opaque = NULL;
 	struct iip_l4_ip4_pseudo_hdr pseudo;
 	uint8_t *b[2];
 	uint16_t l[2];
@@ -1597,16 +1775,29 @@ static int checksum_valid(void *pkt)
 
 static int ip4_checksum_valid(void *pkt)
 {
-	void *opaque = NULL;
 	uint8_t *b[1] = { (uint8_t *)PB_IP4(pkt) };
 	uint16_t l[1] = { (uint16_t)((PB_IP4(pkt)->vl & 0x0f) * 4) };
 	uint16_t supplied = __iip_ntohs(PB_IP4(pkt)->csum_be);
 	return supplied == __iip_netcsum16(b, l, 1, supplied);
 }
 
+static int icmp_checksum_valid(void *pkt)
+{
+	uint16_t ip_header_len = (uint16_t)(PB_IP4(pkt)->vl & 0x0f) << 2;
+	uint16_t ip_total_len = __iip_ntohs(PB_IP4(pkt)->len_be);
+	uint8_t *b[1] = { (uint8_t *)PB_ICMP(pkt) };
+	uint16_t l[1];
+	uint16_t supplied;
+
+	if (ip_total_len < ip_header_len + sizeof(struct iip_icmp_hdr))
+		return 0;
+	l[0] = ip_total_len - ip_header_len;
+	supplied = __iip_ntohs(PB_ICMP(pkt)->csum_be);
+	return supplied == __iip_netcsum16(b, l, 1, supplied);
+}
+
 static uint8_t *option_find(void *pkt, uint8_t wanted)
 {
-	void *opaque = NULL;
 	uint8_t *opt = PB_TCP_OPT(pkt);
 	uint16_t at = 0, n = PB_TCP_OPTLEN(pkt);
 	while (at < n) {
@@ -1648,6 +1839,41 @@ static void fixture_deliver(struct fixture *f, void *pkt)
 {
 	void *input[1] = { pkt };
 	deliver(f->ws, f->local_mac, f->conn.local_ip4_be, input, 1, &f->state);
+}
+
+static void *fixture_ip4_fragment(struct fixture *f, void *datagram,
+		uint16_t payload_offset, uint16_t payload_len, uint8_t more_fragments)
+{
+	void *fragment;
+	uint8_t *dst;
+	const uint8_t *src;
+	uint16_t ip_header_len;
+	uint16_t ip_payload_len;
+	uint16_t fragment_len;
+	void *opaque = &f->state;
+
+	ip_header_len = (PB_IP4(datagram)->vl & 0x0f) * 4;
+	ip_payload_len = __iip_ntohs(PB_IP4(datagram)->len_be) - ip_header_len;
+	assert((payload_offset & 7U) == 0);
+	assert(payload_offset <= ip_payload_len);
+	assert(payload_len <= ip_payload_len - payload_offset);
+	assert(!more_fragments || (payload_len & 7U) == 0);
+
+	fragment_len = 14 + ip_header_len + payload_len;
+	fragment = iip_ops_pkt_alloc(opaque);
+	assert(fragment);
+	dst = iip_ops_pkt_get_data(fragment, opaque);
+	src = iip_ops_pkt_get_data(datagram, opaque);
+	memcpy(dst, src, 14 + ip_header_len);
+	memcpy(dst + 14 + ip_header_len,
+			src + 14 + ip_header_len + payload_offset, payload_len);
+	iip_ops_pkt_set_len(fragment, fragment_len, opaque);
+	PB_IP4(fragment)->id_be = __iip_htons(0x1234);
+	PB_IP4(fragment)->off_be = __iip_htons(
+			(more_fragments ? 0x2000U : 0U) | (payload_offset / 8));
+	PB_IP4(fragment)->len_be = __iip_htons(ip_header_len + payload_len);
+	update_ip4_checksum(fragment);
+	return fragment;
 }
 
 static uint8_t test_tcp_urgent_query(void *handle, uint32_t *queued)
@@ -1778,7 +2004,6 @@ static unsigned int fixture_wait_for_zero_window_probes(struct fixture *f,
 		uint32_t probe_at_seconds[])
 {
 	unsigned int elapsed, found = 0;
-	void *opaque = &f->state;
 
 	for (elapsed = 1; elapsed <= max_seconds && found < wanted; elapsed++) {
 		unsigned int i;
@@ -1805,7 +2030,6 @@ static enum result test_disable_nagle(const char **why)
 	struct fixture enabled, disabled;
 	struct tcp_packet_spec spec;
 	uint32_t first_ack;
-	void *opaque;
 	(void)why;
 
 	/* With Nagle enabled, a second small segment waits for the first ACK. */
@@ -1830,7 +2054,6 @@ static enum result test_disable_nagle(const char **why)
 	fixture_incoming_spec(&enabled, &spec, 0, NULL, 0);
 	spec.ack_seq = first_ack;
 	fixture_deliver(&enabled, build_tcp_packet(&spec, &enabled.state));
-	opaque = &enabled.state;
 	if (enabled.state.out_cnt != 1 ||
 			PB_TCP_PAYLOAD_LEN(enabled.state.out[0]) != 1) {
 		fprintf(stderr, "Nagle enabled release: out=%u payload=%u\n",
@@ -1862,7 +2085,6 @@ static enum result test_disable_nagle(const char **why)
 	free_output(&disabled.state);
 	test_event_log_clear(&disabled.state);
 	fake_clock_advance_ms(&disabled.state, 200);
-	opaque = &disabled.state;
 	if (!fixture_send_data(&disabled, 1) || disabled.state.out_cnt != 1 ||
 			PB_TCP_PAYLOAD_LEN(disabled.state.out[0]) != 1) {
 		fprintf(stderr, "Nagle disabled second: out=%u payload=%u\n",
@@ -2093,7 +2315,6 @@ static enum result test_retransmission_and_congestion(const char **why)
 static enum result test_r1_r2_failure_handling(const char **why)
 {
 	struct fixture f;
-	void *opaque = &f.state;
 	uint32_t data_seq;
 	uint32_t r1;
 	uint32_t r2;
@@ -2217,7 +2438,6 @@ static enum result test_application_configurable_r2(const char **why)
 static enum result test_syn_failure_mechanism(const char **why)
 {
 	struct fixture f;
-	void *opaque = &f.state;
 	void *tcp_pkt;
 	uint32_t syn_seq;
 	uint32_t r2;
@@ -2279,7 +2499,6 @@ static enum result test_syn_failure_mechanism(const char **why)
 static enum result test_syn_retry_at_least_three_minutes(const char **why)
 {
 	struct fixture f;
-	void *opaque = &f.state;
 	uint64_t started_ns;
 	uint32_t r2;
 	unsigned int timeouts = 0;
@@ -2416,7 +2635,6 @@ static enum result test_isn_prf_security(const char **why)
 	uint32_t base;
 	uint32_t other_key;
 	struct fixture f;
-	void *opaque = &f.state;
 	void *syn = NULL;
 	unsigned int i;
 	int ok = 1;
@@ -2489,7 +2707,6 @@ static enum result test_simultaneous_open(const char **why)
 
 static int output_has_syn_ack(const struct test_state *state)
 {
-	void *opaque = (void *)state;
 	unsigned int i;
 	for (i = 0; i < state->out_cnt; i++) {
 		void *pkt = state->out[i];
@@ -2521,7 +2738,6 @@ static enum result test_default_send_mss(const char **why)
 	const uint16_t advertised_port_be = __iip_htons(21002);
 	const uint16_t tcp_option_len = IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0;
 	const uint16_t expected_first_payload = 536 - tcp_option_len;
-	void *opaque = &f.state;
 	void *payload;
 	uint16_t lengths[2] = { 0, 0 };
 	uint16_t total = 0;
@@ -2576,7 +2792,6 @@ static int effective_send_mss_scenario(uint16_t send_mss,
 	struct fixture f;
 	struct pb *p;
 	void *payload;
-	void *opaque = &f.state;
 	uint32_t expected_seq;
 	uint16_t total_payload = expected_first_payload + 100;
 	uint16_t lengths[2] = { 0, 0 };
@@ -2911,7 +3126,6 @@ static enum result test_optional_local_address(const char **why)
 	const uint16_t listen_port_be = __iip_htons(10000);
 	const uint16_t active_port_be = __iip_htons(11000);
 	const uint16_t peer_port_be = __iip_htons(80);
-	void *opaque = NULL;
 
 	/* A specified passive local address only matches SYNs for that address. */
 	if (!fixture_init(&specified) ||
@@ -3023,7 +3237,6 @@ static enum result test_source_address_query(const char **why)
 	const uint32_t selected_ip4_be = __iip_htonl(0xc0000263U);
 	const uint16_t local_port_be = __iip_htons(12000);
 	const uint16_t peer_port_be = __iip_htons(80);
-	void *opaque = NULL;
 
 	/* Without an application-supplied local address, active OPEN asks the
 	 * IP-side selector using the connection's destination address. */
@@ -3077,7 +3290,6 @@ static enum result test_connection_local_address_fallback(const char **why)
 	const uint32_t selector_ip4_be = __iip_htonl(0xc000027cU);
 	const uint16_t local_port_be = __iip_htons(13000);
 	const uint16_t peer_port_be = __iip_htons(81);
-	void *opaque = NULL;
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
@@ -3174,7 +3386,6 @@ static int fixture_has_keepalive_probe(struct fixture *f,
 		uint32_t expected_seq)
 {
 	void *pkt;
-	void *opaque = &f->state;
 	if (f->state.out_cnt != 1)
 		return 0;
 	pkt = f->state.out[0];
@@ -3533,7 +3744,7 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	f.conn.seq_next_expected = 200;
-	f.conn.ack_seq_be = __iip_htonl(200);
+	f.conn.ack_seq_be = __iip_htonl((uint32_t)200);
 	fixture_incoming_spec(&f, &spec, 200, payload, sizeof(payload));
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = sizeof(payload);
@@ -3766,7 +3977,7 @@ static uint16_t test_make_source_route_option(uint8_t option[40],
 }
 
 static int test_tcp_checksum_valid_for_destination(void *pkt,
-		uint32_t destination_be, void *opaque)
+		uint32_t destination_be)
 {
 	struct iip_l4_ip4_pseudo_hdr pseudo;
 	uint8_t *buffer[2];
@@ -3787,16 +3998,15 @@ static int test_tcp_checksum_valid_for_destination(void *pkt,
 
 static int test_packet_has_source_route(void *pkt, uint32_t wire_dst_be,
 		uint32_t ultimate_dst_be, const uint8_t *expected_option,
-		uint16_t expected_option_len, void *opaque)
+		uint16_t expected_option_len)
 {
 	const uint8_t *option;
 	uint16_t option_len = 0;
-	option = test_ip4_source_route_option(pkt, &option_len, opaque);
+	option = test_ip4_source_route_option(pkt, &option_len);
 	return option && option_len == expected_option_len &&
 		!memcmp(option, expected_option, expected_option_len) &&
 		PB_IP4(pkt)->dst_be == wire_dst_be && ip4_checksum_valid(pkt) &&
-		test_tcp_checksum_valid_for_destination(pkt, ultimate_dst_be,
-				opaque);
+		test_tcp_checksum_valid_for_destination(pkt, ultimate_dst_be);
 }
 
 static enum result test_application_source_route(const char **why)
@@ -3809,7 +4019,6 @@ static enum result test_application_source_route(const char **why)
 	uint16_t peer_port_be = __iip_htons(25001);
 	uint32_t wire_dst_be = __iip_htonl(0xcb007101U);
 	uint32_t address_be[1];
-	void *opaque = &f.state;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	address_be[0] = f.conn.peer_ip4_be;
@@ -3827,7 +4036,7 @@ static enum result test_application_source_route(const char **why)
 	if (!conn || f.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(f.state.out[0]) ||
 			!test_packet_has_source_route(f.state.out[0], wire_dst_be,
-				f.conn.peer_ip4_be, option, option_len, opaque)) {
+				f.conn.peer_ip4_be, option, option_len)) {
 		*why = "active OPEN did not apply the application source route";
 		return RESULT_FAIL;
 	}
@@ -3846,7 +4055,6 @@ static enum result test_application_route_precedence(const char **why)
 	uint32_t application_hop_be = __iip_htonl(0xcb007101U);
 	uint32_t received_hop_be = __iip_htonl(0xcb007102U);
 	uint32_t address_be[1];
-	void *opaque = &f.state;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	address_be[0] = f.conn.peer_ip4_be;
@@ -3879,7 +4087,7 @@ static enum result test_application_route_precedence(const char **why)
 	if (f.state.out_cnt != 1 || PB_TCP_HDR_HAS_SYN(f.state.out[0]) ||
 			!test_packet_has_source_route(f.state.out[0],
 				application_hop_be, f.conn.peer_ip4_be,
-				application_option, application_option_len, opaque)) {
+				application_option, application_option_len)) {
 		*why = "a received source route overrode the application route";
 		return RESULT_FAIL;
 	}
@@ -3896,7 +4104,6 @@ static enum result test_passive_return_route(const char **why)
 	uint16_t peer_port_be = __iip_htons(25003);
 	uint32_t recorded_hop_be = __iip_htonl(0xcb007103U);
 	uint32_t address_be[1];
-	void *opaque = &f.state;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	address_be[0] = recorded_hop_be;
@@ -3917,7 +4124,7 @@ static enum result test_passive_return_route(const char **why)
 			!PB_TCP_HDR_HAS_ACK(f.state.out[0]) ||
 			!test_packet_has_source_route(f.state.out[0],
 				recorded_hop_be, f.conn.peer_ip4_be,
-				expected_option, expected_option_len, opaque)) {
+				expected_option, expected_option_len)) {
 		*why = "SYN-ACK did not use the received return route";
 		return RESULT_FAIL;
 	}
@@ -3933,7 +4140,7 @@ static enum result test_passive_return_route(const char **why)
 	if (!child->opaque || f.state.out_cnt != 1 ||
 			!test_packet_has_source_route(f.state.out[0],
 				recorded_hop_be, f.conn.peer_ip4_be,
-				expected_option, expected_option_len, opaque)) {
+				expected_option, expected_option_len)) {
 		*why = "the return route was not retained in tcp_opaque";
 		return RESULT_FAIL;
 	}
@@ -3944,7 +4151,6 @@ static enum result test_icmp_processing(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	void *opaque = &f.state;
 	uint16_t next_hop_mtu_be = __iip_htons(1200);
 	uint32_t seq_before, ack_before, expected_before;
 	(void)why;
@@ -4073,12 +4279,10 @@ static enum result test_tcp_icmp_error_notification(const char **why)
 	{
 		struct fixture f;
 		void *pkt;
-		void *opaque;
 		struct iip_ip4_hdr *quoted_ip4;
 		struct iip_tcp_hdr *quoted_tcp;
 		if (!fixture_init(&f))
 			return RESULT_FAIL;
-		opaque = &f.state;
 
 		/* A quoted non-TCP packet must not be associated with a TCP connection. */
 		test_event_log_clear(&f.state);
@@ -4242,7 +4446,6 @@ static int test_fin_only_at_zero_window(const char **why)
 	struct pb *pending;
 	unsigned int i;
 	void *fin = NULL;
-	void *opaque = &f.state;
 
 	if (!fixture_init(&f))
 		return 0;
@@ -4556,7 +4759,6 @@ static int test_receive_window_right_edge(const char **why)
 	struct tcp_packet_spec spec;
 	const uint8_t payload[] = { 0, 1 };
 	struct pb *p;
-	void *opaque = &crossing.state;
 
 	/* [255, 257) crosses the right edge of the receive window [0, 256).
 	 * Only the octet at sequence number 255 may remain queued. */
@@ -4813,7 +5015,6 @@ static int no_indefinite_buffering_scenario(void)
 	assert(iip_run(f.ws, f.local_mac, f.conn.local_ip4_be,
 			NULL, 0, &next_us, &f.state) == 0);
 	for (i = 0; i < f.state.out_cnt; i++) {
-		void *opaque = &f.state;
 		if (PB_TCP_PAYLOAD_LEN(f.state.out[i]) == 1 &&
 				PB_TCP_HDR_HAS_PSH(f.state.out[i]))
 			return 1;
@@ -4942,7 +5143,6 @@ static enum result test_required_options(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	void *opaque = &f.state;
 	uint8_t *o;
 	uint16_t i, n;
 	int nop = 0, eol = 0;
@@ -4962,7 +5162,6 @@ static enum result test_ttl(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	void *opaque = &f.state;
 	int ok;
 	(void)why;
 	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 0)))
@@ -5014,7 +5213,6 @@ static enum result test_psh_last(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	void *opaque = &f.state;
 	int ok;
 	(void)why;
 	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 1)))
@@ -5041,7 +5239,6 @@ static enum result test_option_lengths(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	void *opaque = &f.state;
 	uint8_t *o;
 	uint16_t at, n;
 	(void)why;
@@ -5064,7 +5261,6 @@ static enum result test_zero_padding(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	void *opaque = &f.state;
 	uint8_t *o;
 	uint16_t at, n;
 	(void)why;
@@ -5079,6 +5275,422 @@ static enum result test_zero_padding(const char **why)
 			return RESULT_FAIL;
 		}
 	iip_ops_pkt_free(pkt, &f.state);
+	return RESULT_PASS;
+}
+
+/*
+ * IPv4 host requirements
+ *
+ * These tests cover the IPv4 host input/output path exposed by iip.  Router
+ * forwarding requirements are deliberately out of scope.
+ */
+
+static void build_fixture_input(struct fixture *f, struct tcp_packet_spec *spec,
+		void **pkt)
+{
+	static const uint8_t payload[] = { 0 };
+
+	fixture_incoming_spec(f, spec, 0, payload, sizeof(payload));
+	*pkt = build_tcp_packet(spec, &f->state);
+}
+
+static enum result test_ip4_tx_basic_header(const char **why)
+{
+	struct fixture f;
+	void *pkt;
+	void *opaque = &f.state;
+	uint16_t total_len;
+
+	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 1)))
+		return RESULT_FAIL;
+	total_len = __iip_ntohs(PB_IP4(pkt)->len_be);
+	if ((PB_IP4(pkt)->vl >> 4) != 4 ||
+			(PB_IP4(pkt)->vl & 0x0f) < 5 ||
+			total_len != iip_ops_pkt_get_len(pkt, opaque) -
+				iip_ops_l2_hdr_len(pkt, opaque) ||
+			PB_IP4(pkt)->proto != 6 ||
+			PB_IP4(pkt)->src_be != f.conn.local_ip4_be ||
+			PB_IP4(pkt)->dst_be != f.conn.peer_ip4_be ||
+			!ip4_checksum_valid(pkt)) {
+		*why = "generated IPv4 header fields are inconsistent";
+		iip_ops_pkt_free(pkt, opaque);
+		return RESULT_FAIL;
+	}
+	iip_ops_pkt_free(pkt, opaque);
+	return RESULT_PASS;
+}
+
+static enum result test_ip4_tx_atomic_datagram(const char **why)
+{
+	struct fixture f;
+	void *pkt;
+	void *opaque = &f.state;
+	uint16_t fragment;
+
+	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 0)))
+		return RESULT_FAIL;
+	fragment = __iip_ntohs(PB_IP4(pkt)->off_be);
+	iip_ops_pkt_free(pkt, opaque);
+	if ((fragment & 0x4000) == 0 || (fragment & 0x3fff) != 0) {
+		*why = "generated datagram is not atomic (DF=1, MF=0, offset=0)";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
+}
+
+static enum result test_ip4_rx_wrong_version(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->vl = (6U << 4) | 5U;
+	update_ip4_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_short_base_header(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	iip_ops_pkt_set_len(pkt, 14 + sizeof(struct iip_ip4_hdr) - 1,
+			&f.state);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_small_ihl(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->vl = (4U << 4) | 4U;
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_total_length_below_ihl(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) - 1);
+	update_ip4_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_truncated_total_length(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->len_be =
+		__iip_htons(__iip_ntohs(PB_IP4(pkt)->len_be) + 1);
+	update_ip4_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_header_checksum(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->csum_be ^= __iip_htons(1);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_reserved_flag(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->off_be = __iip_htons(0x8000);
+	update_ip4_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_other_destination(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->dst_be = __iip_htonl(0xc0000263U);
+	update_ip4_checksum(pkt);
+	update_tcp_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 0 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_l2_padding(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+	uint16_t original_len;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	original_len = iip_ops_pkt_get_len(pkt, &f.state);
+	memset((uint8_t *)iip_ops_pkt_get_data(pkt, &f.state) + original_len,
+			0xa5, 8);
+	iip_ops_pkt_set_len(pkt, original_len + 8, &f.state);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 1 && f.conn.seq_next_expected == 1
+		? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_ttl_zero(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->ttl = 0;
+	update_ip4_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	if (f.state.payload_count != 1) {
+		*why = "locally-destined TTL zero datagram was discarded";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
+}
+
+static enum result test_ip4_rx_ttl_one(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *pkt;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	build_fixture_input(&f, &spec, &pkt);
+	PB_IP4(pkt)->ttl = 1;
+	update_ip4_checksum(pkt);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 1 ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_576_octets(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	uint8_t payload[536];
+	void *pkt;
+	unsigned int i;
+
+	(void)why;
+	for (i = 0; i < sizeof(payload); i++)
+		payload[i] = (uint8_t)i;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	pkt = build_tcp_packet(&spec, &f.state);
+	fixture_deliver(&f, pkt);
+	return f.state.payload_count == 1 && f.conn.seq_next_expected == 536
+		? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_rx_unknown_option_requirement(const char **why)
+{
+	return test_unknown_ip_option(why);
+}
+
+static enum result test_ip4_rx_invalid_source_requirement(const char **why)
+{
+	return test_invalid_source_syn(why);
+}
+
+static enum result test_ip4_fragment_reassembly(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	uint8_t payload[16];
+	void *datagram;
+	void *fragments[2];
+	uint16_t ip_header_len;
+	uint16_t ip_payload_len;
+	unsigned int i;
+
+	(void)why;
+	for (i = 0; i < sizeof(payload); i++)
+		payload[i] = (uint8_t)i;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	datagram = build_tcp_packet(&spec, &f.state);
+	ip_header_len = (PB_IP4(datagram)->vl & 0x0f) * 4;
+	ip_payload_len = __iip_ntohs(PB_IP4(datagram)->len_be) -
+		ip_header_len;
+	assert(ip_payload_len > 24);
+
+	/* Deliver the last fragment first to verify order-independent assembly. */
+	fragments[0] = fixture_ip4_fragment(&f, datagram, 24,
+			ip_payload_len - 24, 0);
+	fragments[1] = fixture_ip4_fragment(&f, datagram, 0, 24, 1);
+	iip_ops_pkt_free(datagram, &f.state);
+	deliver(f.ws, f.local_mac, f.conn.local_ip4_be, fragments,
+			ARRAY_LENGTH(fragments), &f.state);
+	return f.state.payload_count == ARRAY_LENGTH(fragments) &&
+		f.conn.seq_next_expected == sizeof(payload) &&
+		f.state.next_payload == sizeof(payload) &&
+		f.ws->queue.ip4_rx_fragment[0] == NULL
+		? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_reassembly_timeout(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	uint8_t payload[16] = { 0 };
+	void *datagram;
+	void *fragment;
+
+	(void)why;
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	fake_clock_set_ns(&f.state, 1000000000ULL);
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	/*
+	 * A 24-byte header keeps this test independent of the base-header
+	 * fragment-length validation covered by test_ip4_fragment_reassembly.
+	 */
+	spec.ip_options[0] = 1; /* NOP */
+	spec.ip_options[1] = 0; /* EOL */
+	spec.ip_options_len = 4;
+	datagram = build_tcp_packet(&spec, &f.state);
+	fragment = fixture_ip4_fragment(&f, datagram, 0, 24, 1);
+	iip_ops_pkt_free(datagram, &f.state);
+	fixture_deliver(&f, fragment);
+	if (!f.ws->queue.ip4_rx_fragment[0])
+		return RESULT_FAIL;
+
+	fake_clock_advance_sec(&f.state, 61);
+	fixture_run_timers(&f);
+	return f.ws->queue.ip4_rx_fragment[0] == NULL
+		? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_ip4_malformed_option_error(const char **why)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	const uint8_t payload[] = { 0 };
+	void *input;
+	void *reply;
+	struct iip_ip4_hdr *reply_ip4;
+	struct iip_icmp_hdr *icmp;
+	uint8_t quoted[sizeof(struct iip_ip4_hdr) + 4 + 8];
+	uint16_t reply_ip_header_len;
+	uint16_t reply_total_len;
+	uint16_t quoted_len;
+
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	/*
+	 * The option area is four octets, but this unknown TLV claims five.
+	 * The ICMP pointer must identify its invalid Length octet.
+	 */
+	spec.ip_options[0] = 0x9e;
+	spec.ip_options[1] = 5;
+	spec.ip_options_len = 4;
+	input = build_tcp_packet(&spec, &f.state);
+	memcpy(quoted, PB_IP4(input), sizeof(quoted));
+	fixture_deliver(&f, input);
+
+	if (f.state.payload_count != 0) {
+		*why = "malformed IPv4 option was delivered to TCP";
+		return RESULT_FAIL;
+	}
+	if (output_count_ethertype(&f.state, 0x0800) != 1) {
+		*why = "malformed IPv4 option did not produce one IPv4 error";
+		return RESULT_FAIL;
+	}
+	reply = output_nth_ethertype(&f.state, 0x0800, 0);
+	reply_ip4 = PB_IP4(reply);
+	if (reply_ip4->proto != 1 ||
+			reply_ip4->src_be != f.conn.local_ip4_be ||
+			reply_ip4->dst_be != f.conn.peer_ip4_be) {
+		*why = "ICMP Parameter Problem has an invalid IPv4 envelope";
+		return RESULT_FAIL;
+	}
+	if (!ip4_checksum_valid(reply)) {
+		*why = "ICMP Parameter Problem has an invalid IPv4 checksum";
+		return RESULT_FAIL;
+	}
+	icmp = PB_ICMP(reply);
+	if (icmp->type != 12 || icmp->code != 0 || icmp->rest[0] != 21 ||
+			icmp->rest[1] || icmp->rest[2] || icmp->rest[3]) {
+		*why = "ICMP Parameter Problem type, code, or pointer is invalid";
+		return RESULT_FAIL;
+	}
+	if (!icmp_checksum_valid(reply)) {
+		*why = "ICMP Parameter Problem has an invalid ICMP checksum";
+		return RESULT_FAIL;
+	}
+	reply_ip_header_len = (uint16_t)(reply_ip4->vl & 0x0f) << 2;
+	reply_total_len = __iip_ntohs(reply_ip4->len_be);
+	if (reply_total_len < reply_ip_header_len + sizeof(*icmp)) {
+		*why = "ICMP Parameter Problem is truncated before its quotation";
+		return RESULT_FAIL;
+	}
+	quoted_len = reply_total_len - reply_ip_header_len - sizeof(*icmp);
+	if (quoted_len < sizeof(quoted) ||
+			memcmp(PB_ICMP_DATA(reply), quoted, sizeof(quoted))) {
+		*why = "ICMP Parameter Problem does not quote the IPv4 header and 8 octets";
+		return RESULT_FAIL;
+	}
 	return RESULT_PASS;
 }
 
@@ -5147,6 +5759,61 @@ static const struct requirement_test requirement_tests[] = {
 _Static_assert(ARRAY_LENGTH(requirement_tests) == RFC9293_REQUIREMENT_COUNT,
 		"RFC 9293 requirement test table must contain 69 entries");
 
+struct ip4_requirement_test {
+	enum result (*run)(const char **why);
+	const char *id;
+	const char *description;
+};
+
+#define IP4_T(_f, _id, _s) { _f, _id, _s }
+static const struct ip4_requirement_test ip4_requirement_tests[] = {
+	IP4_T(test_ip4_tx_basic_header, "IP4-HDR-1",
+			"generate a consistent IPv4 header and checksum"),
+	IP4_T(test_ip4_tx_atomic_datagram, "IP4-ID-1",
+			"generate RFC 6864 atomic datagrams"),
+	IP4_T(test_ip4_rx_wrong_version, "IP4-RX-1",
+			"discard a header whose Version is not 4"),
+	IP4_T(test_ip4_rx_short_base_header, "IP4-RX-2",
+			"discard a truncated base header"),
+	IP4_T(test_ip4_rx_small_ihl, "IP4-RX-3",
+			"discard IHL smaller than five words"),
+	IP4_T(test_ip4_rx_total_length_below_ihl, "IP4-RX-4",
+			"discard Total Length smaller than IHL"),
+	IP4_T(test_ip4_rx_truncated_total_length, "IP4-RX-5",
+			"discard a datagram shorter than Total Length"),
+	IP4_T(test_ip4_rx_header_checksum, "IP4-RX-6",
+			"discard an invalid IPv4 header checksum"),
+	IP4_T(test_ip4_rx_reserved_flag, "IP4-RX-7",
+			"discard a nonzero reserved flag"),
+	IP4_T(test_ip4_rx_other_destination, "IP4-ADDR-1",
+			"discard a unicast datagram for another host"),
+	IP4_T(test_ip4_rx_invalid_source_requirement, "IP4-ADDR-2",
+			"discard invalid source addresses"),
+	IP4_T(test_ip4_rx_l2_padding, "IP4-LEN-1",
+			"ignore link-layer padding beyond Total Length"),
+	IP4_T(test_ip4_rx_ttl_zero, "IP4-TTL-1",
+			"do not discard a local datagram solely because TTL is zero"),
+	IP4_T(test_ip4_rx_ttl_one, "IP4-TTL-2",
+			"accept a locally-destined datagram with TTL one"),
+	IP4_T(test_ttl, "IP4-TTL-3",
+			"generate the configured TTL"),
+	IP4_T(test_diffserv, "IP4-TOS-1",
+			"preserve the application-selected DS field"),
+	IP4_T(test_ip4_rx_unknown_option_requirement, "IP4-OPT-1",
+			"ignore an unknown well-formed option safely"),
+	IP4_T(test_ip4_malformed_option_error, "IP4-OPT-2",
+			"report a malformed option with ICMP Parameter Problem"),
+	IP4_T(test_ip4_rx_576_octets, "IP4-SIZE-1",
+			"receive a 576-octet IPv4 datagram"),
+	IP4_T(test_ip4_fragment_reassembly, "IP4-FRAG-1",
+			"reassemble IPv4 fragments"),
+	IP4_T(test_ip4_reassembly_timeout, "IP4-FRAG-2",
+			"expire incomplete reassembly and report timeout"),
+	IP4_T(test_icmp_processing, "IP4-ICMP-1",
+			"validate and deliver applicable ICMP errors")
+};
+#undef IP4_T
+
 struct test_summary {
 	unsigned int failed;
 	unsigned int skipped;
@@ -5189,6 +5856,43 @@ static int rfc9293_test_main(void)
 	fprintf(stderr, "RFC 9293 summary: %u passed, %u failed, %u skipped\n",
 		RFC9293_REQUIREMENT_COUNT - summary.failed - summary.skipped,
 		summary.failed, summary.skipped);
+	return summary.failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+static int ip4_requirement_test_main(void)
+{
+	struct test_summary summary = { 0 };
+	unsigned int i;
+
+	printf("TAP version 13\n1..%zu\n",
+			ARRAY_LENGTH(ip4_requirement_tests));
+	fflush(stdout);
+	for (i = 0; i < ARRAY_LENGTH(ip4_requirement_tests); i++) {
+		const struct ip4_requirement_test *test =
+			&ip4_requirement_tests[i];
+		const char *why = NULL;
+		enum result result = test->run(&why);
+
+		if (result == RESULT_PASS) {
+			printf("ok %u - %s %s\n", i + 1, test->id,
+					test->description);
+		} else if (result == RESULT_SKIP) {
+			printf("ok %u - %s %s # SKIP %s\n", i + 1,
+					test->id, test->description, why);
+			summary.skipped++;
+		} else {
+			printf("not ok %u - %s %s%s%s\n", i + 1, test->id,
+					test->description, why ? " - " : "",
+					why ? why : "");
+			summary.failed++;
+		}
+		fflush(stdout);
+	}
+	fprintf(stderr,
+			"IPv4 host requirements summary: %zu passed, %u failed, %u skipped\n",
+			ARRAY_LENGTH(ip4_requirement_tests) - summary.failed -
+				summary.skipped,
+			summary.failed, summary.skipped);
 	return summary.failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
@@ -5298,8 +6002,9 @@ static int run_test_suites(void)
 {
 	int legacy_result = legacy_test_main();
 	int rfc9293_result = rfc9293_test_main();
+	int ip4_result = ip4_requirement_test_main();
 
-	return legacy_result || rfc9293_result;
+	return legacy_result || rfc9293_result || ip4_result;
 }
 
 int main(void)
