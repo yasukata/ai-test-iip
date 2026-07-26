@@ -231,6 +231,8 @@ enum test_callback_type {
 	TEST_CALLBACK_IP4_NEGATIVE_ADVICE,
 	TEST_CALLBACK_TCP_ICMP_ERROR,
 	TEST_CALLBACK_TCP_URGENT,
+	TEST_CALLBACK_ARP_REPLY,
+	TEST_CALLBACK_UDP_PAYLOAD,
 };
 
 enum test_timer_type {
@@ -949,7 +951,17 @@ static void     iip_ops_nic_offload_udp_tx_tso_mark(void *m, void *opaque) { (vo
 
 static uint8_t	iip_ops_arp_lhw(void *opaque) { (void) opaque; return 6; }
 static uint8_t	iip_ops_arp_lproto(void *opaque) { (void) opaque; return 4; }
-static void     iip_ops_arp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
+static void iip_ops_arp_reply(void *mem, void *m, void *opaque)
+{
+	uint32_t sender_ip4_be, target_ip4_be;
+
+	memcpy(&sender_ip4_be, PB_ARP_IP_SENDER(m), sizeof(sender_ip4_be));
+	memcpy(&target_ip4_be, PB_ARP_IP_TARGET(m), sizeof(target_ip4_be));
+	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_ARP_REPLY,
+			m, __iip_ntohs(PB_ARP(m)->op_be),
+			sender_ip4_be, target_ip4_be, 0);
+	(void)mem;
+}
 static void     iip_ops_icmp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
 
 static uint8_t iip_ops_tcp_accept(void *mem, void *m, void *opaque)
@@ -1121,7 +1133,16 @@ static void iip_ops_tcp_closed(void *handle, uint8_t local_mac[],
 	(void)local_mac; (void)local_ip4_be; (void)peer_mac; (void)peer_ip4_be;
 	(void)tcp_opaque;
 }
-static void     iip_ops_udp_payload(void *mem, void *m, void *opaque) { (void) mem; (void) m; (void) opaque; }
+static void iip_ops_udp_payload(void *mem, void *m, void *opaque)
+{
+	uint16_t payload_len = PB_UDP_PAYLOAD_LEN(m);
+	uint8_t first = payload_len ? PB_UDP_PAYLOAD(m)[0] : 0;
+
+	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_UDP_PAYLOAD,
+			m, __iip_ntohs(PB_UDP(m)->src_be),
+			__iip_ntohs(PB_UDP(m)->dst_be), payload_len, first);
+	(void)mem;
+}
 
 static void free_output(struct test_state *state)
 {
@@ -5991,11 +6012,227 @@ static void event_log_self_test(void)
 	assert(state.event_count == 0 && state.event_dropped == 0);
 }
 
+static int udp_checksum_valid(void *pkt)
+{
+	struct iip_l4_ip4_pseudo_hdr pseudo;
+	uint8_t *b[2];
+	uint16_t l[2];
+	uint16_t supplied = __iip_ntohs(PB_UDP(pkt)->csum_be);
+
+	pseudo.ip4_src_be = PB_IP4(pkt)->src_be;
+	pseudo.ip4_dst_be = PB_IP4(pkt)->dst_be;
+	pseudo.pad = 0;
+	pseudo.proto = 17;
+	pseudo.len_be = PB_UDP(pkt)->len_be;
+	b[0] = (uint8_t *)&pseudo;
+	b[1] = (uint8_t *)PB_UDP(pkt);
+	l[0] = sizeof(pseudo);
+	l[1] = PB_UDP_TOTAL_LEN(pkt);
+	return supplied == __iip_netcsum16(b, l, 2, supplied);
+}
+
+static void *fixture_udp_packet(struct fixture *f, const uint8_t *payload,
+		uint16_t payload_len)
+{
+	void *data = NULL;
+	void *pkt;
+
+	if (payload_len) {
+		data = iip_ops_pkt_alloc(&f->state);
+		assert(data);
+		memcpy(iip_ops_pkt_get_data(data, &f->state), payload, payload_len);
+		iip_ops_pkt_set_len(data, payload_len, &f->state);
+	}
+	assert(iip_udp_send(f->ws, f->peer_mac, f->conn.peer_ip4_be,
+			__iip_htons(20000), f->local_mac, f->conn.local_ip4_be,
+			__iip_htons(10000), data, &f->state) == 0);
+	assert(f->state.out_cnt == 1);
+	pkt = f->state.out[0];
+	f->state.out_cnt = 0;
+	return pkt;
+}
+
+static void assert_udp_delivery(const struct test_state *state,
+		uint8_t expected, uint16_t payload_len, uint8_t first_payload_byte)
+{
+	const struct test_event *event;
+
+	assert(test_event_count(state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_UDP_PAYLOAD) == expected);
+	if (!expected)
+		return;
+	event = test_event_nth(state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_UDP_PAYLOAD, 0);
+	assert(event && event->value[0] == 20000 &&
+			event->value[1] == 10000 &&
+			event->value[2] == payload_len &&
+			event->value[3] == first_payload_byte);
+}
+
+static void udp_path_self_test(void)
+{
+	struct fixture f;
+	const uint8_t payload[] = { 0xde, 0xad, 0xbe, 0xef, 0x42 };
+	void *pkt;
+
+	assert(fixture_init(&f));
+	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
+	assert(PB_IP4(pkt)->proto == 17);
+	assert(PB_IP4_TOTAL_LEN(pkt) ==
+			sizeof(struct iip_ip4_hdr) + sizeof(struct iip_udp_hdr) +
+			sizeof(payload));
+	assert(PB_UDP_TOTAL_LEN(pkt) == sizeof(struct iip_udp_hdr) +
+			sizeof(payload));
+	assert(!memcmp(PB_UDP_PAYLOAD(pkt), payload, sizeof(payload)));
+	assert(ip4_checksum_valid(pkt));
+	assert(udp_checksum_valid(pkt));
+	fixture_deliver(&f, pkt);
+	assert_udp_delivery(&f.state, 1, sizeof(payload), payload[0]);
+
+	test_event_log_clear(&f.state);
+	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
+	PB_UDP(pkt)->csum_be ^= __iip_htons(1);
+	fixture_deliver(&f, pkt);
+	assert_udp_delivery(&f.state, 0, 0, 0);
+
+	test_event_log_clear(&f.state);
+	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
+	PB_UDP(pkt)->len_be = __iip_htons(PB_UDP_TOTAL_LEN(pkt) - 1);
+	fixture_deliver(&f, pkt);
+	assert_udp_delivery(&f.state, 0, 0, 0);
+	free_output(&f.state);
+}
+
+static void udp_fragment_limit_case(unsigned int fragment_count,
+		uint8_t expect_delivery)
+{
+	struct fixture f;
+	struct pb *extra_pbs;
+	uint8_t *payload;
+	void *datagram;
+	void **fragments;
+	uint16_t payload_len;
+	uint16_t payload_offset = 0;
+	unsigned int i;
+
+	assert(fragment_count > 1);
+	assert(fragment_count <= TEST_PKT_MAX);
+	assert(fragment_count <= (UINT16_MAX - sizeof(struct iip_udp_hdr)) / 8);
+	assert(fixture_init(&f));
+
+	/*
+	 * iip_run() retains every incomplete fragment, so provide enough packet
+	 * descriptors in addition to fixture_init()'s normal pool.
+	 */
+	extra_pbs = calloc(fragment_count, iip_pb_size());
+	assert(extra_pbs);
+	for (i = 0; i < fragment_count; i++)
+		iip_add_pb(f.ws, &extra_pbs[i]);
+
+	/*
+	 * Keep the first fragment large enough to contain both the UDP header and
+	 * one payload octet.  Every later fragment is the minimum legal 8 octets.
+	 */
+	payload_len = (uint16_t)(fragment_count * 8);
+	payload = malloc(payload_len);
+	fragments = calloc(fragment_count, sizeof(*fragments));
+	assert(payload && fragments);
+	for (i = 0; i < payload_len; i++)
+		payload[i] = (uint8_t)(0xa5U + i);
+	datagram = fixture_udp_packet(&f, payload, payload_len);
+	assert(PB_IP4_TOTAL_LEN(datagram) - PB_IP4_HDR_LEN(datagram) ==
+			(uint16_t)((fragment_count + 1) * 8));
+
+	for (i = 0; i < fragment_count; i++) {
+		uint16_t fragment_len = i ? 8 : 16;
+
+		fragments[fragment_count - 1 - i] =
+			fixture_ip4_fragment(&f, datagram,
+				payload_offset, fragment_len,
+				i + 1 < fragment_count);
+		payload_offset += fragment_len;
+	}
+	iip_ops_pkt_free(datagram, &f.state);
+	deliver(f.ws, f.local_mac, f.conn.local_ip4_be, fragments,
+			(uint16_t)fragment_count, &f.state);
+
+	assert_udp_delivery(&f.state, expect_delivery, payload_len, payload[0]);
+	free(payload);
+	free(fragments);
+	free_output(&f.state);
+}
+
+static void udp_fragment_limit_self_test(void)
+{
+	_Static_assert(IIP_CONF_IP4_MAX_FRAG + 1 <= TEST_PKT_MAX,
+			"fragment limit test exceeds the test packet array");
+	udp_fragment_limit_case(IIP_CONF_IP4_MAX_FRAG, 1);
+	udp_fragment_limit_case(IIP_CONF_IP4_MAX_FRAG + 1, 0);
+}
+
+static void arp_path_self_test(void)
+{
+	struct fixture f;
+	const struct test_event *event;
+	void *request, *reply;
+	uint32_t sender_ip4_be, target_ip4_be;
+
+	assert(fixture_init(&f));
+	iip_arp_request(f.ws, f.peer_mac, f.conn.peer_ip4_be,
+			f.conn.local_ip4_be, &f.state);
+	assert(f.state.out_cnt == 1);
+	request = f.state.out[0];
+	f.state.out_cnt = 0;
+	assert(__iip_ntohs(iip_ops_l2_ethertype_be(request, &f.state)) ==
+			0x0806);
+	assert(__iip_ntohs(PB_ARP(request)->op_be) == 1);
+	assert(!memcmp(iip_ops_l2_hdr_dst_ptr(request, &f.state),
+			(uint8_t[]){ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }, 6));
+	assert(!memcmp(PB_ARP_HW_SENDER(request), f.peer_mac, 6));
+	memcpy(&sender_ip4_be, PB_ARP_IP_SENDER(request),
+			sizeof(sender_ip4_be));
+	memcpy(&target_ip4_be, PB_ARP_IP_TARGET(request),
+			sizeof(target_ip4_be));
+	assert(sender_ip4_be == f.conn.peer_ip4_be);
+	assert(target_ip4_be == f.conn.local_ip4_be);
+
+	fixture_deliver(&f, request);
+	assert(f.state.out_cnt == 1);
+	reply = f.state.out[0];
+	f.state.out_cnt = 0;
+	assert(__iip_ntohs(PB_ARP(reply)->op_be) == 2);
+	assert(!memcmp(iip_ops_l2_hdr_dst_ptr(reply, &f.state),
+			f.peer_mac, 6));
+	assert(!memcmp(PB_ARP_HW_SENDER(reply), f.local_mac, 6));
+	memcpy(&sender_ip4_be, PB_ARP_IP_SENDER(reply),
+			sizeof(sender_ip4_be));
+	memcpy(&target_ip4_be, PB_ARP_IP_TARGET(reply),
+			sizeof(target_ip4_be));
+	assert(sender_ip4_be == f.conn.local_ip4_be);
+	assert(target_ip4_be == f.conn.peer_ip4_be);
+
+	{
+		void *input[1] = { reply };
+		deliver(f.ws, f.peer_mac, f.conn.peer_ip4_be, input, 1, &f.state);
+	}
+	assert(test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ARP_REPLY) == 1);
+	event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ARP_REPLY, 0);
+	assert(event && event->value[0] == 2 &&
+			event->value[1] == f.conn.local_ip4_be &&
+			event->value[2] == f.conn.peer_ip4_be);
+	free_output(&f.state);
+}
+
 static void run_self_tests(void)
 {
 	fake_clock_self_test();
 	packet_builder_self_test();
 	event_log_self_test();
+	udp_path_self_test();
+	udp_fragment_limit_self_test();
+	arp_path_self_test();
 }
 
 static int run_test_suites(void)
