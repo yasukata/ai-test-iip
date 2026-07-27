@@ -6516,6 +6516,75 @@ static enum result test_ip4_fragment_reassembly(const char **why)
 		? RESULT_PASS : RESULT_FAIL;
 }
 
+static int test_ip4_in_order_fragment_reassembly_scenario(void)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	uint8_t payload[16];
+	void *datagram;
+	void *fragments[2];
+	uint16_t ip_header_len;
+	uint16_t ip_payload_len;
+	unsigned int i;
+	int ok = 1;
+
+	TEST_CONDITION(fixture_init(&f),
+			"failed to initialize the IPv4 fragment fixture");
+	for (i = 0; i < sizeof(payload); i++)
+		payload[i] = (uint8_t)i;
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	datagram = build_tcp_packet(&spec, &f.state);
+	ip_header_len = PB_IP4_HDR_LEN(datagram);
+	ip_payload_len = PB_IP4_TOTAL_LEN(datagram) - ip_header_len;
+	TEST_CONDITION(ip_payload_len > 24,
+			"test datagram payload is too short to split: %u",
+			ip_payload_len);
+
+	/*
+	 * Deliver fragments in their natural order.  The second fragment belongs
+	 * after the existing tail and must be linked into the same reassembly
+	 * chain, rather than being enqueued as another incomplete context.
+	 */
+	fragments[0] = fixture_ip4_fragment(&f, datagram, 0, 24, 1);
+	fragments[1] = fixture_ip4_fragment(&f, datagram, 24,
+			ip_payload_len - 24, 0);
+	iip_ops_pkt_free(datagram, &f.state);
+	deliver(f.ws, f.local_mac, f.conn.local_ip4_be, fragments,
+			ARRAY_LENGTH(fragments), &f.state);
+
+	TEST_ACCUMULATE(ok,
+			f.state.payload_chunk_count == ARRAY_LENGTH(fragments),
+			"expected %zu reassembled payload chunks, got %u",
+			ARRAY_LENGTH(fragments), f.state.payload_chunk_count);
+	TEST_ACCUMULATE(ok, f.conn.seq_next_expected == sizeof(payload),
+			"expected TCP next sequence %zu after reassembly, got %u",
+			sizeof(payload), f.conn.seq_next_expected);
+	TEST_ACCUMULATE(ok, f.state.next_payload == sizeof(payload),
+			"expected %zu payload bytes after reassembly, got %u",
+			sizeof(payload), f.state.next_payload);
+	TEST_ACCUMULATE(ok, f.ws->queue.ip4_rx_fragment[0] == NULL,
+			"fragment queue still contains incomplete reassembly contexts");
+	return ok;
+}
+
+static enum result test_ip4_in_order_fragment_reassembly(const char **why)
+{
+	pid_t child = fork();
+
+	if (child < 0) {
+		*why = "could not fork timeout-isolated fragment test";
+		return RESULT_FAIL;
+	}
+	if (!child)
+		_exit(test_ip4_in_order_fragment_reassembly_scenario()
+				? EXIT_SUCCESS : EXIT_FAILURE);
+	if (!wait_test_child(child, 250)) {
+		*why = "in-order fragments were not reassembled";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
+}
+
 static enum result test_ip4_reassembly_timeout(const char **why)
 {
 	struct fixture f;
@@ -6771,6 +6840,8 @@ static const struct ip4_requirement_test ip4_requirement_tests[] = {
 			"reassemble IPv4 fragments"),
 	IP4_T(test_ip4_reassembly_timeout, "IP4-FRAG-2",
 			"expire incomplete reassembly and report timeout"),
+	IP4_T(test_ip4_in_order_fragment_reassembly, "IP4-FRAG-3",
+			"reassemble IPv4 fragments received in order"),
 	IP4_T(test_icmp_processing, "IP4-ICMP-1",
 			"validate and deliver applicable ICMP errors")
 };
