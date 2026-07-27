@@ -63,6 +63,7 @@ static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
 #include <assert.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -1721,6 +1722,33 @@ static int legacy_test_main(void)
 }
 enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP };
 
+static int test_condition_failed(const char *scenario, unsigned int line,
+		const char *format, ...)
+{
+	va_list args;
+
+	fprintf(stderr, "FAILED CONDITION [%s:%u]: ", scenario, line);
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+	fputc('\n', stderr);
+	return 0;
+}
+
+#define TEST_CONDITION(_condition, ...) \
+	do { \
+		if (!(_condition)) \
+			return test_condition_failed(__func__, __LINE__, __VA_ARGS__); \
+	} while (0)
+
+#define TEST_ACCUMULATE(_ok, _condition, ...) \
+	do { \
+		if (!(_condition)) { \
+			(void)test_condition_failed(__func__, __LINE__, __VA_ARGS__); \
+			(_ok) = 0; \
+		} \
+	} while (0)
+
 struct fixture {
 	struct test_state state;
 	struct workspace *ws;
@@ -1982,10 +2010,27 @@ static int wait_test_child(pid_t child, unsigned int timeout_ms)
 	for (waited_ms = 0; waited_ms < timeout_ms; waited_ms += 10) {
 		pid_t result = waitpid(child, &status, WNOHANG);
 		assert(result >= 0);
-		if (result == child)
-			return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+		if (result == child) {
+			if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+				return 1;
+			if (WIFSIGNALED(status))
+				fprintf(stderr,
+					"FAILED CHILD: pid=%ld terminated by signal=%d\n",
+					(long)child, WTERMSIG(status));
+			else if (WIFEXITED(status))
+				fprintf(stderr,
+					"FAILED CHILD: pid=%ld exited with status=%d\n",
+					(long)child, WEXITSTATUS(status));
+			else
+				fprintf(stderr,
+					"FAILED CHILD: pid=%ld ended with wait status=0x%x\n",
+					(long)child, status);
+			return 0;
+		}
 		usleep(10 * 1000);
 	}
+	fprintf(stderr, "FAILED CHILD: pid=%ld timed out after %u ms\n",
+			(long)child, timeout_ms);
 	kill(child, SIGKILL);
 	assert(waitpid(child, &status, 0) == child);
 	return 0;
@@ -2658,12 +2703,23 @@ static int invalid_tcp_header_length_case(uint8_t data_offset_words)
 	payload_before = f.state.payload_chunk_count;
 	fixture_deliver(&f, pkt);
 
-	return f.conn.state == state_before &&
-		f.conn.seq_next_expected == seq_before &&
-		f.state.payload_chunk_count == payload_before &&
-		f.state.out_cnt == 0 &&
-		test_event_count(&f.state, TEST_EVENT_CALLBACK,
-				TEST_CALLBACK_PAYLOAD) == 0;
+	TEST_CONDITION(f.conn.state == state_before,
+			"Data Offset=%u changed state: expected=%u actual=%u",
+			data_offset_words, state_before, f.conn.state);
+	TEST_CONDITION(f.conn.seq_next_expected == seq_before,
+			"Data Offset=%u advanced RCV.NXT: expected=%u actual=%u",
+			data_offset_words, seq_before, f.conn.seq_next_expected);
+	TEST_CONDITION(f.state.payload_chunk_count == payload_before,
+			"Data Offset=%u delivered payload: before=%u after=%u",
+			data_offset_words, payload_before,
+			f.state.payload_chunk_count);
+	TEST_CONDITION(f.state.out_cnt == 0,
+			"Data Offset=%u generated %u unexpected output packet(s)",
+			data_offset_words, f.state.out_cnt);
+	TEST_CONDITION(test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_PAYLOAD) == 0,
+			"Data Offset=%u invoked the payload callback", data_offset_words);
+	return 1;
 }
 
 static int invalid_tcp_header_length_scenario(void)
@@ -2824,9 +2880,16 @@ static int invalid_flag_combination_case(uint8_t tcp_flags)
 	state_before = f.conn.state;
 	seq_before = f.conn.seq_next_expected;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn.state == state_before &&
-		f.conn.seq_next_expected == seq_before &&
-		f.state.payload_chunk_count == 0;
+	TEST_CONDITION(f.conn.state == state_before,
+			"flags=0x%02x changed state: expected=%u actual=%u",
+			tcp_flags, state_before, f.conn.state);
+	TEST_CONDITION(f.conn.seq_next_expected == seq_before,
+			"flags=0x%02x advanced RCV.NXT: expected=%u actual=%u",
+			tcp_flags, seq_before, f.conn.seq_next_expected);
+	TEST_CONDITION(f.state.payload_chunk_count == 0,
+			"flags=0x%02x delivered %u payload chunk(s)",
+			tcp_flags, f.state.payload_chunk_count);
+	return 1;
 }
 
 static int reset_flag_combination_case(uint8_t tcp_flags)
@@ -2841,11 +2904,19 @@ static int reset_flag_combination_case(uint8_t tcp_flags)
 	spec.tcp_flags = tcp_flags;
 	state_before = f.conn.state;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.state.payload_chunk_count == 0 &&
-		test_event_has_state_transition(&f.state, &f.conn, state_before,
-			__IIP_TCP_STATE_CLOSED) &&
-		test_event_count(&f.state, TEST_EVENT_CALLBACK,
-			TEST_CALLBACK_CLOSED) == 1;
+	TEST_CONDITION(f.state.payload_chunk_count == 0,
+			"RST flags=0x%02x delivered %u payload chunk(s)",
+			tcp_flags, f.state.payload_chunk_count);
+	TEST_CONDITION(test_event_has_state_transition(&f.state, &f.conn,
+				state_before, __IIP_TCP_STATE_CLOSED),
+			"RST flags=0x%02x did not transition state %u -> CLOSED",
+			tcp_flags, state_before);
+	TEST_CONDITION(test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED) == 1,
+			"RST flags=0x%02x produced %u closed callback(s); expected 1",
+			tcp_flags, test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED));
+	return 1;
 }
 
 static int invalid_flag_combination_cases(void)
@@ -2926,16 +2997,27 @@ static int additional_malformed_boundary_scenario(void)
 	int ok = 1;
 
 	/* Positive controls prevent an always-drop implementation from passing. */
-	ok &= malformed_input_normal_controls();
+	TEST_ACCUMULATE(ok, malformed_input_normal_controls(),
+			"positive controls failed: valid checksum, complete packet, or valid Data Offset was rejected");
 
 	/* Do not short-circuit: exercise every malformed-input family. */
-	ok &= malformed_checksum_cases();
-	ok &= truncated_packet_cases();
-	ok &= invalid_flag_combination_cases();
-	ok &= mss_boundary_case(0, IIP_CONF_TCP_OPT_MSS);
-	ok &= mss_boundary_case(1, 1);
-	ok &= mss_boundary_case(UINT16_MAX, IIP_CONF_TCP_OPT_MSS);
-	ok &= payload_length_boundary_cases();
+	TEST_ACCUMULATE(ok, malformed_checksum_cases(),
+			"invalid IPv4 or TCP checksum changed connection state, delivered payload, or generated output");
+	TEST_ACCUMULATE(ok, truncated_packet_cases(),
+			"a physically truncated IPv4/TCP packet was not silently discarded");
+	TEST_ACCUMULATE(ok, invalid_flag_combination_cases(),
+			"SYN/FIN/RST flag precedence or reset notification was incorrect");
+	TEST_ACCUMULATE(ok, mss_boundary_case(0, IIP_CONF_TCP_OPT_MSS),
+			"MSS=0 was not ignored: expected effective MSS=%u",
+			IIP_CONF_TCP_OPT_MSS);
+	TEST_ACCUMULATE(ok, mss_boundary_case(1, 1),
+			"MSS=1 was not accepted as the effective MSS");
+	TEST_ACCUMULATE(ok,
+			mss_boundary_case(UINT16_MAX, IIP_CONF_TCP_OPT_MSS),
+			"MSS=65535 was not capped at configured MSS=%u",
+			IIP_CONF_TCP_OPT_MSS);
+	TEST_ACCUMULATE(ok, payload_length_boundary_cases(),
+			"zero-length or maximum-length payload boundary handling failed");
 	return ok;
 }
 
@@ -3265,24 +3347,37 @@ static int tcp_state_basic_flags_scenario(void)
 	fixture_deliver(&ack, build_tcp_packet(&spec, &ack.state));
 	payload_event = test_event_nth(&ack.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_PAYLOAD, 0);
-	if (ack.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
-			ack.conn.seq_next_expected != 1 || ack.state.payload_chunk_count != 1 ||
-			!payload_event || payload_event->value[0] != sizeof(payload))
-		return 0;
+	TEST_CONDITION(ack.conn.state == __IIP_TCP_STATE_ESTABLISHED,
+			"ACK+1-byte payload changed state: expected=ESTABLISHED actual=%u",
+			ack.conn.state);
+	TEST_CONDITION(ack.conn.seq_next_expected == 1,
+			"ACK+1-byte payload set RCV.NXT=%u; expected 1",
+			ack.conn.seq_next_expected);
+	TEST_CONDITION(ack.state.payload_chunk_count == 1 && payload_event &&
+				payload_event->value[0] == sizeof(payload),
+			"ACK+1-byte payload delivery mismatch: chunks=%u first_chunk_len=%llu",
+			ack.state.payload_chunk_count,
+			(unsigned long long)(payload_event ? payload_event->value[0] : 0));
 
 	fixture_incoming_spec(&fin, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
 	fixture_deliver(&fin, build_tcp_packet(&spec, &fin.state));
-	if (fin.conn.state != __IIP_TCP_STATE_CLOSE_WAIT)
-		return 0;
+	TEST_CONDITION(fin.conn.state == __IIP_TCP_STATE_CLOSE_WAIT,
+			"ESTABLISHED + FIN|ACK ended in state=%u; expected CLOSE-WAIT",
+			fin.conn.state);
 
 	fixture_incoming_spec(&rst, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_RST | TEST_TCP_ACK;
 	fixture_deliver(&rst, build_tcp_packet(&spec, &rst.state));
-	return test_event_has_state_transition(&rst.state, &rst.conn,
-			__IIP_TCP_STATE_ESTABLISHED, __IIP_TCP_STATE_CLOSED) &&
-		test_event_count(&rst.state, TEST_EVENT_CALLBACK,
-			TEST_CALLBACK_CLOSED) == 1;
+	TEST_CONDITION(test_event_has_state_transition(&rst.state, &rst.conn,
+				__IIP_TCP_STATE_ESTABLISHED, __IIP_TCP_STATE_CLOSED),
+			"ESTABLISHED + RST|ACK did not transition to CLOSED");
+	TEST_CONDITION(test_event_count(&rst.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED) == 1,
+			"ESTABLISHED + RST|ACK produced %u closed callback(s); expected 1",
+			test_event_count(&rst.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED));
+	return 1;
 }
 
 static int tcp_simultaneous_close_scenario(void)
@@ -3347,10 +3442,24 @@ static int tcp_out_of_order_reassembly_scenario(void)
 			TEST_CALLBACK_PAYLOAD, 0);
 	second_payload_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_PAYLOAD, 1);
-	return f.conn.seq_next_expected == 4 && f.state.payload_chunk_count == 2 &&
-		f.state.payload_byte_count == sizeof(payload) &&
-		first_payload_event && first_payload_event->value[0] == 2 &&
-		second_payload_event && second_payload_event->value[0] == 2;
+	TEST_CONDITION(f.conn.seq_next_expected == 4,
+			"out-of-order reassembly stopped at RCV.NXT=%u; expected 4",
+			f.conn.seq_next_expected);
+	TEST_CONDITION(f.state.payload_chunk_count == 2,
+			"out-of-order reassembly delivered %u chunk(s); expected 2",
+			f.state.payload_chunk_count);
+	TEST_CONDITION(f.state.payload_byte_count == sizeof(payload),
+			"out-of-order reassembly delivered %llu byte(s); expected %zu",
+			(unsigned long long)f.state.payload_byte_count, sizeof(payload));
+	TEST_CONDITION(first_payload_event && first_payload_event->value[0] == 2,
+			"first reassembled payload chunk length=%llu; expected 2",
+			(unsigned long long)(first_payload_event ?
+				first_payload_event->value[0] : 0));
+	TEST_CONDITION(second_payload_event && second_payload_event->value[0] == 2,
+			"second reassembled payload chunk length=%llu; expected 2",
+			(unsigned long long)(second_payload_event ?
+				second_payload_event->value[0] : 0));
+	return 1;
 }
 
 static int tcp_zero_window_update_scenario(void)
@@ -3377,13 +3486,20 @@ static int tcp_state_transition_coverage_scenario(void)
 	int ok = 1;
 
 	/* Run every family even when an earlier transition exposes a defect. */
-	ok &= tcp_state_basic_flags_scenario();
-	ok &= tcp_simultaneous_close_scenario();
-	ok &= tcp_sequence_wraparound_scenario();
-	ok &= tcp_out_of_order_reassembly_scenario();
-	ok &= tcp_zero_window_update_scenario();
-	ok &= retransmission_and_congestion_scenario();
-	ok &= legacy_sack_tests_passed;
+	TEST_ACCUMULATE(ok, tcp_state_basic_flags_scenario(),
+			"basic ACK/FIN/RST handling failed: expected ESTABLISHED data delivery, CLOSE-WAIT on FIN, and CLOSED on RST");
+	TEST_ACCUMULATE(ok, tcp_simultaneous_close_scenario(),
+			"simultaneous close failed: expected FIN-WAIT-1 -> CLOSING -> TIME-WAIT");
+	TEST_ACCUMULATE(ok, tcp_sequence_wraparound_scenario(),
+			"sequence wraparound failed: expected RCV.NXT=2 after 4 bytes at UINT32_MAX-1");
+	TEST_ACCUMULATE(ok, tcp_out_of_order_reassembly_scenario(),
+			"out-of-order reassembly failed: expected two 2-byte chunks and RCV.NXT=4");
+	TEST_ACCUMULATE(ok, tcp_zero_window_update_scenario(),
+			"window update failed: expected peer window 0 followed by 4096");
+	TEST_ACCUMULATE(ok, retransmission_and_congestion_scenario(),
+			"retransmission/congestion scenario failed: inspect timeout, RTO, cwnd, and ssthresh events");
+	TEST_ACCUMULATE(ok, legacy_sack_tests_passed,
+			"legacy SACK regression scenario failed");
 	return ok;
 }
 
@@ -3668,11 +3784,15 @@ static int pre_established_syn_rst_scenario(void)
 	fixture_incoming_spec(&closed, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST;
 	fixture_deliver(&closed, build_tcp_packet(&spec, &closed.state));
-	if (closed.conn.state != __IIP_TCP_STATE_CLOSED ||
-			closed.state.out_cnt != 0 ||
-			test_event_count(&closed.state, TEST_EVENT_CALLBACK,
-				TEST_CALLBACK_ACCEPT) != 0)
-		return 0;
+	TEST_CONDITION(closed.conn.state == __IIP_TCP_STATE_CLOSED,
+			"CLOSED + SYN|RST changed state: expected=CLOSED actual=%u",
+			closed.conn.state);
+	TEST_CONDITION(closed.state.out_cnt == 0,
+			"CLOSED + SYN|RST generated %u response packet(s); expected none",
+			closed.state.out_cnt);
+	TEST_CONDITION(test_event_count(&closed.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_ACCEPT) == 0,
+			"CLOSED + SYN|RST invoked the accept callback");
 
 	if (!fixture_init(&listen) ||
 			!test_tcp_listen(&listen.state, listen.conn.local_ip4_be,
@@ -3683,11 +3803,16 @@ static int pre_established_syn_rst_scenario(void)
 	spec.src_port_be = listen_peer_port_be;
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST;
 	fixture_deliver(&listen, build_tcp_packet(&spec, &listen.state));
-	if (listen.state.out_cnt != 0 ||
-			test_event_count(&listen.state, TEST_EVENT_CALLBACK,
-				TEST_CALLBACK_ACCEPT) != 0 ||
-			fixture_find_peer_port(&listen, listen_peer_port_be) != NULL)
-		return 0;
+	TEST_CONDITION(listen.state.out_cnt == 0,
+			"LISTEN + SYN|RST generated %u response packet(s); expected none",
+			listen.state.out_cnt);
+	TEST_CONDITION(test_event_count(&listen.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_ACCEPT) == 0,
+			"LISTEN + SYN|RST invoked the accept callback");
+	TEST_CONDITION(fixture_find_peer_port(&listen,
+				listen_peer_port_be) == NULL,
+			"LISTEN + SYN|RST created a child connection for peer port %u",
+			__iip_ntohs(listen_peer_port_be));
 
 	/*
 	 * In SYN-SENT, RST is effective only when its ACK is acceptable.
@@ -3703,11 +3828,15 @@ static int pre_established_syn_rst_scenario(void)
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST;
 	fixture_deliver(&syn_sent_no_ack,
 			build_tcp_packet(&spec, &syn_sent_no_ack.state));
-	if (syn_sent_no_ack.conn.state != __IIP_TCP_STATE_SYN_SENT ||
-			syn_sent_no_ack.state.out_cnt != 0 ||
-			test_event_count(&syn_sent_no_ack.state, TEST_EVENT_CALLBACK,
-				TEST_CALLBACK_CLOSED) != 0)
-		return 0;
+	TEST_CONDITION(syn_sent_no_ack.conn.state == __IIP_TCP_STATE_SYN_SENT,
+			"SYN-SENT + SYN|RST without ACK changed state: expected=SYN-SENT actual=%u",
+			syn_sent_no_ack.conn.state);
+	TEST_CONDITION(syn_sent_no_ack.state.out_cnt == 0,
+			"SYN-SENT + SYN|RST without ACK generated %u response packet(s)",
+			syn_sent_no_ack.state.out_cnt);
+	TEST_CONDITION(test_event_count(&syn_sent_no_ack.state,
+				TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED) == 0,
+			"SYN-SENT + SYN|RST without ACK invoked the closed callback");
 
 	if (!fixture_init(&syn_sent_ack))
 		return 0;
@@ -3719,11 +3848,16 @@ static int pre_established_syn_rst_scenario(void)
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST | TEST_TCP_ACK;
 	fixture_deliver(&syn_sent_ack,
 			build_tcp_packet(&spec, &syn_sent_ack.state));
-	return test_event_has_state_transition(&syn_sent_ack.state,
-			&syn_sent_ack.conn, __IIP_TCP_STATE_SYN_SENT,
-			__IIP_TCP_STATE_CLOSED) &&
-		test_event_count(&syn_sent_ack.state, TEST_EVENT_CALLBACK,
-			TEST_CALLBACK_CLOSED) == 1;
+	TEST_CONDITION(test_event_has_state_transition(&syn_sent_ack.state,
+				&syn_sent_ack.conn, __IIP_TCP_STATE_SYN_SENT,
+				__IIP_TCP_STATE_CLOSED),
+			"SYN-SENT + SYN|RST with acceptable ACK did not transition to CLOSED");
+	TEST_CONDITION(test_event_count(&syn_sent_ack.state,
+				TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED) == 1,
+			"SYN-SENT + SYN|RST with acceptable ACK produced %u closed callback(s); expected 1",
+			test_event_count(&syn_sent_ack.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED));
+	return 1;
 }
 
 static enum result test_syn_received_origin(const char **why)
