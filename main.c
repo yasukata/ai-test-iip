@@ -28,6 +28,8 @@ static long test_tcp_fastopen_check(uint32_t, uint32_t, const uint8_t *,
 static void test_tcp_fastopen_request(uint32_t, uint32_t, uint8_t *,
 		uint8_t *);
 static void test_tcp_state_close_wait(void *, void *, void *);
+static void test_no_pb(void *);
+static void test_no_tcp_conn(void *);
 #define IIP_TEST_CALLBACK_TCP_STATE_SET() \
 	test_event_tcp_state_set(opaque, conn, conn->state)
 #define IIP_TEST_CALLBACK_TIMER(_timer) \
@@ -57,6 +59,8 @@ static void test_tcp_state_close_wait(void *, void *, void *);
 	test_tcp_fastopen_request((_ip_s), (_ip_d), (_b), (_l))
 #define IIP_EX_OPS_TCP_STATE_CLOSE_WAIT(_mem, _conn, _opaque) \
 	test_tcp_state_close_wait((_mem), (_conn), (_opaque))
+#define IIP_EX_OPS_NO_PB() test_no_pb(s)
+#define IIP_EX_OPS_NO_TCP_CONN() test_no_tcp_conn(s)
 
 #ifndef IIP_OPS_DEBUG_PRINTF
 #define IIP_OPS_DEBUG_PRINTF printf
@@ -82,6 +86,27 @@ static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t
 #include <errno.h>
 
 #include "blake2s-ref.c"
+
+static struct pb *shortage_pb;
+static struct iip_tcp_conn *shortage_tcp_conn;
+static unsigned int shortage_pb_calls;
+static unsigned int shortage_tcp_conn_calls;
+
+static void test_no_pb(void *mem)
+{
+	assert(shortage_pb);
+	shortage_pb_calls++;
+	iip_add_pb(mem, shortage_pb);
+	shortage_pb = NULL;
+}
+
+static void test_no_tcp_conn(void *mem)
+{
+	assert(shortage_tcp_conn);
+	shortage_tcp_conn_calls++;
+	iip_add_tcp_conn(mem, shortage_tcp_conn);
+	shortage_tcp_conn = NULL;
+}
 
 #ifdef IIP_LWIP_INTEROP
 #include "lwip/init.h"
@@ -1289,6 +1314,74 @@ static void free_output(struct test_state *state)
 	for (i = 0; i < state->out_cnt; i++)
 		iip_ops_pkt_free(state->out[i], state);
 	state->out_cnt = 0;
+}
+
+static void buffer_shortage_self_test(void)
+{
+	struct test_state state = { 0 };
+
+	{
+		struct workspace *ws = calloc(1, iip_workspace_size());
+		struct pb *reserve = calloc(1, iip_pb_size());
+		void *pkt = iip_ops_pkt_alloc(&state);
+		struct pb *p;
+
+		assert(ws && reserve && pkt);
+		shortage_pb = reserve;
+		shortage_pb_calls = 0;
+		p = __iip_alloc_pb(ws, pkt, &state);
+		assert(p == reserve);
+		assert(shortage_pb_calls == 1);
+		assert(!shortage_pb);
+		__iip_free_pb(ws, p, &state);
+		free(reserve);
+		free(ws);
+	}
+
+	{
+		struct workspace *ws = calloc(1, iip_workspace_size());
+		struct pb *reserve = calloc(1, iip_pb_size());
+		struct pb orig = { 0 };
+		struct pb *clone;
+
+		assert(ws && reserve);
+		orig.pkt = iip_ops_pkt_alloc(&state);
+		assert(orig.pkt);
+		orig.buf = iip_ops_pkt_get_data(orig.pkt, &state);
+		shortage_pb = reserve;
+		shortage_pb_calls = 0;
+		clone = __iip_clone_pb(ws, &orig, &state);
+		assert(clone == reserve);
+		assert(shortage_pb_calls == 1);
+		assert(!shortage_pb);
+		assert(clone->pkt != orig.pkt);
+		__iip_free_pb(ws, clone, &state);
+		iip_ops_pkt_free(orig.pkt, &state);
+		free(reserve);
+		free(ws);
+	}
+
+	{
+		struct workspace *ws = calloc(1, iip_workspace_size());
+		struct pb *pb = calloc(1, iip_pb_size());
+		struct iip_tcp_conn *reserve = calloc(1, iip_tcp_conn_size());
+		uint8_t local_mac[6] = { 0x02 };
+		uint8_t peer_mac[6] = { 0x04 };
+		uint16_t result;
+
+		assert(ws && pb && reserve);
+		iip_add_pb(ws, pb);
+		shortage_tcp_conn = reserve;
+		shortage_tcp_conn_calls = 0;
+		result = iip_tcp_connect(ws, local_mac, __iip_htonl(0xc0000201U),
+				__iip_htons(10000), peer_mac,
+				__iip_htonl(0xc6336402U), __iip_htons(20000), &state);
+		assert(result != 0xffff);
+		assert(shortage_tcp_conn_calls == 1);
+		assert(!shortage_tcp_conn);
+		assert(ws->tcp.conns[0] == reserve);
+		free_output(&state);
+	}
 }
 
 static unsigned int output_count_ethertype(const struct test_state *state,
@@ -10263,6 +10356,7 @@ static void run_self_tests(void)
 	fake_clock_self_test();
 	packet_builder_self_test();
 	event_log_self_test();
+	buffer_shortage_self_test();
 	udp_path_self_test();
 	udp_fragment_limit_self_test();
 	arp_path_self_test();
