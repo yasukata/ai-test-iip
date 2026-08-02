@@ -23,6 +23,10 @@ static void test_event_tcp_icmp_error(void *, void *, void *, uint8_t,
 static void test_event_tcp_urgent(void *, void *, void *, void *);
 static void test_craft_ip4_options(void *, void *, void *, void *,
 		uint32_t *, uint8_t *, uint16_t *, void *);
+static long test_tcp_fastopen_check(uint32_t, uint32_t, const uint8_t *,
+		uint8_t);
+static void test_tcp_fastopen_request(uint32_t, uint32_t, uint8_t *,
+		uint8_t *);
 #define IIP_TEST_CALLBACK_TCP_STATE_SET() \
 	test_event_tcp_state_set(opaque, conn, conn->state)
 #define IIP_TEST_CALLBACK_TIMER(_timer) \
@@ -46,6 +50,10 @@ static void test_craft_ip4_options(void *, void *, void *, void *,
 		_dst_ip4_be, _ip4_opt, _ip4_opt_len, _o) \
 	test_craft_ip4_options((_s), (_handle), (_tcp_opaque), (_p), \
 			(_dst_ip4_be), (_ip4_opt), (_ip4_opt_len), (_o))
+#define IIP_EX_OPS_TCP_FASTOPEN_CHECK(_ip_s, _ip_d, _b, _l) \
+	test_tcp_fastopen_check((_ip_s), (_ip_d), (_b), (_l))
+#define IIP_EX_OPS_TCP_FASTOPEN_REQUEST(_ip_s, _ip_d, _b, _l) \
+	test_tcp_fastopen_request((_ip_s), (_ip_d), (_b), (_l))
 
 #ifndef IIP_OPS_DEBUG_PRINTF
 #define IIP_OPS_DEBUG_PRINTF printf
@@ -67,8 +75,38 @@ static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t
 #include <assert.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <ctype.h>
+#include <errno.h>
 
 #include "blake2s-ref.c"
+
+#ifdef IIP_LWIP_INTEROP
+#include "lwip/init.h"
+#include "lwip/netif.h"
+#include "lwip/etharp.h"
+#include "lwip/udp.h"
+#include "lwip/tcp.h"
+#include "lwip/timeouts.h"
+#include "netif/ethernet.h"
+
+unsigned int lwip_port_rand(void)
+{
+	return 0x5a17U;
+}
+
+static uint8_t lwip_virtual_clock_enabled;
+static uint32_t lwip_virtual_now_ms;
+
+u32_t sys_now(void)
+{
+	struct timespec ts;
+	if (lwip_virtual_clock_enabled)
+		return lwip_virtual_now_ms;
+	assert(!clock_gettime(CLOCK_MONOTONIC, &ts));
+	return (u32_t)((uint64_t)ts.tv_sec * 1000U +
+			(uint64_t)ts.tv_nsec / 1000000U);
+}
+#endif
 
 /*
  * The stack keeps parsed L3/L4 headers in struct pb, while application
@@ -178,6 +216,76 @@ static void *test_pb_l4(struct pb *p)
 static void *test_pb_take_packet(struct pb *, void *);
 
 static uint8_t _iss_key[32];
+static const uint8_t _fastopen_key[32] = {
+	0x54, 0x46, 0x4f, 0x2d, 0x49, 0x49, 0x50, 0x2d,
+	0x54, 0x45, 0x53, 0x54, 0x2d, 0x4b, 0x45, 0x59,
+	0x54, 0x46, 0x4f, 0x2d, 0x49, 0x49, 0x50, 0x2d,
+	0x54, 0x45, 0x53, 0x54, 0x2d, 0x4b, 0x45, 0x59,
+};
+static uint8_t _fastopen_cookie_len = 16;
+static struct {
+	uint32_t peer_ip4_be;
+	uint32_t local_ip4_be;
+	uint8_t len;
+	uint8_t buf[16];
+} _fastopen_saved_cookie;
+
+static void test_tcp_fastopen_request(uint32_t ip_s, uint32_t ip_d,
+		uint8_t *cookie, uint8_t *cookie_len)
+{
+	uint8_t connection_id[8];
+	int ret;
+
+	if (!_fastopen_cookie_len) {
+		*cookie_len = 0;
+		return;
+	}
+	memcpy(&connection_id[0], &ip_s, sizeof(ip_s));
+	memcpy(&connection_id[4], &ip_d, sizeof(ip_d));
+	ret = blake2s(cookie, _fastopen_cookie_len,
+			connection_id, sizeof(connection_id),
+			_fastopen_key, sizeof(_fastopen_key));
+	assert(ret == 0);
+	*cookie_len = _fastopen_cookie_len;
+}
+
+static uint8_t test_tcp_fastopen_cookie_matches(uint32_t ip_s, uint32_t ip_d,
+		const uint8_t *cookie, uint8_t cookie_len)
+{
+	uint8_t expected[sizeof(_fastopen_saved_cookie.buf)];
+	uint8_t expected_len;
+	uint8_t difference;
+	unsigned int i;
+
+	test_tcp_fastopen_request(ip_s, ip_d, expected, &expected_len);
+	difference = expected_len ^ cookie_len;
+	if (cookie_len != expected_len)
+		return 0;
+	for (i = 0; i < expected_len; i++)
+		difference |= expected[i] ^ cookie[i];
+	return difference == 0;
+}
+
+static long test_tcp_fastopen_check(uint32_t ip_s, uint32_t ip_d,
+		const uint8_t *cookie, uint8_t cookie_len)
+{
+	if (test_tcp_fastopen_cookie_matches(ip_s, ip_d, cookie, cookie_len))
+		return 0;
+
+	/*
+	 * A cookie carried by a SYN+ACK was generated for the opposite packet
+	 * direction.  Preserve it for a later active Fast Open while returning
+	 * failure here: it authenticates the client/server pair, not this
+	 * server-to-client segment.
+	 */
+	if (test_tcp_fastopen_cookie_matches(ip_d, ip_s, cookie, cookie_len)) {
+		_fastopen_saved_cookie.peer_ip4_be = ip_s;
+		_fastopen_saved_cookie.local_ip4_be = ip_d;
+		_fastopen_saved_cookie.len = cookie_len;
+		memcpy(_fastopen_saved_cookie.buf, cookie, cookie_len);
+	}
+	return -1;
+}
 
 static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t _src_port, uint16_t _dst_port)
 {
@@ -301,6 +409,7 @@ struct test_state {
 	uint8_t accept_arbitrary_payload;
 	uint8_t use_fake_clock;
 	uint8_t defer_payload_consumption;
+	uint8_t quiet_payload;
 	uint32_t deferred_payload_len;
 	uint64_t now_ns;
 	unsigned int payload_chunk_count;
@@ -848,17 +957,17 @@ static uint16_t iip_ops_l2_hdr_len(void *pkt, void *opaque)
 
 static uint8_t *iip_ops_l2_hdr_src_ptr(void *pkt, void *opaque)
 {
-	return (void *) iip_ops_pkt_get_data(pkt, opaque) + 6;
+	return (uint8_t *)iip_ops_pkt_get_data(pkt, opaque) + 6;
 }
 
 static uint8_t *iip_ops_l2_hdr_dst_ptr(void *pkt, void *opaque)
 {
-	return (void *) iip_ops_pkt_get_data(pkt, opaque);
+	return (uint8_t *)iip_ops_pkt_get_data(pkt, opaque);
 }
 
 static uint16_t	iip_ops_l2_ethertype_be(void *pkt, void *opaque)
 {
-	return *((uint16_t *)((void *) iip_ops_pkt_get_data(pkt, opaque) + 12));
+	return *((uint16_t *)((uint8_t *)iip_ops_pkt_get_data(pkt, opaque) + 12));
 }
 
 static uint16_t	iip_ops_l2_addr_len(void *opaque)
@@ -881,7 +990,7 @@ static void iip_ops_l2_hdr_craft(void *pkt, uint8_t src[], uint8_t dst[], uint16
 {
 	memcpy(iip_ops_l2_hdr_src_ptr(pkt, opaque), src, iip_ops_l2_addr_len(opaque));
 	memcpy(iip_ops_l2_hdr_dst_ptr(pkt, opaque), dst, iip_ops_l2_addr_len(opaque));
-	*((uint16_t *)((void *) iip_ops_pkt_get_data(pkt, opaque) + 12)) = ethertype_be;
+	*((uint16_t *)((uint8_t *)iip_ops_pkt_get_data(pkt, opaque) + 12)) = ethertype_be;
 }
 
 static uint8_t iip_ops_l2_skip(void *pkt, void *opaque)
@@ -1060,9 +1169,11 @@ static void test_record_tcp_payload(struct test_state *state, void *handle,
 	state->payload_byte_count += len;
 	test_event_append(state, TEST_EVENT_CALLBACK, TEST_CALLBACK_PAYLOAD,
 			handle, len, 0, 0, 0);
-	printf("tcp payload len %u\n", len);
+	if (!state->quiet_payload)
+		printf("tcp payload len %u\n", len);
 	for (i = 0; i < len; i++) {
-		printf("%hhu\n", data[i]);
+		if (!state->quiet_payload)
+			printf("%hhu\n", data[i]);
 		if (!state->accept_arbitrary_payload)
 			assert(data[i] == state->next_payload);
 		state->next_payload++;
@@ -1260,7 +1371,7 @@ static void *make_segment(struct workspace *ws, struct iip_tcp_conn *conn,
 		((uint8_t *) iip_ops_pkt_get_data(payload, opaque))[i] = (uint8_t) (first_value + i);
 	iip_ops_pkt_set_len(payload, len, opaque);
 	conn->seq_be = __iip_htonl(seq);
-	__iip_tcp_push(ws, conn, payload, 0, 1, 0, 0, 0, NULL, opaque);
+	__iip_tcp_push(ws, conn, payload, 0, 1, 0, 0, 0, NULL, 0, opaque);
 	out_p = conn->head[1][0];
 	assert(out_p == conn->head[1][1]);
 	__iip_dequeue_obj(conn->head[1], out_p, 0);
@@ -1598,7 +1709,8 @@ static int legacy_test_main(void)
 		{ /* send syn */
 			void *pkt[1];
 			{
-				__iip_tcp_push(&ws[0], &conn, NULL, 1, 0, 0, 0, 0, NULL, opaque);
+				__iip_tcp_push(&ws[0], &conn, NULL, 1, 0, 0, 0, 0,
+						NULL, 0, opaque);
 				{
 					struct pb *out_p = conn.head[1][0];
 					assert(out_p == conn.head[1][1]);
@@ -1631,7 +1743,8 @@ static int legacy_test_main(void)
 		{
 			void *pkt[1];
 			{
-				__iip_tcp_push(&ws[0], &conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
+				__iip_tcp_push(&ws[0], &conn, NULL, 0, 1, 0, 0, 0,
+						NULL, 0, opaque);
 				{
 					struct pb *out_p = conn.head[1][0];
 					assert(out_p == conn.head[1][1]);
@@ -1801,7 +1914,7 @@ static void *fixture_packet(struct fixture *f, uint8_t syn, uint16_t flags,
 		iip_ops_pkt_set_len(payload, payload_len, &f->state);
 	}
 	__iip_tcp_push(f->ws, &f->conn, payload, syn, !syn, 0, 0, flags,
-			NULL, &f->state);
+			NULL, 0, &f->state);
 	p = f->conn.head[1][0];
 	if (!p)
 		return NULL;
@@ -2528,7 +2641,7 @@ static enum result test_syn_failure_mechanism(const char **why)
 	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
 	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
 	__iip_tcp_push(f.ws, &f.conn, NULL, 1, 0, 0, 0, 0, NULL,
-			&f.state);
+			0, &f.state);
 	fixture_run_timers(&f);
 	tcp_pkt = output_nth_ethertype(&f.state, 0x0800, 0);
 	if (!f.conn.head[2][0] || output_count_ethertype(&f.state, 0x0800) != 1 ||
@@ -2588,7 +2701,7 @@ static enum result test_syn_retry_at_least_three_minutes(const char **why)
 	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
 	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
 	__iip_tcp_push(f.ws, &f.conn, NULL, 1, 0, 0, 0, 0, NULL,
-			&f.state);
+			0, &f.state);
 	fixture_run_timers(&f);
 	if (!f.conn.head[2][0] || output_count_ethertype(&f.state, 0x0800) != 1)
 		return RESULT_FAIL;
@@ -3518,6 +3631,54 @@ static enum result test_tcp_state_transition_coverage(const char **why)
 	return RESULT_PASS;
 }
 
+static enum result test_retransmitted_syn_ack_in_established(const char **why)
+{
+	const uint32_t peer_isn = 100;
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *ack;
+
+	if (!fixture_init(&f)) {
+		*why = "fixture initialization failed";
+		return RESULT_FAIL;
+	}
+
+	/*
+	 * Model an active OPEN whose final ACK was lost.  The peer retransmits
+	 * its SYN+ACK after this endpoint has already entered ESTABLISHED.
+	 */
+	f.conn.seq_next_expected = peer_isn + 1;
+	f.conn.ack_seq_be = __iip_htonl(peer_isn + 1);
+	f.conn.ack_seq_sent = peer_isn + 1;
+	fixture_incoming_spec(&f, &spec, peer_isn, NULL, 0);
+	spec.ack_seq = __iip_ntohl(f.conn.iss_be) + 1;
+	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+
+	if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED) {
+		*why = "retransmitted SYN+ACK changed the ESTABLISHED state";
+		return RESULT_FAIL;
+	}
+	if (f.conn.seq_next_expected != peer_isn + 1) {
+		*why = "retransmitted SYN+ACK consumed the SYN sequence twice";
+		return RESULT_FAIL;
+	}
+	if (output_count_ethertype(&f.state, 0x0800) != 1) {
+		*why = "retransmitted SYN+ACK did not produce exactly one response";
+		return RESULT_FAIL;
+	}
+	ack = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!ack || !PB_TCP_HDR_HAS_ACK(ack) || PB_TCP_HDR_HAS_SYN(ack) ||
+			PB_TCP_HDR_HAS_FIN(ack) || PB_TCP_HDR_HAS_RST(ack) ||
+			__iip_ntohl(PB_TCP(ack)->ack_seq_be) != peer_isn + 1) {
+		*why = "retransmitted SYN+ACK response was not the expected ACK";
+		return RESULT_FAIL;
+	}
+
+	free_output(&f.state);
+	return RESULT_PASS;
+}
+
 static enum result test_simultaneous_open(const char **why)
 {
 	struct fixture f;
@@ -3606,7 +3767,7 @@ static enum result test_default_send_mss(const char **why)
 	memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, 600);
 	iip_ops_pkt_set_len(payload, 600, &f.state);
 	__iip_tcp_push(f.ws, default_conn, payload, 0, 1, 0, 0, 0,
-			NULL, &f.state);
+			NULL, 0, &f.state);
 	for (p = default_conn->head[1][0]; p; p = p->next[0]) {
 		uint16_t len = PB_TCP_PAYLOAD_LEN(p->pkt);
 		if (count < 2)
@@ -3641,7 +3802,7 @@ static int effective_send_mss_scenario(uint16_t send_mss,
 	memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, total_payload);
 	iip_ops_pkt_set_len(payload, total_payload, &f.state);
 	__iip_tcp_push(f.ws, &f.conn, payload, 0, 1, 0, 0, 0,
-			NULL, &f.state);
+			NULL, 0, &f.state);
 
 	for (p = f.conn.head[1][0]; p; p = p->next[0]) {
 		uint16_t payload_len = PB_TCP_PAYLOAD_LEN(p->pkt);
@@ -3955,6 +4116,439 @@ static enum result test_passive_open_isolation(const char **why)
 			memcmp(listener_a, &listener_a_before,
 				sizeof(*listener_a)) != 0) {
 		*why = "independent passive OPEN records did not remain usable";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+	return RESULT_PASS;
+}
+
+static enum result test_tcp_fast_open_passive_data(const char **why)
+{
+	static const uint8_t payload[] = { 0x31, 0x32, 0x33, 0x34 };
+	const uint16_t cookie_peer_port_be = __iip_htons(21033);
+	const uint16_t peer_port_be = __iip_htons(21034);
+	const uint32_t syn_seq = 100;
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	struct iip_tcp_conn *child;
+	void *syn_ack, *cookie_option;
+	uint8_t cookie[16];
+	uint8_t cookie_len;
+	uint32_t syn_ack_seq;
+
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	f.state.accept_arbitrary_payload = 1;
+	if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
+			f.conn.local_port_be, 0, 0, NULL)) {
+		*why = "could not create the passive OPEN";
+		return RESULT_FAIL;
+	}
+
+	/* First obtain a server-generated cookie with an empty kind-34 option. */
+	fixture_incoming_spec(&f, &spec, syn_seq, NULL, 0);
+	spec.src_port_be = cookie_peer_port_be;
+	spec.tcp_flags = TEST_TCP_SYN;
+	tcp_packet_add_option(&spec, 34, NULL, 0);
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	syn_ack = output_nth_ethertype(&f.state, 0x0800, 0);
+	cookie_option = syn_ack ? option_find(syn_ack, 34) : NULL;
+	if (!syn_ack || !PB_TCP_HDR_HAS_SYN(syn_ack) ||
+			!PB_TCP_HDR_HAS_ACK(syn_ack) || !cookie_option ||
+			((uint8_t *)cookie_option)[1] < 6 ||
+			((uint8_t *)cookie_option)[1] > sizeof(cookie) + 2) {
+		*why = "cookie request did not produce a Fast Open cookie";
+		return RESULT_FAIL;
+	}
+	cookie_len = ((uint8_t *)cookie_option)[1] - 2;
+	memcpy(cookie, (uint8_t *)cookie_option + 2, cookie_len);
+	free_output(&f.state);
+	test_event_log_clear(&f.state);
+
+	/*
+	 * Reuse the issued cookie on a new connection.  A TFO-capable passive
+	 * endpoint accepts and delivers the SYN data before the third ACK.
+	 */
+	fixture_incoming_spec(&f, &spec, syn_seq, payload, sizeof(payload));
+	spec.src_port_be = peer_port_be;
+	spec.tcp_flags = TEST_TCP_SYN;
+	tcp_packet_add_option(&spec, 34, cookie, cookie_len);
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	child = fixture_find_peer_port(&f, peer_port_be);
+	syn_ack = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!child || child == &f.conn || !syn_ack ||
+			!PB_TCP_HDR_HAS_SYN(syn_ack) ||
+			!PB_TCP_HDR_HAS_ACK(syn_ack)) {
+		*why = "SYN data did not create a child and SYN+ACK";
+		return RESULT_FAIL;
+	}
+	syn_ack_seq = __iip_ntohl(PB_TCP(syn_ack)->seq_be);
+	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ACCEPTED) != 1 ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_PAYLOAD) != 1 ||
+			f.state.payload_byte_count != sizeof(payload)) {
+		*why = "SYN data was not accepted and delivered before the final ACK";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+
+	/* A retransmitted SYN must not repeat accept or payload delivery. */
+	fixture_incoming_spec(&f, &spec, syn_seq, payload, sizeof(payload));
+	spec.src_port_be = peer_port_be;
+	spec.tcp_flags = TEST_TCP_SYN;
+	tcp_packet_add_option(&spec, 34, cookie, cookie_len);
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ACCEPTED) != 1 ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_PAYLOAD) != 1 ||
+			f.state.payload_byte_count != sizeof(payload)) {
+		*why = "retransmitted SYN data was delivered more than once";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+
+	/* Complete the handshake without repeating the early callbacks. */
+	fixture_incoming_spec(&f, &spec, syn_seq + 1 + sizeof(payload),
+			NULL, 0);
+	spec.src_port_be = peer_port_be;
+	spec.ack_seq = syn_ack_seq + 1;
+	spec.tcp_flags = TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	if (child->state != __IIP_TCP_STATE_ESTABLISHED ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_ACCEPTED) != 1 ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_PAYLOAD) != 1 ||
+			f.state.payload_byte_count != sizeof(payload)) {
+		*why = "final ACK did not preserve one early accept and delivery";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+	return RESULT_PASS;
+}
+
+enum fastopen_rejected_option {
+	FASTOPEN_REJECT_NO_OPTION,
+	FASTOPEN_REJECT_REQUEST,
+	FASTOPEN_REJECT_INVALID_COOKIE,
+	FASTOPEN_REJECT_DUPLICATE_COOKIE,
+};
+
+static int test_fastopen_rejected_syn_data_case(
+		enum fastopen_rejected_option option, const char **why)
+{
+	static const uint8_t payload[] = { 0x41, 0x42, 0x43, 0x44 };
+	const uint16_t peer_port_be =
+			__iip_htons((uint16_t)(21100 + option));
+	const uint32_t syn_seq = 300;
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	struct iip_tcp_conn *child;
+	void *syn_ack;
+	uint8_t cookie[16];
+	uint8_t cookie_len;
+
+	if (!fixture_init(&f))
+		return 0;
+	f.state.accept_arbitrary_payload = 1;
+	if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
+			f.conn.local_port_be, 0, 0, NULL)) {
+		*why = "could not create the passive OPEN";
+		return 0;
+	}
+
+	fixture_incoming_spec(&f, &spec, syn_seq, payload, sizeof(payload));
+	spec.src_port_be = peer_port_be;
+	spec.tcp_flags = TEST_TCP_SYN;
+	if (option == FASTOPEN_REJECT_REQUEST) {
+		tcp_packet_add_option(&spec, 34, NULL, 0);
+	} else if (option == FASTOPEN_REJECT_INVALID_COOKIE) {
+		test_tcp_fastopen_request(spec.src_ip_be, spec.dst_ip_be,
+				cookie, &cookie_len);
+		assert(cookie_len);
+		cookie[0] ^= 0xffU;
+		tcp_packet_add_option(&spec, 34, cookie, cookie_len);
+	} else if (option == FASTOPEN_REJECT_DUPLICATE_COOKIE) {
+		test_tcp_fastopen_request(spec.src_ip_be, spec.dst_ip_be,
+				cookie, &cookie_len);
+		assert(cookie_len);
+		tcp_packet_add_option(&spec, 34, cookie, cookie_len);
+		tcp_packet_add_option(&spec, 34, cookie, cookie_len);
+	}
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+
+	child = fixture_find_peer_port(&f, peer_port_be);
+	syn_ack = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!child || child == &f.conn || !syn_ack ||
+			!PB_TCP_HDR_HAS_SYN(syn_ack) ||
+			!PB_TCP_HDR_HAS_ACK(syn_ack)) {
+		*why = "rejected SYN data did not produce a child and SYN+ACK";
+		return 0;
+	}
+	if (__iip_ntohl(PB_TCP(syn_ack)->ack_seq_be) != syn_seq + 1 ||
+			child->seq_next_expected != syn_seq + 1) {
+		*why = "rejected SYN data was consumed or acknowledged";
+		return 0;
+	}
+	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ACCEPTED) ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_PAYLOAD) ||
+			f.state.payload_byte_count) {
+		*why = "rejected SYN data reached the application";
+		return 0;
+	}
+	free_output(&f.state);
+	return 1;
+}
+
+static enum result test_tcp_fast_open_rejects_unvalidated_data(
+		const char **why)
+{
+	if (!test_fastopen_rejected_syn_data_case(
+			FASTOPEN_REJECT_NO_OPTION, why))
+		return RESULT_FAIL;
+	if (!test_fastopen_rejected_syn_data_case(
+			FASTOPEN_REJECT_REQUEST, why))
+		return RESULT_FAIL;
+	if (!test_fastopen_rejected_syn_data_case(
+			FASTOPEN_REJECT_INVALID_COOKIE, why))
+		return RESULT_FAIL;
+	return RESULT_PASS;
+}
+
+static enum result test_tcp_fast_open_rejects_duplicate_option(
+		const char **why)
+{
+	return test_fastopen_rejected_syn_data_case(
+			FASTOPEN_REJECT_DUPLICATE_COOKIE, why) ?
+			RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_tcp_fast_open_cookie_generation_disabled(
+		const char **why)
+{
+	const uint16_t peer_port_be = __iip_htons(21110);
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *syn_ack;
+
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
+			f.conn.local_port_be, 0, 0, NULL)) {
+		*why = "could not create the passive OPEN";
+		return RESULT_FAIL;
+	}
+
+	fixture_incoming_spec(&f, &spec, 400, NULL, 0);
+	spec.src_port_be = peer_port_be;
+	spec.tcp_flags = TEST_TCP_SYN;
+	tcp_packet_add_option(&spec, 34, NULL, 0);
+	_fastopen_cookie_len = 0;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	_fastopen_cookie_len = 16;
+
+	syn_ack = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!syn_ack || !PB_TCP_HDR_HAS_SYN(syn_ack) ||
+			!PB_TCP_HDR_HAS_ACK(syn_ack)) {
+		*why = "disabled cookie generation did not produce a SYN+ACK";
+		return RESULT_FAIL;
+	}
+	if (option_find(syn_ack, 34)) {
+		*why = "disabled cookie generation emitted a Fast Open option";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+	return RESULT_PASS;
+}
+
+static void *fastopen_test_payload(struct test_state *state,
+		const uint8_t *data, uint16_t len)
+{
+	void *pkt = iip_ops_pkt_alloc(state);
+	if (!pkt)
+		return NULL;
+	memcpy(iip_ops_pkt_get_data(pkt, state), data, len);
+	iip_ops_pkt_set_len(pkt, len, state);
+	return pkt;
+}
+
+static struct iip_tcp_conn *fixture_find_local_port(struct fixture *f,
+		uint16_t local_port_be)
+{
+	struct iip_tcp_conn *conn;
+	for (conn = f->ws->tcp.conns[0]; conn; conn = conn->next[0])
+		if (conn->local_port_be == local_port_be)
+			return conn;
+	return NULL;
+}
+
+static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
+{
+	static const uint8_t payload[] = { 0x61, 0x62, 0x63, 0x64 };
+	const uint16_t cookie_port_be = __iip_htons(21200);
+	const uint16_t data_port_be = __iip_htons(21201);
+	const uint16_t peer_port_be = __iip_htons(22000);
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	struct iip_tcp_conn *conn;
+	void *syn, *syn_ack, *syn_data, *payload_pkt;
+	uint8_t cookie[16], cookie_len, *option;
+	uint32_t client_isn;
+
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	memset(&_fastopen_saved_cookie, 0, sizeof(_fastopen_saved_cookie));
+
+	/* Obtain and save a cookie delivered in a SYN+ACK. */
+	if (iip_tcp_connect(f.ws, f.local_mac, f.conn.local_ip4_be,
+			cookie_port_be, f.peer_mac, f.conn.peer_ip4_be,
+			peer_port_be, &f.state)) {
+		*why = "ordinary active OPEN for cookie acquisition failed";
+		return RESULT_FAIL;
+	}
+	fixture_run_timers(&f);
+	syn = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!syn || !PB_TCP_HDR_HAS_SYN(syn) || PB_TCP_HDR_HAS_ACK(syn)) {
+		*why = "cookie acquisition did not emit a SYN";
+		return RESULT_FAIL;
+	}
+	client_isn = __iip_ntohl(PB_TCP(syn)->seq_be);
+	test_tcp_fastopen_request(f.conn.local_ip4_be, f.conn.peer_ip4_be,
+			cookie, &cookie_len);
+	tcp_packet_spec_init(&spec);
+	memcpy(spec.src_mac, f.peer_mac, sizeof(spec.src_mac));
+	memcpy(spec.dst_mac, f.local_mac, sizeof(spec.dst_mac));
+	spec.src_ip_be = f.conn.peer_ip4_be;
+	spec.dst_ip_be = f.conn.local_ip4_be;
+	spec.src_port_be = peer_port_be;
+	spec.dst_port_be = cookie_port_be;
+	spec.seq = 500;
+	spec.ack_seq = client_isn + 1;
+	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+	tcp_packet_add_option(&spec, 34, cookie, cookie_len);
+	syn_ack = build_tcp_packet(&spec, &f.state);
+	fixture_deliver(&f, syn_ack);
+	conn = fixture_find_local_port(&f, cookie_port_be);
+	if (!conn || conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+			_fastopen_saved_cookie.len != cookie_len ||
+			_fastopen_saved_cookie.peer_ip4_be != f.conn.peer_ip4_be ||
+			_fastopen_saved_cookie.local_ip4_be != f.conn.local_ip4_be ||
+			memcmp(_fastopen_saved_cookie.buf, cookie, cookie_len)) {
+		*why = "SYN+ACK Fast Open cookie was not saved by the application";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+
+	/* Reuse the saved cookie and verify active SYN data is acknowledged. */
+	payload_pkt = fastopen_test_payload(&f.state, payload, sizeof(payload));
+	if (!payload_pkt || __iip_tcp_fast_open(f.ws, f.local_mac,
+			f.conn.local_ip4_be, data_port_be, f.peer_mac,
+			f.conn.peer_ip4_be, peer_port_be, payload_pkt,
+			_fastopen_saved_cookie.buf, _fastopen_saved_cookie.len,
+			&f.state)) {
+		*why = "active Fast Open with the saved cookie failed";
+		return RESULT_FAIL;
+	}
+	fixture_run_timers(&f);
+	syn_data = output_nth_ethertype(&f.state, 0x0800, 0);
+	option = syn_data ? option_find(syn_data, 34) : NULL;
+	if (!syn_data || !PB_TCP_HDR_HAS_SYN(syn_data) ||
+			PB_TCP_PAYLOAD_LEN(syn_data) != sizeof(payload) ||
+			memcmp(PB_TCP_PAYLOAD(syn_data), payload, sizeof(payload)) ||
+			!option || option[1] != cookie_len + 2 ||
+			memcmp(&option[2], cookie, cookie_len) ||
+			!ip4_checksum_valid(syn_data) || !checksum_valid(syn_data)) {
+		*why = "active Fast Open SYN did not contain valid cookie and data";
+		return RESULT_FAIL;
+	}
+	client_isn = __iip_ntohl(PB_TCP(syn_data)->seq_be);
+	free_output(&f.state);
+
+	tcp_packet_spec_init(&spec);
+	memcpy(spec.src_mac, f.peer_mac, sizeof(spec.src_mac));
+	memcpy(spec.dst_mac, f.local_mac, sizeof(spec.dst_mac));
+	spec.src_ip_be = f.conn.peer_ip4_be;
+	spec.dst_ip_be = f.conn.local_ip4_be;
+	spec.src_port_be = peer_port_be;
+	spec.dst_port_be = data_port_be;
+	spec.seq = 600;
+	spec.ack_seq = client_isn + 1 + sizeof(payload);
+	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	conn = fixture_find_local_port(&f, data_port_be);
+	if (!conn || conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CONNECTED) < 2) {
+		*why = "acknowledged active Fast Open did not establish the connection";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
+	return RESULT_PASS;
+}
+
+static enum result test_tcp_fast_open_active_rejection_fallback(
+		const char **why)
+{
+	static const uint8_t payload[] = { 0x71, 0x72, 0x73, 0x74 };
+	const uint16_t local_port_be = __iip_htons(21202);
+	const uint16_t peer_port_be = __iip_htons(22000);
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	struct iip_tcp_conn *conn;
+	void *payload_pkt, *syn_data, *fallback;
+	uint8_t cookie[16], cookie_len;
+	uint32_t client_isn;
+
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	test_tcp_fastopen_request(f.conn.local_ip4_be, f.conn.peer_ip4_be,
+			cookie, &cookie_len);
+	payload_pkt = fastopen_test_payload(&f.state, payload, sizeof(payload));
+	if (!payload_pkt || __iip_tcp_fast_open(f.ws, f.local_mac,
+			f.conn.local_ip4_be, local_port_be, f.peer_mac,
+			f.conn.peer_ip4_be, peer_port_be, payload_pkt, cookie,
+			cookie_len, &f.state)) {
+		*why = "active Fast Open setup for rejection failed";
+		return RESULT_FAIL;
+	}
+	fixture_run_timers(&f);
+	syn_data = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!syn_data || !PB_TCP_HDR_HAS_SYN(syn_data)) {
+		*why = "active Fast Open did not emit SYN data";
+		return RESULT_FAIL;
+	}
+	client_isn = __iip_ntohl(PB_TCP(syn_data)->seq_be);
+	free_output(&f.state);
+
+	/* ACK only the SYN, forcing the data to be retransmitted without SYN. */
+	tcp_packet_spec_init(&spec);
+	memcpy(spec.src_mac, f.peer_mac, sizeof(spec.src_mac));
+	memcpy(spec.dst_mac, f.local_mac, sizeof(spec.dst_mac));
+	spec.src_ip_be = f.conn.peer_ip4_be;
+	spec.dst_ip_be = f.conn.local_ip4_be;
+	spec.src_port_be = peer_port_be;
+	spec.dst_port_be = local_port_be;
+	spec.seq = 700;
+	spec.ack_seq = client_isn + 1;
+	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	fallback = output_nth_ethertype(&f.state, 0x0800, 0);
+	if (!fallback) {
+		fixture_run_timers(&f);
+		fallback = output_nth_ethertype(&f.state, 0x0800, 0);
+	}
+	conn = fixture_find_local_port(&f, local_port_be);
+	if (!conn || conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+			!fallback || PB_TCP_HDR_HAS_SYN(fallback) ||
+			__iip_ntohl(PB_TCP(fallback)->seq_be) != client_isn + 1 ||
+			PB_TCP_PAYLOAD_LEN(fallback) != sizeof(payload) ||
+			memcmp(PB_TCP_PAYLOAD(fallback), payload, sizeof(payload)) ||
+			!ip4_checksum_valid(fallback) || !checksum_valid(fallback)) {
+		*why = "rejected SYN data was not retransmitted as valid normal data";
 		return RESULT_FAIL;
 	}
 	free_output(&f.state);
@@ -5063,7 +5657,7 @@ static enum result test_passive_return_route(const char **why)
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	free_output(&f.state);
 	__iip_tcp_push(f.ws, child, NULL, 0, 1, 0, 0, 0, NULL,
-			&f.state);
+			0, &f.state);
 	fixture_run_timers(&f);
 	if (!child->opaque || f.state.out_cnt != 1 ||
 			!test_packet_has_source_route(f.state.out[0],
@@ -7243,6 +7837,2279 @@ static void arp_path_self_test(void)
 	free_output(&f.state);
 }
 
+#ifdef IIP_LWIP_INTEROP
+#define LWIP_WIRE_QUEUE_MAX 128
+#define LWIP_WIRE_FRAME_MAX 2048
+#define INTEROP_RULE_MAX 8
+#define INTEROP_MAX_STEPS 512
+#define INTEROP_TRACE_MAX 64
+#define INTEROP_PCAP_MAX 256
+
+enum wire_direction {
+	WIRE_IIP_TO_LWIP,
+	WIRE_LWIP_TO_IIP,
+};
+
+enum impairment_action {
+	IMPAIR_PASS,
+	IMPAIR_DROP,
+	IMPAIR_DELAY,
+	IMPAIR_DUPLICATE,
+	IMPAIR_REORDER,
+	IMPAIR_CORRUPT,
+	IMPAIR_FRAGMENT,
+	IMPAIR_INJECT_ICMP,
+};
+
+enum corrupt_field {
+	CORRUPT_NONE,
+	CORRUPT_IP4_CHECKSUM,
+	CORRUPT_IP4_TOTAL_LENGTH,
+	CORRUPT_TCP_CHECKSUM,
+	CORRUPT_UDP_CHECKSUM,
+	CORRUPT_TCP_SEQUENCE,
+	CORRUPT_TCP_WINDOW,
+};
+
+struct lwip_wire_frame {
+	uint16_t len;
+	uint8_t data[LWIP_WIRE_FRAME_MAX];
+};
+
+struct scheduled_wire_frame {
+	struct lwip_wire_frame frame;
+	enum wire_direction direction;
+	uint64_t deliver_at_ms;
+	uint64_t release_after_capture;
+};
+
+struct frame_metadata {
+	uint8_t valid_ip4;
+	uint16_t ethertype;
+	uint8_t ip_protocol;
+	uint8_t tcp_flags;
+	uint32_t tcp_seq;
+	uint16_t tcp_payload_len;
+	uint16_t arp_operation;
+};
+
+struct impairment_rule {
+	uint32_t id;
+	uint8_t disabled;
+	enum wire_direction direction;
+	enum impairment_action action;
+	uint16_t ethertype;
+	uint8_t ip_protocol;
+	uint8_t tcp_flags_required;
+	uint8_t tcp_flags_forbidden;
+	uint16_t min_tcp_payload;
+	uint16_t arp_operation;
+	uint32_t apply_from;
+	uint32_t apply_count;
+	uint32_t match_count;
+	uint32_t applied_count;
+	uint32_t delay_ms;
+	uint16_t duplicate_count;
+	uint16_t reorder_after;
+	enum corrupt_field corrupt_field;
+	int32_t corrupt_delta;
+	uint8_t recalculate_checksum;
+	uint16_t fragment_split;
+	uint8_t fragment_parts;
+	int8_t fragment_drop;
+	int8_t fragment_duplicate;
+	uint8_t fragment_reverse;
+	uint16_t fragment_overlap;
+	uint8_t fragment_conflict;
+	uint8_t icmp_type;
+	uint8_t icmp_code;
+	uint16_t icmp_mtu;
+	uint8_t drop_original;
+};
+
+struct interop_env;
+
+struct lwip_peer {
+	struct netif netif;
+	struct lwip_wire_frame tx[LWIP_WIRE_QUEUE_MAX];
+	unsigned int tx_head;
+	unsigned int tx_count;
+	uint8_t udp_data[64];
+	uint16_t udp_len;
+	uint8_t udp_first_byte[128];
+	unsigned int udp_count;
+	uint8_t tcp_data[64];
+	uint16_t tcp_len;
+	struct tcp_pcb *accepted;
+	unsigned int accept_count;
+	unsigned int eof_count;
+	struct interop_env *env;
+};
+
+struct lwip_tcp_snapshot {
+	enum tcp_state state;
+	uint8_t nrtx;
+	int16_t rto;
+	tcpwnd_size_t cwnd;
+	tcpwnd_size_t ssthresh;
+	tcpwnd_size_t snd_wnd;
+	tcpwnd_size_t rcv_wnd;
+	uint8_t persist_probe;
+	uint8_t has_unacked;
+	uint8_t has_unsent;
+	uint8_t has_ooseq;
+};
+
+struct interop_trace_event {
+	uint64_t at_ms;
+	uint64_t frame_id;
+	enum wire_direction direction;
+	enum impairment_action action;
+	uint32_t rule_id;
+	uint16_t ethertype;
+	uint8_t ip_protocol;
+	uint8_t tcp_flags;
+	uint32_t tcp_seq;
+	uint16_t payload_len;
+};
+
+static struct interop_trace_event interop_failure_trace[INTEROP_TRACE_MAX];
+static unsigned int interop_failure_trace_count;
+static uint32_t interop_failure_seed;
+static const char *interop_pcap_path;
+static uint8_t interop_pcap_single;
+
+struct interop_pcap_frame {
+	uint64_t at_ms;
+	uint16_t len;
+	uint8_t data[LWIP_WIRE_FRAME_MAX];
+};
+
+static struct interop_pcap_frame interop_pcap_frames[INTEROP_PCAP_MAX];
+static unsigned int interop_pcap_count;
+
+struct interop_env {
+	struct fixture iip;
+	struct lwip_peer lwip;
+	struct impairment_rule rules[INTEROP_RULE_MAX];
+	unsigned int rule_count;
+	uint64_t now_ms;
+	uint64_t captured_frames;
+	uint64_t captured_by_direction[2];
+	uint64_t delivered_frames;
+	uint64_t dropped_frames;
+	struct scheduled_wire_frame scheduled[LWIP_WIRE_QUEUE_MAX];
+	unsigned int scheduled_count;
+};
+
+static err_t lwip_peer_linkoutput(struct netif *netif, struct pbuf *p)
+{
+	struct lwip_peer *peer = netif->state;
+	struct lwip_wire_frame *frame;
+
+	assert(peer->tx_count < LWIP_WIRE_QUEUE_MAX);
+	assert(p->tot_len <= LWIP_WIRE_FRAME_MAX);
+	frame = &peer->tx[(peer->tx_head + peer->tx_count) %
+			LWIP_WIRE_QUEUE_MAX];
+	frame->len = p->tot_len;
+	assert(pbuf_copy_partial(p, frame->data, frame->len, 0) == frame->len);
+	peer->tx_count++;
+	return ERR_OK;
+}
+
+static err_t lwip_peer_netif_init(struct netif *netif)
+{
+	static const uint8_t mac[6] = { 0x04, 0, 0, 0, 0, 0 };
+
+	netif->name[0] = 'l';
+	netif->name[1] = 'w';
+	netif->output = etharp_output;
+	netif->linkoutput = lwip_peer_linkoutput;
+	netif->mtu = 1500;
+	netif->hwaddr_len = ETH_HWADDR_LEN;
+	memcpy(netif->hwaddr, mac, sizeof(mac));
+	netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP |
+			NETIF_FLAG_ETHERNET | NETIF_FLAG_LINK_UP;
+	return ERR_OK;
+}
+
+static void lwip_peer_init(struct lwip_peer *peer, struct interop_env *env)
+{
+	ip4_addr_t ip, mask, gateway;
+
+	memset(peer, 0, sizeof(*peer));
+	peer->env = env;
+	IP4_ADDR(&ip, 198, 51, 100, 2);
+	IP4_ADDR(&mask, 0, 0, 0, 0);
+	IP4_ADDR(&gateway, 0, 0, 0, 0);
+	assert(netif_add(&peer->netif, &ip, &mask, &gateway, peer,
+			lwip_peer_netif_init, ethernet_input));
+	netif_set_default(&peer->netif);
+	netif_set_up(&peer->netif);
+	netif_set_link_up(&peer->netif);
+}
+
+static uint16_t interop_read_be16(const uint8_t *data)
+{
+	return (uint16_t)((uint16_t)data[0] << 8 | data[1]);
+}
+
+static void interop_write_be16(uint8_t *data, uint16_t value)
+{
+	data[0] = (uint8_t)(value >> 8);
+	data[1] = (uint8_t)value;
+}
+
+static uint32_t interop_read_be32(const uint8_t *data)
+{
+	return (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 |
+		(uint32_t)data[2] << 8 | data[3];
+}
+
+static void interop_write_be32(uint8_t *data, uint32_t value)
+{
+	data[0] = (uint8_t)(value >> 24);
+	data[1] = (uint8_t)(value >> 16);
+	data[2] = (uint8_t)(value >> 8);
+	data[3] = (uint8_t)value;
+}
+
+static uint32_t interop_checksum_add(uint32_t sum, const uint8_t *data,
+		uint16_t len)
+{
+	while (len > 1) {
+		sum += interop_read_be16(data);
+		data += 2;
+		len -= 2;
+	}
+	if (len)
+		sum += (uint16_t)data[0] << 8;
+	return sum;
+}
+
+static uint16_t interop_checksum_finish(uint32_t sum)
+{
+	while (sum >> 16)
+		sum = (sum & 0xffffU) + (sum >> 16);
+	return (uint16_t)~sum;
+}
+
+static void interop_recalculate_ip4_checksum(uint8_t *data, uint16_t len)
+{
+	uint16_t ip_header_len;
+
+	assert(len >= 34);
+	ip_header_len = (uint16_t)(data[14] & 0x0fU) * 4;
+	assert(ip_header_len >= 20 && len >= 14 + ip_header_len);
+	data[24] = data[25] = 0;
+	interop_write_be16(&data[24], interop_checksum_finish(
+			interop_checksum_add(0, &data[14], ip_header_len)));
+}
+
+static void interop_recalculate_transport_checksum(uint8_t *data,
+		uint16_t len)
+{
+	uint16_t ip_header_len, ip_total_len, l4_len, checksum_offset;
+	uint8_t *l4;
+	uint32_t sum = 0;
+
+	assert(len >= 34);
+	ip_header_len = (uint16_t)(data[14] & 0x0fU) * 4;
+	ip_total_len = interop_read_be16(&data[16]);
+	assert(ip_header_len >= 20 && ip_total_len >= ip_header_len &&
+			len >= 14 + ip_total_len);
+	l4_len = ip_total_len - ip_header_len;
+	l4 = &data[14 + ip_header_len];
+	checksum_offset = data[23] == 6 ? 16 : 6;
+	assert((data[23] == 6 || data[23] == 17) &&
+			l4_len >= checksum_offset + 2);
+	l4[checksum_offset] = l4[checksum_offset + 1] = 0;
+	sum = interop_checksum_add(sum, &data[26], 8);
+	sum += data[23];
+	sum += l4_len;
+	sum = interop_checksum_add(sum, l4, l4_len);
+	interop_write_be16(&l4[checksum_offset],
+			interop_checksum_finish(sum));
+}
+
+static void interop_corrupt_frame(struct lwip_wire_frame *frame,
+		const struct impairment_rule *rule)
+{
+	uint8_t *data = frame->data;
+	uint16_t ip_header_len;
+
+	assert(frame->len >= 34 && interop_read_be16(&data[12]) == 0x0800);
+	ip_header_len = (uint16_t)(data[14] & 0x0fU) * 4;
+	assert(ip_header_len >= 20 && frame->len >= 14 + ip_header_len);
+	switch (rule->corrupt_field) {
+	case CORRUPT_IP4_CHECKSUM:
+		data[25] ^= 1;
+		break;
+	case CORRUPT_IP4_TOTAL_LENGTH:
+		interop_write_be16(&data[16],
+				(uint16_t)(interop_read_be16(&data[16]) +
+				(rule->corrupt_delta ? rule->corrupt_delta : 1)));
+		interop_recalculate_ip4_checksum(data, frame->len);
+		break;
+	case CORRUPT_TCP_CHECKSUM:
+		assert(data[23] == 6);
+		data[14 + ip_header_len + 17] ^= 1;
+		break;
+	case CORRUPT_UDP_CHECKSUM:
+		assert(data[23] == 17);
+		data[14 + ip_header_len + 7] ^= 1;
+		break;
+	case CORRUPT_TCP_SEQUENCE:
+		assert(data[23] == 6);
+		interop_write_be32(&data[14 + ip_header_len + 4],
+				interop_read_be32(&data[14 + ip_header_len + 4]) +
+				rule->corrupt_delta);
+		break;
+	case CORRUPT_TCP_WINDOW:
+		assert(data[23] == 6);
+		interop_write_be16(&data[14 + ip_header_len + 14],
+				(uint16_t)rule->corrupt_delta);
+		break;
+	default:
+		assert(0);
+	}
+	if (rule->recalculate_checksum)
+		interop_recalculate_transport_checksum(data, frame->len);
+}
+
+static void interop_parse_frame(const uint8_t *data, uint16_t len,
+		struct frame_metadata *meta)
+{
+	uint16_t ip_header_len, ip_total_len, tcp_header_len;
+
+	memset(meta, 0, sizeof(*meta));
+	if (len < 14)
+		return;
+	meta->ethertype = interop_read_be16(&data[12]);
+	if (meta->ethertype == 0x0806) {
+		if (len >= 22)
+			meta->arp_operation = interop_read_be16(&data[20]);
+		return;
+	}
+	if (meta->ethertype != 0x0800 || len < 34 ||
+			(data[14] >> 4) != 4)
+		return;
+	ip_header_len = (uint16_t)(data[14] & 0x0fU) * 4;
+	if (ip_header_len < 20 || len < 14 + ip_header_len)
+		return;
+	ip_total_len = interop_read_be16(&data[16]);
+	if (ip_total_len < ip_header_len || len < 14 + ip_total_len)
+		return;
+	meta->valid_ip4 = 1;
+	meta->ip_protocol = data[23];
+	if (meta->ip_protocol != 6 ||
+			ip_total_len < ip_header_len + 20)
+		return;
+	meta->tcp_flags = data[14 + ip_header_len + 13];
+	meta->tcp_seq = interop_read_be32(&data[14 + ip_header_len + 4]);
+	tcp_header_len =
+		(uint16_t)(data[14 + ip_header_len + 12] >> 4) * 4;
+	if (tcp_header_len >= 20 &&
+			ip_total_len >= ip_header_len + tcp_header_len)
+		meta->tcp_payload_len =
+			ip_total_len - ip_header_len - tcp_header_len;
+}
+
+static void interop_trace_frame(struct interop_env *env,
+		enum wire_direction direction, const uint8_t *data, uint16_t len,
+		const struct impairment_rule *rule)
+{
+	struct frame_metadata meta;
+	struct interop_trace_event *event;
+
+	interop_parse_frame(data, len, &meta);
+	if (interop_failure_trace_count == INTEROP_TRACE_MAX) {
+		memmove(&interop_failure_trace[0], &interop_failure_trace[1],
+				(INTEROP_TRACE_MAX - 1) *
+				sizeof(interop_failure_trace[0]));
+		interop_failure_trace_count--;
+	}
+	event = &interop_failure_trace[interop_failure_trace_count++];
+	memset(event, 0, sizeof(*event));
+	event->at_ms = env->now_ms;
+	event->frame_id = env->captured_frames;
+	event->direction = direction;
+	event->action = rule ? rule->action : IMPAIR_PASS;
+	event->rule_id = rule ? rule->id : 0;
+	event->ethertype = meta.ethertype;
+	event->ip_protocol = meta.ip_protocol;
+	event->tcp_flags = meta.tcp_flags;
+	event->tcp_seq = meta.tcp_seq;
+	event->payload_len = meta.tcp_payload_len;
+}
+
+static void interop_dump_failure_trace(const char *test_name)
+{
+	unsigned int i;
+
+	fprintf(stderr, "# failure trace: test=%s seed=0x%08x events=%u\n",
+			test_name, interop_failure_seed,
+			interop_failure_trace_count);
+	for (i = 0; i < interop_failure_trace_count; i++) {
+		const struct interop_trace_event *event =
+			&interop_failure_trace[i];
+		fprintf(stderr, "# t=%llu frame=%llu dir=%s action=%u "
+				"rule=%u eth=0x%04x proto=%u flags=0x%02x "
+				"seq=%u payload=%u\n",
+				(unsigned long long)event->at_ms,
+				(unsigned long long)event->frame_id,
+				event->direction == WIRE_IIP_TO_LWIP ?
+					"iip->lwip" : "lwip->iip",
+				event->action, event->rule_id,
+				event->ethertype, event->ip_protocol,
+				event->tcp_flags, event->tcp_seq,
+				event->payload_len);
+	}
+}
+
+static int interop_write_pcap(const char *test_name)
+{
+	struct {
+		uint32_t magic;
+		uint16_t major;
+		uint16_t minor;
+		int32_t zone;
+		uint32_t sigfigs;
+		uint32_t snaplen;
+		uint32_t network;
+	} header = {
+		0xa1b2c3d4U, 2, 4, 0, 0, LWIP_WIRE_FRAME_MAX, 1,
+	};
+	char path[1024], id[128];
+	FILE *file;
+	unsigned int i, id_len = 0;
+
+	if (!interop_pcap_path || !*interop_pcap_path)
+		return 1;
+	while (test_name[id_len] && test_name[id_len] != ' ' &&
+			id_len + 1 < sizeof(id)) {
+		char c = test_name[id_len];
+		id[id_len++] = (isalnum((unsigned char)c) || c == '-' ||
+				c == '_' || c == '.') ? c : '_';
+	}
+	id[id_len] = '\0';
+	if (interop_pcap_single)
+		snprintf(path, sizeof(path), "%s", interop_pcap_path);
+	else
+		snprintf(path, sizeof(path), "%s.%s.pcap",
+				interop_pcap_path, id);
+	file = fopen(path, "wb");
+	if (!file) {
+		fprintf(stderr, "cannot write pcap %s: %s\n", path,
+				strerror(errno));
+		return 0;
+	}
+	if (fwrite(&header, sizeof(header), 1, file) != 1)
+		goto write_error;
+	for (i = 0; i < interop_pcap_count; i++) {
+		const struct interop_pcap_frame *frame =
+			&interop_pcap_frames[i];
+		uint32_t record[4] = {
+			(uint32_t)(frame->at_ms / 1000),
+			(uint32_t)(frame->at_ms % 1000) * 1000,
+			frame->len, frame->len,
+		};
+		if (fwrite(record, sizeof(record), 1, file) != 1 ||
+				fwrite(frame->data, frame->len, 1, file) != 1)
+			goto write_error;
+	}
+	if (fclose(file)) {
+		fprintf(stderr, "cannot close pcap %s: %s\n", path,
+				strerror(errno));
+		return 0;
+	}
+	fprintf(stderr, "# pcap: %s (%u frames)\n", path,
+			interop_pcap_count);
+	return 1;
+
+write_error:
+	fprintf(stderr, "cannot write pcap %s: %s\n", path,
+			strerror(errno));
+	fclose(file);
+	return 0;
+}
+
+static struct impairment_rule *interop_matching_rule(
+		struct interop_env *env, enum wire_direction direction,
+		const uint8_t *data, uint16_t len)
+{
+	struct frame_metadata meta;
+	unsigned int i;
+
+	interop_parse_frame(data, len, &meta);
+	for (i = 0; i < env->rule_count; i++) {
+		struct impairment_rule *rule = &env->rules[i];
+		if (rule->disabled || rule->direction != direction ||
+				(rule->ethertype &&
+				 rule->ethertype != meta.ethertype) ||
+				(rule->ip_protocol &&
+				 rule->ip_protocol != meta.ip_protocol) ||
+				((meta.tcp_flags & rule->tcp_flags_required) !=
+				 rule->tcp_flags_required) ||
+				(meta.tcp_flags & rule->tcp_flags_forbidden) ||
+				(rule->min_tcp_payload &&
+				 meta.tcp_payload_len < rule->min_tcp_payload) ||
+				(rule->arp_operation &&
+				 rule->arp_operation != meta.arp_operation))
+			continue;
+		rule->match_count++;
+		if (rule->match_count < rule->apply_from ||
+				(rule->apply_count &&
+				 rule->applied_count >= rule->apply_count))
+			continue;
+		rule->applied_count++;
+		return rule;
+	}
+	return NULL;
+}
+
+static void interop_deliver_frame(struct interop_env *env,
+		enum wire_direction direction, const struct lwip_wire_frame *frame)
+{
+	if (interop_pcap_count < INTEROP_PCAP_MAX) {
+		struct interop_pcap_frame *captured =
+			&interop_pcap_frames[interop_pcap_count++];
+		captured->at_ms = env->now_ms;
+		captured->len = frame->len;
+		memcpy(captured->data, frame->data, frame->len);
+	}
+	if (direction == WIRE_IIP_TO_LWIP) {
+		struct pbuf *p = pbuf_alloc(PBUF_RAW, frame->len, PBUF_RAM);
+		assert(p);
+		assert(pbuf_take(p, frame->data, frame->len) == ERR_OK);
+		assert(env->lwip.netif.input(p, &env->lwip.netif) == ERR_OK);
+	} else {
+		struct fixture *f = &env->iip;
+		void *pkt = iip_ops_pkt_alloc(&f->state);
+		assert(pkt);
+		memcpy(iip_ops_pkt_get_data(pkt, &f->state), frame->data,
+				frame->len);
+		iip_ops_pkt_set_len(pkt, frame->len, &f->state);
+		fixture_deliver(f, pkt);
+	}
+	env->delivered_frames++;
+}
+
+static void interop_fragment_frame(struct interop_env *env,
+		enum wire_direction direction, const struct lwip_wire_frame *frame,
+		const struct impairment_rule *rule)
+{
+	struct lwip_wire_frame fragment[4];
+	const uint8_t *data = frame->data;
+	uint16_t ip_header_len, ip_total_len, ip_payload_len, split, offset;
+	unsigned int order[4], fragment_count, i;
+
+	assert(frame->len >= 34 && interop_read_be16(&data[12]) == 0x0800);
+	ip_header_len = (uint16_t)(data[14] & 0x0fU) * 4;
+	ip_total_len = interop_read_be16(&data[16]);
+	assert(ip_header_len >= 20 && ip_total_len >= ip_header_len);
+	assert(frame->len >= 14 + ip_total_len);
+	ip_payload_len = ip_total_len - ip_header_len;
+	split = rule->fragment_split;
+	assert(split >= 8 && (split & 7U) == 0 && split < ip_payload_len);
+	fragment_count = rule->fragment_parts ? rule->fragment_parts : 2;
+	assert(fragment_count >= 2 && fragment_count <= ARRAY_LENGTH(fragment));
+	assert((fragment_count - 1) * split < ip_payload_len);
+	assert((rule->fragment_overlap & 7U) == 0 &&
+			rule->fragment_overlap < split);
+	assert(!rule->fragment_overlap || fragment_count == 2);
+
+	memset(fragment, 0, sizeof(fragment));
+	for (i = 0; i < fragment_count; i++) {
+		uint16_t payload_len;
+		uint16_t fragment_field;
+
+		offset = i * split;
+		if (i == 1 && rule->fragment_overlap)
+			offset -= rule->fragment_overlap;
+		payload_len = i + 1 < fragment_count ? split :
+			ip_payload_len - offset;
+		fragment[i].len = 14 + ip_header_len + payload_len;
+		memcpy(fragment[i].data, data, 14 + ip_header_len);
+		memcpy(&fragment[i].data[14 + ip_header_len],
+				&data[14 + ip_header_len + offset], payload_len);
+		if (i == 1 && rule->fragment_conflict &&
+				rule->fragment_overlap)
+			fragment[i].data[14 + ip_header_len] ^= 0xffU;
+		interop_write_be16(&fragment[i].data[16],
+				ip_header_len + payload_len);
+		fragment_field = offset / 8;
+		if (i + 1 < fragment_count)
+			fragment_field |= 0x2000;
+		interop_write_be16(&fragment[i].data[20], fragment_field);
+		interop_recalculate_ip4_checksum(fragment[i].data,
+				fragment[i].len);
+		order[i] = rule->fragment_reverse ?
+			fragment_count - i - 1 : i;
+	}
+
+	for (i = 0; i < fragment_count; i++) {
+		unsigned int index = order[i];
+		if (rule->fragment_drop == (int8_t)index) {
+			env->dropped_frames++;
+			continue;
+		}
+		interop_deliver_frame(env, direction, &fragment[index]);
+		if (rule->fragment_duplicate == (int8_t)(index + 1))
+			interop_deliver_frame(env, direction, &fragment[index]);
+	}
+}
+
+static void interop_inject_icmp_error(struct interop_env *env,
+		enum wire_direction original_direction,
+		const struct lwip_wire_frame *original,
+		const struct impairment_rule *rule)
+{
+	struct lwip_wire_frame error;
+	uint8_t *out = error.data;
+	const uint8_t *in = original->data;
+	const uint16_t quoted_len = 28;
+	const uint16_t icmp_len = 8 + quoted_len;
+	const uint16_t ip_len = 20 + icmp_len;
+	enum wire_direction error_direction;
+
+	assert(original->len >= 14 + quoted_len);
+	assert(interop_read_be16(&in[12]) == 0x0800);
+	memset(&error, 0, sizeof(error));
+	error.len = 14 + ip_len;
+	memcpy(&out[0], &in[6], 6);
+	memcpy(&out[6], &in[0], 6);
+	interop_write_be16(&out[12], 0x0800);
+	out[14] = 0x45;
+	interop_write_be16(&out[16], ip_len);
+	interop_write_be16(&out[18], 0x7a11);
+	out[22] = 64;
+	out[23] = 1;
+	memcpy(&out[26], &in[30], 4);
+	memcpy(&out[30], &in[26], 4);
+	interop_recalculate_ip4_checksum(out, error.len);
+
+	out[34] = rule->icmp_type;
+	out[35] = rule->icmp_code;
+	if (rule->icmp_type == 3 && rule->icmp_code == 4)
+		interop_write_be16(&out[40], rule->icmp_mtu);
+	memcpy(&out[42], &in[14], quoted_len);
+	interop_write_be16(&out[36], interop_checksum_finish(
+			interop_checksum_add(0, &out[34], icmp_len)));
+	error_direction = original_direction == WIRE_IIP_TO_LWIP ?
+			WIRE_LWIP_TO_IIP : WIRE_IIP_TO_LWIP;
+	interop_deliver_frame(env, error_direction, &error);
+}
+
+static void interop_schedule_frame(struct interop_env *env,
+		enum wire_direction direction, const uint8_t *data, uint16_t len,
+		uint64_t deliver_at_ms, uint64_t release_after_capture)
+{
+	struct scheduled_wire_frame *scheduled;
+
+	assert(env->scheduled_count < LWIP_WIRE_QUEUE_MAX);
+	assert(len <= LWIP_WIRE_FRAME_MAX);
+	scheduled = &env->scheduled[env->scheduled_count++];
+	memset(scheduled, 0, sizeof(*scheduled));
+	scheduled->direction = direction;
+	scheduled->deliver_at_ms = deliver_at_ms;
+	scheduled->release_after_capture = release_after_capture;
+	scheduled->frame.len = len;
+	memcpy(scheduled->frame.data, data, len);
+}
+
+static void interop_deliver_scheduled(struct interop_env *env)
+{
+	unsigned int i = 0;
+
+	while (i < env->scheduled_count) {
+		struct scheduled_wire_frame scheduled = env->scheduled[i];
+		if (scheduled.deliver_at_ms > env->now_ms ||
+				scheduled.release_after_capture >
+					env->captured_by_direction[
+						scheduled.direction]) {
+			i++;
+			continue;
+		}
+		memmove(&env->scheduled[i], &env->scheduled[i + 1],
+				(--env->scheduled_count - i) *
+				sizeof(env->scheduled[0]));
+		interop_deliver_frame(env, scheduled.direction,
+				&scheduled.frame);
+	}
+}
+
+static int interop_scheduled_ready(const struct interop_env *env)
+{
+	unsigned int i;
+	for (i = 0; i < env->scheduled_count; i++)
+		if (env->scheduled[i].deliver_at_ms <= env->now_ms &&
+				env->scheduled[i].release_after_capture <=
+					env->captured_by_direction[
+						env->scheduled[i].direction])
+			return 1;
+	return 0;
+}
+
+static void interop_route_frame(struct interop_env *env,
+		enum wire_direction direction, const uint8_t *data, uint16_t len)
+{
+	struct impairment_rule *rule;
+	struct lwip_wire_frame frame;
+	unsigned int i;
+
+	assert(len <= sizeof(frame.data));
+	frame.len = len;
+	memcpy(frame.data, data, len);
+	env->captured_frames++;
+	env->captured_by_direction[direction]++;
+	rule = interop_matching_rule(env, direction, data, len);
+	interop_trace_frame(env, direction, data, len, rule);
+	if (!rule || rule->action == IMPAIR_PASS) {
+		interop_deliver_frame(env, direction, &frame);
+		return;
+	}
+	switch (rule->action) {
+	case IMPAIR_DROP:
+		env->dropped_frames++;
+		break;
+	case IMPAIR_DELAY:
+		interop_schedule_frame(env, direction, data, len,
+				env->now_ms + rule->delay_ms, 0);
+		break;
+	case IMPAIR_DUPLICATE:
+		interop_deliver_frame(env, direction, &frame);
+		for (i = 0; i < (rule->duplicate_count ?
+				rule->duplicate_count : 1); i++)
+			interop_deliver_frame(env, direction, &frame);
+		break;
+	case IMPAIR_REORDER:
+		interop_schedule_frame(env, direction, data, len, env->now_ms,
+				env->captured_by_direction[direction] +
+				(rule->reorder_after ? rule->reorder_after : 1));
+		break;
+	case IMPAIR_CORRUPT:
+		interop_corrupt_frame(&frame, rule);
+		interop_deliver_frame(env, direction, &frame);
+		break;
+	case IMPAIR_FRAGMENT:
+		interop_fragment_frame(env, direction, &frame, rule);
+		break;
+	case IMPAIR_INJECT_ICMP:
+		interop_inject_icmp_error(env, direction, &frame, rule);
+		if (rule->drop_original)
+			env->dropped_frames++;
+		else
+			interop_deliver_frame(env, direction, &frame);
+		break;
+	default:
+		assert(0);
+	}
+}
+
+static void lwip_receive_iip_frame(struct interop_env *env, void *pkt)
+{
+	struct test_state *state = &env->iip.state;
+	uint16_t len = iip_ops_pkt_get_len(pkt, state);
+
+	interop_route_frame(env, WIRE_IIP_TO_LWIP,
+			iip_ops_pkt_get_data(pkt, state), len);
+	iip_ops_pkt_free(pkt, state);
+}
+
+static void iip_receive_lwip_frame(struct interop_env *env,
+		const struct lwip_wire_frame *frame)
+{
+	interop_route_frame(env, WIRE_LWIP_TO_IIP,
+			frame->data, frame->len);
+}
+
+static void interop_pump(struct interop_env *env)
+{
+	struct fixture *f = &env->iip;
+	struct lwip_peer *peer = &env->lwip;
+	unsigned int steps = 0;
+
+	/* iip_tcp_send/connect queue segments; a zero-input run flushes them. */
+	deliver(f->ws, f->local_mac, __iip_htonl(0xc0000201U), NULL, 0,
+			&f->state);
+	while ((f->state.out_cnt || peer->tx_count ||
+			interop_scheduled_ready(env)) &&
+			steps++ < INTEROP_MAX_STEPS) {
+		while (f->state.out_cnt) {
+			void *pkt = f->state.out[0];
+			memmove(&f->state.out[0], &f->state.out[1],
+					(--f->state.out_cnt) * sizeof(f->state.out[0]));
+			lwip_receive_iip_frame(env, pkt);
+		}
+		while (peer->tx_count) {
+			struct lwip_wire_frame frame = peer->tx[peer->tx_head];
+			peer->tx_head = (peer->tx_head + 1) % LWIP_WIRE_QUEUE_MAX;
+			peer->tx_count--;
+			iip_receive_lwip_frame(env, &frame);
+		}
+		interop_deliver_scheduled(env);
+	}
+	assert(steps < INTEROP_MAX_STEPS);
+}
+
+static void interop_advance_time(struct interop_env *env, uint64_t delta_ms)
+{
+	assert(delta_ms <= UINT32_MAX - env->now_ms);
+	env->now_ms += delta_ms;
+	lwip_virtual_now_ms = (uint32_t)env->now_ms;
+	env->iip.state.now_ns = env->now_ms * 1000000ULL;
+	interop_pump(env);
+	sys_check_timeouts();
+	interop_pump(env);
+}
+
+static void interop_install_rule(struct interop_env *env,
+		const struct impairment_rule *rule)
+{
+	assert(env->rule_count < INTEROP_RULE_MAX);
+	env->rules[env->rule_count] = *rule;
+	if (!env->rules[env->rule_count].apply_from)
+		env->rules[env->rule_count].apply_from = 1;
+	env->rule_count++;
+}
+
+static void interop_clear_rules(struct interop_env *env)
+{
+	memset(env->rules, 0, sizeof(env->rules));
+	env->rule_count = 0;
+}
+
+static void interop_set_rule_disabled(struct interop_env *env,
+		uint32_t id, uint8_t disabled)
+{
+	unsigned int i;
+	for (i = 0; i < env->rule_count; i++)
+		if (env->rules[i].id == id) {
+			env->rules[i].disabled = disabled;
+			return;
+		}
+	assert(0);
+}
+
+static void lwip_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p,
+		const ip_addr_t *addr, u16_t port)
+{
+	struct lwip_peer *peer = arg;
+
+	assert(p && p->tot_len <= sizeof(peer->udp_data));
+	peer->udp_len = p->tot_len;
+	assert(pbuf_copy_partial(p, peer->udp_data, p->tot_len, 0) ==
+			p->tot_len);
+	assert(peer->udp_count < ARRAY_LENGTH(peer->udp_first_byte));
+	peer->udp_first_byte[peer->udp_count++] =
+			p->tot_len ? peer->udp_data[0] : 0;
+	pbuf_free(p);
+	(void)pcb; (void)addr; (void)port;
+}
+
+static err_t lwip_tcp_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p,
+		err_t err)
+{
+	struct lwip_peer *peer = arg;
+
+	assert(err == ERR_OK);
+	if (!p) {
+		peer->eof_count++;
+		return ERR_OK;
+	}
+	assert(peer->tcp_len + p->tot_len <= sizeof(peer->tcp_data));
+	assert(pbuf_copy_partial(p, &peer->tcp_data[peer->tcp_len],
+			p->tot_len, 0) == p->tot_len);
+	peer->tcp_len += p->tot_len;
+	tcp_recved(pcb, p->tot_len);
+	pbuf_free(p);
+	return ERR_OK;
+}
+
+static void lwip_tcp_snapshot(const struct tcp_pcb *pcb,
+		struct lwip_tcp_snapshot *snapshot)
+{
+	assert(pcb && snapshot);
+	memset(snapshot, 0, sizeof(*snapshot));
+	snapshot->state = pcb->state;
+	snapshot->nrtx = pcb->nrtx;
+	snapshot->rto = pcb->rto;
+	snapshot->cwnd = pcb->cwnd;
+	snapshot->ssthresh = pcb->ssthresh;
+	snapshot->snd_wnd = pcb->snd_wnd;
+	snapshot->rcv_wnd = pcb->rcv_wnd;
+	snapshot->persist_probe = pcb->persist_probe;
+	snapshot->has_unacked = pcb->unacked != NULL;
+	snapshot->has_unsent = pcb->unsent != NULL;
+#if TCP_QUEUE_OOSEQ
+	snapshot->has_ooseq = pcb->ooseq != NULL;
+#endif
+}
+
+static err_t lwip_tcp_accept(void *arg, struct tcp_pcb *pcb, err_t err)
+{
+	struct lwip_peer *peer = arg;
+
+	assert(err == ERR_OK);
+	peer->accepted = pcb;
+	peer->accept_count++;
+	tcp_arg(pcb, peer);
+	tcp_recv(pcb, lwip_tcp_recv);
+	return ERR_OK;
+}
+
+static void interop_env_init(struct interop_env *env)
+{
+	memset(env, 0, sizeof(*env));
+	memset(interop_failure_trace, 0, sizeof(interop_failure_trace));
+	interop_failure_trace_count = 0;
+	memset(interop_pcap_frames, 0, sizeof(interop_pcap_frames));
+	interop_pcap_count = 0;
+	lwip_virtual_clock_enabled = 1;
+	lwip_virtual_now_ms = 0;
+	lwip_init();
+	assert(fixture_init(&env->iip));
+	env->iip.state.accept_arbitrary_payload = 1;
+	env->iip.state.quiet_payload = 1;
+	env->iip.state.use_fake_clock = 1;
+	env->iip.state.now_ns = 0;
+	lwip_peer_init(&env->lwip, env);
+}
+
+static struct udp_pcb *interop_udp_listener(struct interop_env *env)
+{
+	struct udp_pcb *udp = udp_new();
+	assert(udp);
+	assert(udp_bind(udp, IP_ANY_TYPE, 20000) == ERR_OK);
+	udp_recv(udp, lwip_udp_recv, &env->lwip);
+	return udp;
+}
+
+static struct tcp_pcb *interop_tcp_listener(struct interop_env *env)
+{
+	struct tcp_pcb *listener = tcp_new();
+	assert(listener);
+	assert(tcp_bind(listener, IP_ANY_TYPE, 20001) == ERR_OK);
+	listener = tcp_listen(listener);
+	assert(listener);
+	tcp_arg(listener, &env->lwip);
+	tcp_accept(listener, lwip_tcp_accept);
+	return listener;
+}
+
+static void interop_connect_iip(struct interop_env *env)
+{
+	struct fixture *f = &env->iip;
+	assert(iip_tcp_connect(f->ws, f->local_mac,
+			__iip_htonl(0xc0000201U), __iip_htons(10001),
+			env->lwip.netif.hwaddr, __iip_htonl(0xc6336402U),
+			__iip_htons(20001), &f->state) == 0);
+	interop_pump(env);
+}
+
+static void interop_run_until_connected(struct interop_env *env,
+		uint64_t timeout_ms)
+{
+	uint64_t elapsed;
+	for (elapsed = 0; elapsed < timeout_ms &&
+			(!env->lwip.accepted ||
+			 test_event_count(&env->iip.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CONNECTED) == 0); elapsed += 250)
+		interop_advance_time(env, 250);
+}
+
+static void lwip_interop_self_test(void)
+{
+	static const uint8_t udp_from_iip[] = "iip-to-lwip";
+	static const uint8_t udp_from_lwip[] = "lwip-to-iip";
+	static const uint8_t tcp_from_iip[] = "tcp-iip-to-lwip";
+	struct interop_env env;
+	struct fixture *f;
+	struct lwip_peer *peer;
+	struct udp_pcb *udp;
+	struct tcp_pcb *listener;
+	struct pbuf *payload;
+	ip_addr_t iip_addr;
+	const struct test_event *connected;
+	void *iip_tcp_handle;
+
+	interop_env_init(&env);
+	f = &env.iip;
+	peer = &env.lwip;
+	IP4_ADDR(ip_2_ip4(&iip_addr), 192, 0, 2, 1);
+	IP_SET_TYPE_VAL(iip_addr, IPADDR_TYPE_V4);
+
+	udp = interop_udp_listener(&env);
+	payload = iip_ops_pkt_alloc(&f->state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &f->state), udp_from_iip,
+			sizeof(udp_from_iip));
+	iip_ops_pkt_set_len(payload, sizeof(udp_from_iip), &f->state);
+	assert(iip_udp_send(f->ws, f->local_mac, __iip_htonl(0xc0000201U),
+			__iip_htons(10000), peer->netif.hwaddr,
+			__iip_htonl(0xc6336402U), __iip_htons(20000), payload,
+			&f->state) == 0);
+	interop_pump(&env);
+	assert(peer->udp_len == sizeof(udp_from_iip));
+	assert(!memcmp(peer->udp_data, udp_from_iip, sizeof(udp_from_iip)));
+
+	test_event_log_clear(&f->state);
+	payload = pbuf_alloc_reference((void *)udp_from_lwip,
+			sizeof(udp_from_lwip), PBUF_ROM);
+	assert(payload);
+	assert(udp_sendto(udp, payload, &iip_addr, 10000) == ERR_OK);
+	pbuf_free(payload);
+	interop_pump(&env);
+	assert_udp_delivery(&f->state, 1, sizeof(udp_from_lwip),
+			udp_from_lwip[0]);
+	udp_remove(udp);
+
+	listener = interop_tcp_listener(&env);
+	test_event_log_clear(&f->state);
+	interop_connect_iip(&env);
+	assert(peer->accepted);
+	connected = test_event_nth(&f->state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	iip_tcp_handle = connected->object;
+	payload = iip_ops_pkt_alloc(&f->state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &f->state), tcp_from_iip,
+			sizeof(tcp_from_iip));
+	iip_ops_pkt_set_len(payload, sizeof(tcp_from_iip), &f->state);
+	assert(iip_tcp_send(f->ws, iip_tcp_handle, payload, 0,
+			&f->state) == 0);
+	interop_pump(&env);
+	assert(peer->tcp_len == sizeof(tcp_from_iip));
+	assert(!memcmp(peer->tcp_data, tcp_from_iip, sizeof(tcp_from_iip)));
+	tcp_abort(peer->accepted);
+	tcp_close(listener);
+
+	printf("lwIP 2.2.1 interoperability: UDP bidirectional and TCP connect/data passed\n");
+}
+
+static int interop_test_handshake_loss(enum wire_direction direction,
+		uint8_t required, uint8_t forbidden)
+{
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 1, .direction = direction, .action = IMPAIR_DROP,
+		.ethertype = 0x0800, .ip_protocol = 6,
+		.tcp_flags_required = required,
+		.tcp_flags_forbidden = forbidden,
+		.apply_from = 1, .apply_count = 1,
+	};
+	struct tcp_pcb *listener;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_connect_iip(&env);
+	interop_run_until_connected(&env, 60000);
+	if (!env.lwip.accepted || env.lwip.accept_count != 1 ||
+			test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CONNECTED) != 1 ||
+			env.rules[0].applied_count != 1)
+		return 0;
+	tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return 1;
+}
+
+static int interop_test_arp_request_loss(void)
+{
+	static const uint8_t data[] = "arp-recovery";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 1, .direction = WIRE_LWIP_TO_IIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0806,
+		.arp_operation = 1, .apply_from = 1, .apply_count = 1,
+	};
+	struct udp_pcb *udp;
+	struct pbuf *payload;
+	ip_addr_t iip_addr;
+	unsigned int i;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	IP4_ADDR(ip_2_ip4(&iip_addr), 192, 0, 2, 1);
+	IP_SET_TYPE_VAL(iip_addr, IPADDR_TYPE_V4);
+	payload = pbuf_alloc_reference((void *)data, sizeof(data), PBUF_ROM);
+	assert(payload);
+	assert(udp_sendto(udp, payload, &iip_addr, 10000) == ERR_OK);
+	pbuf_free(payload);
+	interop_pump(&env);
+	for (i = 0; i < 15 &&
+			test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_UDP_PAYLOAD) == 0; i++)
+		interop_advance_time(&env, 1000);
+	udp_remove(udp);
+	return env.rules[0].applied_count == 1 &&
+		test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_UDP_PAYLOAD) == 1;
+}
+
+static int interop_test_udp_drop(void)
+{
+	static const uint8_t data[] = "dropped-udp";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 1, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 17, .apply_from = 1, .apply_count = 1,
+	};
+	struct udp_pcb *udp;
+	void *payload;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_udp_send(env.iip.ws, env.iip.local_mac,
+			__iip_htonl(0xc0000201U), __iip_htons(10000),
+			env.lwip.netif.hwaddr, __iip_htonl(0xc6336402U),
+			__iip_htons(20000), payload, &env.iip.state) == 0);
+	interop_pump(&env);
+	interop_advance_time(&env, 5000);
+	udp_remove(udp);
+	return env.rules[0].applied_count == 1 && env.lwip.udp_len == 0;
+}
+
+static void interop_send_iip_udp(struct interop_env *env,
+		const uint8_t *data, uint16_t len)
+{
+	void *payload = iip_ops_pkt_alloc(&env->iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env->iip.state), data, len);
+	iip_ops_pkt_set_len(payload, len, &env->iip.state);
+	assert(iip_udp_send(env->iip.ws, env->iip.local_mac,
+			__iip_htonl(0xc0000201U), __iip_htons(10000),
+			env->lwip.netif.hwaddr, __iip_htonl(0xc6336402U),
+			__iip_htons(20000), payload, &env->iip.state) == 0);
+	interop_pump(env);
+}
+
+static int interop_test_udp_delay(void)
+{
+	static const uint8_t data[] = "delayed-udp";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 3, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DELAY, .ethertype = 0x0800,
+		.ip_protocol = 17, .apply_count = 1, .delay_ms = 1000,
+	};
+	struct udp_pcb *udp;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_send_iip_udp(&env, data, sizeof(data));
+	if (env.lwip.udp_count != 0 || env.scheduled_count != 1)
+		return 0;
+	interop_advance_time(&env, 999);
+	if (env.lwip.udp_count != 0)
+		return 0;
+	interop_advance_time(&env, 1);
+	udp_remove(udp);
+	return env.rules[0].applied_count == 1 &&
+		env.scheduled_count == 0 && env.lwip.udp_count == 1 &&
+		env.lwip.udp_len == sizeof(data) &&
+		!memcmp(env.lwip.udp_data, data, sizeof(data));
+}
+
+static int interop_test_udp_duplicate(void)
+{
+	static const uint8_t data[] = "duplicate-udp";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 4, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DUPLICATE, .ethertype = 0x0800,
+		.ip_protocol = 17, .apply_count = 1, .duplicate_count = 1,
+	};
+	struct udp_pcb *udp;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_send_iip_udp(&env, data, sizeof(data));
+	udp_remove(udp);
+	return env.rules[0].applied_count == 1 &&
+		env.lwip.udp_count == 2 &&
+		env.lwip.udp_first_byte[0] == data[0] &&
+		env.lwip.udp_first_byte[1] == data[0];
+}
+
+static int interop_test_udp_reorder(void)
+{
+	static const uint8_t first[] = "A-first";
+	static const uint8_t second[] = "B-second";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 5, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_REORDER, .ethertype = 0x0800,
+		.ip_protocol = 17, .apply_count = 1, .reorder_after = 1,
+	};
+	struct udp_pcb *udp;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_send_iip_udp(&env, first, sizeof(first));
+	if (env.lwip.udp_count != 0 || env.scheduled_count != 1) {
+		fprintf(stderr, "UDP reorder hold failed: received=%u "
+				"scheduled=%u applied=%u captured=%llu\n",
+				env.lwip.udp_count, env.scheduled_count,
+				env.rules[0].applied_count,
+				(unsigned long long)env.captured_frames);
+		return 0;
+	}
+	interop_send_iip_udp(&env, second, sizeof(second));
+	udp_remove(udp);
+	if (env.scheduled_count != 0 || env.lwip.udp_count != 2 ||
+			env.lwip.udp_first_byte[0] != second[0] ||
+			env.lwip.udp_first_byte[1] != first[0])
+		fprintf(stderr, "UDP reorder delivery failed: received=%u "
+				"scheduled=%u order=%c,%c applied=%u captured=%llu\n",
+				env.lwip.udp_count, env.scheduled_count,
+				env.lwip.udp_count > 0 ?
+					env.lwip.udp_first_byte[0] : '?',
+				env.lwip.udp_count > 1 ?
+					env.lwip.udp_first_byte[1] : '?',
+				env.rules[0].applied_count,
+				(unsigned long long)env.captured_frames);
+	return env.rules[0].applied_count == 1 &&
+		env.scheduled_count == 0 && env.lwip.udp_count == 2 &&
+		env.lwip.udp_first_byte[0] == second[0] &&
+		env.lwip.udp_first_byte[1] == first[0];
+}
+
+static int interop_test_tcp_duplicate_data(void)
+{
+	static const uint8_t data[] = "tcp-duplicate-on-wire";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 6, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DUPLICATE, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1,
+		.apply_count = 1, .duplicate_count = 1,
+	};
+	struct tcp_pcb *listener;
+	const struct test_event *connected;
+	void *handle, *payload;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	handle = connected->object;
+	interop_install_rule(&env, &rule);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, handle, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.rules[0].applied_count == 1 &&
+		env.lwip.tcp_len == sizeof(data) &&
+		!memcmp(env.lwip.tcp_data, data, sizeof(data));
+}
+
+static int interop_test_udp_corruption(enum corrupt_field field)
+{
+	static const uint8_t data[] = "corrupted-udp";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 7, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_CORRUPT, .ethertype = 0x0800,
+		.ip_protocol = 17, .apply_count = 1,
+		.corrupt_delta = 1,
+	};
+	struct udp_pcb *udp;
+
+	rule.corrupt_field = field;
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_send_iip_udp(&env, data, sizeof(data));
+	udp_remove(udp);
+	return env.rules[0].applied_count == 1 && env.lwip.udp_count == 0;
+}
+
+static int interop_test_ip4_checksum_corrupt(void)
+{
+	return interop_test_udp_corruption(CORRUPT_IP4_CHECKSUM);
+}
+
+static int interop_test_ip4_length_corrupt(void)
+{
+	return interop_test_udp_corruption(CORRUPT_IP4_TOTAL_LENGTH);
+}
+
+static int interop_test_udp_checksum_corrupt(void)
+{
+	return interop_test_udp_corruption(CORRUPT_UDP_CHECKSUM);
+}
+
+static int interop_test_tcp_checksum_corrupt(void)
+{
+	static const uint8_t data[] = "bad-tcp-checksum";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 8, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_CORRUPT, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1, .apply_count = 1,
+		.corrupt_field = CORRUPT_TCP_CHECKSUM,
+	};
+	struct tcp_pcb *listener;
+	const struct test_event *connected;
+	void *handle, *payload;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	handle = connected->object;
+	interop_install_rule(&env, &rule);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, handle, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.rules[0].applied_count == 1 && env.lwip.tcp_len == 0;
+}
+
+static int interop_test_tcp_sequence_corrupt(void)
+{
+	static const uint8_t data[] = "valid-checksum-out-of-window";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 10, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_CORRUPT, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1, .apply_count = 1,
+		.corrupt_field = CORRUPT_TCP_SEQUENCE,
+		.corrupt_delta = 30000, .recalculate_checksum = 1,
+	};
+	struct tcp_pcb *listener;
+	const struct test_event *connected;
+	void *handle, *payload;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	handle = connected->object;
+	interop_install_rule(&env, &rule);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, handle, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.rules[0].applied_count == 1 && env.lwip.tcp_len == 0;
+}
+
+static int interop_test_udp_fragments(uint8_t reverse, int8_t drop,
+		int8_t duplicate, uint16_t overlap, uint8_t parts,
+		uint8_t conflict)
+{
+	static const uint8_t data[] =
+		"fragmented-udp-payload-crosses-two-ipv4-fragments";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 9, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_FRAGMENT, .ethertype = 0x0800,
+		.ip_protocol = 17, .apply_count = 1,
+		.fragment_split = 16,
+	};
+	struct udp_pcb *udp;
+
+	rule.fragment_reverse = reverse;
+	rule.fragment_drop = drop;
+	rule.fragment_duplicate = duplicate;
+	rule.fragment_overlap = overlap;
+	rule.fragment_parts = parts;
+	rule.fragment_conflict = conflict;
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_send_iip_udp(&env, data, sizeof(data));
+	if (drop >= 0)
+		interop_advance_time(&env, 20000);
+	udp_remove(udp);
+	if (drop >= 0)
+		return env.rules[0].applied_count == 1 &&
+			env.lwip.udp_count == 0 && env.dropped_frames == 1;
+	if (conflict)
+		return env.rules[0].applied_count == 1 &&
+			env.lwip.udp_count == 0;
+	if (overlap)
+		return env.rules[0].applied_count == 1 &&
+			env.lwip.udp_count <= 1 &&
+			(!env.lwip.udp_count ||
+			 (env.lwip.udp_len == sizeof(data) &&
+			  !memcmp(env.lwip.udp_data, data, sizeof(data))));
+	return env.rules[0].applied_count == 1 &&
+		env.lwip.udp_count == 1 &&
+		env.lwip.udp_len == sizeof(data) &&
+		!memcmp(env.lwip.udp_data, data, sizeof(data));
+}
+
+static int interop_test_udp_fragment_in_order(void)
+{
+	return interop_test_udp_fragments(0, -1, 0, 0, 2, 0);
+}
+
+static int interop_test_udp_fragment_reverse(void)
+{
+	return interop_test_udp_fragments(1, -1, 0, 0, 2, 0);
+}
+
+static int interop_test_udp_fragment_missing(void)
+{
+	return interop_test_udp_fragments(0, 1, 0, 0, 2, 0);
+}
+
+static int interop_test_udp_fragment_duplicate(void)
+{
+	return interop_test_udp_fragments(0, -1, 1, 0, 2, 0);
+}
+
+static int interop_test_udp_fragment_overlap(void)
+{
+	return interop_test_udp_fragments(0, -1, 0, 8, 2, 0);
+}
+
+static int interop_test_udp_fragment_three_parts(void)
+{
+	return interop_test_udp_fragments(0, -1, 0, 0, 3, 0);
+}
+
+static int interop_test_udp_fragment_conflicting_overlap(void)
+{
+	return interop_test_udp_fragments(0, -1, 0, 8, 2, 1);
+}
+
+static int interop_test_zero_window_recovery(void)
+{
+	static const uint8_t first[] = "before-zero-window";
+	static const uint8_t second[] = "after-window-update";
+	static const uint8_t reverse = 0x5a;
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 11, .direction = WIRE_LWIP_TO_IIP,
+		.action = IMPAIR_CORRUPT, .ethertype = 0x0800,
+		.ip_protocol = 6, .tcp_flags_required = 0x10,
+		.tcp_flags_forbidden = 0x0f, .apply_count = 1,
+		.corrupt_field = CORRUPT_TCP_WINDOW,
+		.corrupt_delta = 0, .recalculate_checksum = 1,
+	};
+	struct tcp_pcb *listener;
+	struct iip_tcp_conn *conn;
+	const struct test_event *connected;
+	struct lwip_tcp_snapshot snapshot;
+	void *payload;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	conn = connected->object;
+	lwip_tcp_snapshot(env.lwip.accepted, &snapshot);
+	if (snapshot.state != ESTABLISHED || !snapshot.cwnd ||
+			!snapshot.ssthresh || !snapshot.snd_wnd)
+		return 0;
+
+	interop_install_rule(&env, &rule);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), first,
+			sizeof(first));
+	iip_ops_pkt_set_len(payload, sizeof(first), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, conn, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	interop_advance_time(&env, 250);
+	if (env.rules[0].applied_count != 1 || conn->peer_win != 0 ||
+			env.lwip.tcp_len != sizeof(first)) {
+		fprintf(stderr, "zero-window setup failed: applied=%u peer_win=%u "
+				"received=%u expected=%zu\n",
+				env.rules[0].applied_count, conn->peer_win,
+				env.lwip.tcp_len, sizeof(first));
+		return 0;
+	}
+
+	interop_clear_rules(&env);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), second,
+			sizeof(second));
+	iip_ops_pkt_set_len(payload, sizeof(second), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, conn, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	if (env.lwip.tcp_len != sizeof(first)) {
+		fprintf(stderr, "zero-window pause failed: received=%u "
+				"expected=%zu peer_win=%u\n", env.lwip.tcp_len,
+				sizeof(first), conn->peer_win);
+		return 0;
+	}
+
+	assert(tcp_write(env.lwip.accepted, &reverse, sizeof(reverse),
+			TCP_WRITE_FLAG_COPY) == ERR_OK);
+	assert(tcp_output(env.lwip.accepted) == ERR_OK);
+	interop_pump(&env);
+	if (conn->peer_win == 0 ||
+			env.lwip.tcp_len != sizeof(first) + sizeof(second))
+		fprintf(stderr, "zero-window recovery failed: peer_win=%u "
+				"received=%u expected=%zu\n", conn->peer_win,
+				env.lwip.tcp_len, sizeof(first) + sizeof(second));
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return conn->peer_win != 0 &&
+		env.lwip.tcp_len == sizeof(first) + sizeof(second) &&
+		!memcmp(env.lwip.tcp_data, first, sizeof(first)) &&
+		!memcmp(&env.lwip.tcp_data[sizeof(first)], second,
+			sizeof(second));
+}
+
+static int interop_test_fin_loss(enum wire_direction direction,
+		uint8_t drop_fin)
+{
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 12, .direction = direction, .action = IMPAIR_DROP,
+		.ethertype = 0x0800, .ip_protocol = 6,
+		.apply_count = 1,
+	};
+	struct tcp_pcb *listener;
+	struct iip_tcp_conn *conn;
+	const struct test_event *connected;
+	unsigned int i;
+
+	if (drop_fin)
+		rule.tcp_flags_required = 0x01;
+	else {
+		rule.tcp_flags_required = 0x10;
+		rule.tcp_flags_forbidden = 0x0f;
+	}
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	conn = connected->object;
+	interop_install_rule(&env, &rule);
+	assert(iip_tcp_close(env.iip.ws, conn, &env.iip.state) == 0);
+	interop_pump(&env);
+	for (i = 0; i < 260 &&
+			(env.lwip.eof_count == 0 ||
+			 conn->state != __IIP_TCP_STATE_FIN_WAIT2); i++)
+		interop_advance_time(&env, 250);
+	if (env.rules[0].applied_count != 1 ||
+			env.lwip.eof_count != 1 ||
+			conn->state != __IIP_TCP_STATE_FIN_WAIT2)
+		return 0;
+	assert(tcp_close(env.lwip.accepted) == ERR_OK);
+	env.lwip.accepted = NULL;
+	interop_pump(&env);
+	interop_advance_time(&env, 3000);
+	tcp_close(listener);
+	return test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CLOSED) == 1;
+}
+
+static int interop_test_fin_segment_loss(void)
+{
+	return interop_test_fin_loss(WIRE_IIP_TO_LWIP, 1);
+}
+
+static int interop_test_fin_ack_loss(void)
+{
+	return interop_test_fin_loss(WIRE_LWIP_TO_IIP, 0);
+}
+
+static int interop_test_simultaneous_close(void)
+{
+	struct interop_env env;
+	struct impairment_rule iip_fin = {
+		.id = 20, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DELAY, .ethertype = 0x0800,
+		.ip_protocol = 6, .tcp_flags_required = 0x01,
+		.apply_count = 1, .delay_ms = 1,
+	};
+	struct impairment_rule lwip_fin = {
+		.id = 21, .direction = WIRE_LWIP_TO_IIP,
+		.action = IMPAIR_DELAY, .ethertype = 0x0800,
+		.ip_protocol = 6, .tcp_flags_required = 0x01,
+		.apply_count = 1, .delay_ms = 1,
+	};
+	struct tcp_pcb *listener;
+	struct iip_tcp_conn *conn;
+	const struct test_event *connected;
+	unsigned int i;
+	int ok;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	conn = connected->object;
+	interop_install_rule(&env, &iip_fin);
+	interop_install_rule(&env, &lwip_fin);
+	assert(iip_tcp_close(env.iip.ws, conn, &env.iip.state) == 0);
+	assert(tcp_close(env.lwip.accepted) == ERR_OK);
+	env.lwip.accepted = NULL;
+	interop_pump(&env);
+	interop_advance_time(&env, 1);
+	for (i = 0; i < 240 &&
+			test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED) == 0; i++)
+		interop_advance_time(&env, 250);
+	ok = env.rules[0].applied_count == 1 &&
+		env.rules[1].applied_count == 1 &&
+		env.lwip.eof_count == 1 &&
+		test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CLOSED) == 1;
+	tcp_close(listener);
+	return ok;
+}
+
+static int interop_test_lwip_rto_congestion(void)
+{
+	static const uint8_t data[] = "lwip-rto-congestion";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 13, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 6, .tcp_flags_required = 0x10,
+		.tcp_flags_forbidden = 0x0f, .apply_count = 2,
+	};
+	struct tcp_pcb *listener;
+	struct lwip_tcp_snapshot before, during, after;
+	unsigned int i;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	lwip_tcp_snapshot(env.lwip.accepted, &before);
+	interop_install_rule(&env, &rule);
+	assert(tcp_write(env.lwip.accepted, data, sizeof(data),
+			TCP_WRITE_FLAG_COPY) == ERR_OK);
+	assert(tcp_output(env.lwip.accepted) == ERR_OK);
+	interop_pump(&env);
+	for (i = 0; i < 240 && env.rules[0].applied_count < 2; i++)
+		interop_advance_time(&env, 250);
+	lwip_tcp_snapshot(env.lwip.accepted, &during);
+	if (env.rules[0].applied_count != 2 || !during.has_unacked ||
+			during.nrtx == 0 || during.cwnd >= before.cwnd ||
+			during.ssthresh > before.ssthresh)
+		return 0;
+	for (i = 0; i < 240 && env.lwip.accepted->unacked; i++)
+		interop_advance_time(&env, 250);
+	lwip_tcp_snapshot(env.lwip.accepted, &after);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return !after.has_unacked && after.nrtx == 0 &&
+		env.iip.state.payload_byte_count == sizeof(data);
+}
+
+static int interop_test_keepalive_probe_loss(void)
+{
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 17, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 6, .tcp_flags_required = 0x10,
+		.tcp_flags_forbidden = 0x0f, .apply_count = 1,
+	};
+	struct tcp_pcb *listener;
+	struct iip_tcp_conn *conn;
+	const struct test_event *connected;
+	uint64_t delivered_before;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	conn = connected->object;
+	IIP_EX_TCP_SET_KEEPALIVE(env.iip.ws, conn, 1000, &env.iip.state);
+	interop_install_rule(&env, &rule);
+	interop_advance_time(&env, 2000);
+	if (env.rules[0].applied_count != 1 ||
+			conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+			conn->retrans_cnt != 0)
+		return 0;
+	delivered_before = env.delivered_frames;
+	interop_set_rule_disabled(&env, 17, 1);
+	interop_advance_time(&env, 2000);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return conn->state == __IIP_TCP_STATE_ESTABLISHED &&
+		conn->retrans_cnt == 0 &&
+		env.delivered_frames > delivered_before;
+}
+
+static int interop_test_lwip_fast_retransmit(void)
+{
+	uint8_t data[256];
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 18, .direction = WIRE_LWIP_TO_IIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1, .apply_count = 1,
+	};
+	struct tcp_pcb *listener;
+	struct lwip_tcp_snapshot before;
+	uint32_t first_seq = UINT32_MAX;
+	unsigned int first_seq_count = 0, i;
+
+	for (i = 0; i < sizeof(data); i++)
+		data[i] = (uint8_t)i;
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	env.lwip.accepted->mss = 64;
+	tcp_nagle_disable(env.lwip.accepted);
+	lwip_tcp_snapshot(env.lwip.accepted, &before);
+	interop_install_rule(&env, &rule);
+	assert(tcp_write(env.lwip.accepted, data, sizeof(data),
+			TCP_WRITE_FLAG_COPY) == ERR_OK);
+	assert(tcp_output(env.lwip.accepted) == ERR_OK);
+	interop_pump(&env);
+	for (i = 0; i < 8 &&
+			env.iip.state.payload_byte_count < sizeof(data); i++)
+		interop_advance_time(&env, 250);
+	for (i = 0; i < interop_failure_trace_count; i++) {
+		const struct interop_trace_event *event =
+			&interop_failure_trace[i];
+		if (event->direction != WIRE_LWIP_TO_IIP ||
+				event->ip_protocol != 6 || !event->payload_len)
+			continue;
+		if (event->tcp_seq < first_seq) {
+			first_seq = event->tcp_seq;
+			first_seq_count = 1;
+		} else if (event->tcp_seq == first_seq) {
+			first_seq_count++;
+		}
+	}
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.rules[0].applied_count == 1 &&
+		env.iip.state.payload_byte_count == sizeof(data) &&
+		first_seq_count >= 2 &&
+		env.now_ms < (uint64_t)before.rto * 500U;
+}
+
+static int interop_test_lwip_two_duplicate_acks_wait_for_rto(void)
+{
+	uint8_t data[192];
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 19, .direction = WIRE_LWIP_TO_IIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1, .apply_count = 1,
+	};
+	struct tcp_pcb *listener;
+	struct lwip_tcp_snapshot before;
+	uint32_t first_seq = UINT32_MAX;
+	unsigned int first_seq_count = 0, i;
+	int ok;
+
+	for (i = 0; i < sizeof(data); i++)
+		data[i] = (uint8_t)(0xa5U ^ i);
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	env.lwip.accepted->mss = 64;
+	tcp_nagle_disable(env.lwip.accepted);
+	lwip_tcp_snapshot(env.lwip.accepted, &before);
+	interop_install_rule(&env, &rule);
+	assert(tcp_write(env.lwip.accepted, data, sizeof(data),
+			TCP_WRITE_FLAG_COPY) == ERR_OK);
+	assert(tcp_output(env.lwip.accepted) == ERR_OK);
+	interop_pump(&env);
+	for (i = 0; i < interop_failure_trace_count; i++) {
+		const struct interop_trace_event *event =
+			&interop_failure_trace[i];
+		if (event->direction != WIRE_LWIP_TO_IIP ||
+				event->ip_protocol != 6 || !event->payload_len)
+			continue;
+		if (event->tcp_seq < first_seq) {
+			first_seq = event->tcp_seq;
+			first_seq_count = 1;
+		} else if (event->tcp_seq == first_seq) {
+			first_seq_count++;
+		}
+	}
+	ok = env.rules[0].applied_count == 1 &&
+		env.iip.state.payload_byte_count == 0 &&
+		first_seq_count == 1 && before.nrtx == 0;
+	for (i = 0; i < 240 &&
+			env.iip.state.payload_byte_count < sizeof(data); i++)
+		interop_advance_time(&env, 250);
+	ok = ok && env.iip.state.payload_byte_count == sizeof(data) &&
+		env.lwip.accepted && !env.lwip.accepted->unacked;
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return ok;
+}
+
+static int interop_test_icmp_error(uint8_t type, uint8_t code,
+		uint16_t mtu)
+{
+	static const uint8_t data[] = "icmp-trigger";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 14, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_INJECT_ICMP, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1, .apply_count = 1,
+		.drop_original = 1,
+	};
+	struct tcp_pcb *listener;
+	struct iip_tcp_conn *conn;
+	const struct test_event *connected, *icmp_event;
+	void *payload;
+
+	rule.icmp_type = type;
+	rule.icmp_code = code;
+	rule.icmp_mtu = mtu;
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	conn = connected->object;
+	interop_install_rule(&env, &rule);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, conn, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	icmp_event = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_TCP_ICMP_ERROR, 0);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.rules[0].applied_count == 1 && icmp_event &&
+		icmp_event->value[0] == type && icmp_event->value[1] == code &&
+		icmp_event->value[2] == 1 && icmp_event->value[3] == 1 &&
+		(!mtu || conn->path_mtu == mtu);
+}
+
+static int interop_test_icmp_unreachable(void)
+{
+	return interop_test_icmp_error(3, 1, 0);
+}
+
+static int interop_test_icmp_pmtu(void)
+{
+	return interop_test_icmp_error(3, 4, 1200);
+}
+
+static int interop_test_udp_blackhole_recovery(void)
+{
+	static const uint8_t lost[] = "lost-during-outage";
+	static const uint8_t recovered[] = "udp-after-recovery";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 15, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 17,
+	};
+	struct udp_pcb *udp;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	interop_install_rule(&env, &rule);
+	interop_send_iip_udp(&env, lost, sizeof(lost));
+	interop_advance_time(&env, 5000);
+	if (env.lwip.udp_count != 0 || env.rules[0].applied_count != 1)
+		return 0;
+	interop_set_rule_disabled(&env, 15, 1);
+	interop_send_iip_udp(&env, recovered, sizeof(recovered));
+	udp_remove(udp);
+	return env.lwip.udp_count == 1 &&
+		env.lwip.udp_len == sizeof(recovered) &&
+		!memcmp(env.lwip.udp_data, recovered, sizeof(recovered));
+}
+
+static int interop_test_tcp_blackhole_recovery(void)
+{
+	static const uint8_t data[] = "tcp-after-temporary-blackhole";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 16, .direction = WIRE_IIP_TO_LWIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 6, .min_tcp_payload = 1,
+	};
+	struct tcp_pcb *listener;
+	const struct test_event *connected;
+	void *handle, *payload;
+	unsigned int i;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	handle = connected->object;
+	interop_install_rule(&env, &rule);
+	test_event_log_clear(&env.iip.state);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, handle, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	interop_advance_time(&env, 5000);
+	if (env.lwip.tcp_len != 0 || env.rules[0].applied_count != 1)
+		return 0;
+	interop_set_rule_disabled(&env, 16, 1);
+	for (i = 0; i < 240 && env.lwip.tcp_len == 0; i++)
+		interop_advance_time(&env, 250);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.lwip.tcp_len == sizeof(data) &&
+		!memcmp(env.lwip.tcp_data, data, sizeof(data)) &&
+		test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ACKED) == 1;
+}
+
+static uint32_t interop_prng_next(uint32_t *state)
+{
+	uint32_t value = *state;
+	value ^= value << 13;
+	value ^= value >> 17;
+	value ^= value << 5;
+	*state = value;
+	return value;
+}
+
+static int interop_test_seeded_random_impairment(void)
+{
+	struct interop_env env;
+	struct udp_pcb *udp;
+	uint8_t expected[128];
+	unsigned int expected_count = 0;
+	uint32_t random_state = interop_failure_seed ?
+			interop_failure_seed : 0x1a2b3c4dU;
+	unsigned int i;
+
+	interop_env_init(&env);
+	udp = interop_udp_listener(&env);
+	for (i = 0; i < 32; i++) {
+		uint8_t data[2] = { (uint8_t)i, (uint8_t)(i ^ 0xa5U) };
+		uint32_t random_value = interop_prng_next(&random_state);
+		struct impairment_rule rule = {
+			.id = 100 + i, .direction = WIRE_IIP_TO_LWIP,
+			.ethertype = 0x0800, .ip_protocol = 17,
+			.apply_count = 1,
+		};
+
+		switch (random_value & 3U) {
+		case 0:
+			rule.action = IMPAIR_PASS;
+			expected[expected_count++] = data[0];
+			break;
+		case 1:
+			rule.action = IMPAIR_DROP;
+			break;
+		case 2:
+			rule.action = IMPAIR_DELAY;
+			rule.delay_ms = 1 + ((random_value >> 8) % 25);
+			expected[expected_count++] = data[0];
+			break;
+		default:
+			rule.action = IMPAIR_DUPLICATE;
+			rule.duplicate_count = 1;
+			expected[expected_count++] = data[0];
+			expected[expected_count++] = data[0];
+			break;
+		}
+		interop_clear_rules(&env);
+		interop_install_rule(&env, &rule);
+		interop_send_iip_udp(&env, data, sizeof(data));
+		if (rule.action == IMPAIR_DELAY)
+			interop_advance_time(&env, rule.delay_ms);
+	}
+	udp_remove(udp);
+	if (env.lwip.udp_count != expected_count)
+		return 0;
+	for (i = 0; i < expected_count; i++)
+		if (env.lwip.udp_first_byte[i] != expected[i])
+			return 0;
+	return env.scheduled_count == 0;
+}
+
+static int interop_test_data_ack_loss(void)
+{
+	static const uint8_t data[] = "ack-loss-no-duplicate";
+	struct interop_env env;
+	struct impairment_rule rule = {
+		.id = 2, .direction = WIRE_LWIP_TO_IIP,
+		.action = IMPAIR_DROP, .ethertype = 0x0800,
+		.ip_protocol = 6, .tcp_flags_required = 0x10,
+		.tcp_flags_forbidden = 0x0f, .apply_from = 1,
+		.apply_count = 1,
+	};
+	struct tcp_pcb *listener;
+	const struct test_event *connected;
+	void *iip_tcp_handle;
+	void *payload;
+	unsigned int i;
+
+	interop_env_init(&env);
+	listener = interop_tcp_listener(&env);
+	interop_connect_iip(&env);
+	assert(env.lwip.accepted);
+	connected = test_event_nth(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CONNECTED, 0);
+	assert(connected);
+	iip_tcp_handle = connected->object;
+	interop_clear_rules(&env);
+	interop_install_rule(&env, &rule);
+	test_event_log_clear(&env.iip.state);
+	payload = iip_ops_pkt_alloc(&env.iip.state);
+	assert(payload);
+	memcpy(iip_ops_pkt_get_data(payload, &env.iip.state), data,
+			sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &env.iip.state);
+	assert(iip_tcp_send(env.iip.ws, iip_tcp_handle, payload, 0,
+			&env.iip.state) == 0);
+	interop_pump(&env);
+	for (i = 0; i < 240 &&
+			test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_ACKED) == 0; i++)
+		interop_advance_time(&env, 250);
+	if (env.lwip.accepted)
+		tcp_abort(env.lwip.accepted);
+	tcp_close(listener);
+	return env.rules[0].applied_count == 1 &&
+		env.lwip.tcp_len == sizeof(data) &&
+		!memcmp(env.lwip.tcp_data, data, sizeof(data)) &&
+		test_event_count(&env.iip.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_ACKED) == 1;
+}
+
+struct interop_impairment_test {
+	const char *name;
+	int (*run)(void);
+	uint8_t expected_failure;
+	uint8_t full_only;
+};
+
+static int interop_drop_syn(void)
+{
+	return interop_test_handshake_loss(WIRE_IIP_TO_LWIP, 0x02, 0x10);
+}
+
+static int interop_drop_synack(void)
+{
+	return interop_test_handshake_loss(WIRE_LWIP_TO_IIP, 0x12, 0);
+}
+
+static int interop_drop_final_ack(void)
+{
+	return interop_test_handshake_loss(WIRE_IIP_TO_LWIP, 0x10, 0x0f);
+}
+
+static int interop_test_name_matches(const char *name, const char *filter)
+{
+	size_t len;
+	if (!filter || !*filter)
+		return 1;
+	len = strlen(filter);
+	return !strncmp(name, filter, len) &&
+		(name[len] == '\0' || name[len] == ' ');
+}
+
+static int lwip_impairment_test_main(const char *filter, uint8_t full)
+{
+	static const struct interop_impairment_test tests[] = {
+		{ .name = "ARP-LOSS-1 first ARP request loss and recovery",
+			.run = interop_test_arp_request_loss },
+		{ .name = "UDP-LOSS-1 iip to lwIP datagram loss",
+			.run = interop_test_udp_drop },
+		{ .name = "UDP-DELAY-1 delayed delivery at virtual deadline",
+			.run = interop_test_udp_delay },
+		{ .name = "UDP-DUP-1 duplicated datagram delivery",
+			.run = interop_test_udp_duplicate },
+		{ .name = "UDP-REORDER-1 two datagrams delivered in reverse order",
+			.run = interop_test_udp_reorder },
+		{ .name = "TCP-HS-1 first SYN loss and recovery",
+			.run = interop_drop_syn },
+		{ .name = "TCP-HS-2 first SYN+ACK loss and recovery",
+			.run = interop_drop_synack },
+		{ .name = "TCP-HS-3 final handshake ACK loss and recovery",
+			.run = interop_drop_final_ack, .expected_failure = 1 },
+		{ .name = "TCP-DATA-2 data ACK loss without duplicate delivery",
+			.run = interop_test_data_ack_loss },
+		{ .name = "TCP-DATA-3 duplicated segment is delivered once",
+			.run = interop_test_tcp_duplicate_data },
+		{ .name = "IP4-CSUM-1 invalid IPv4 checksum is rejected",
+			.run = interop_test_ip4_checksum_corrupt },
+		{ .name = "IP4-LEN-1 inconsistent IPv4 total length is rejected",
+			.run = interop_test_ip4_length_corrupt },
+		{ .name = "UDP-CSUM-1 invalid UDP checksum is rejected",
+			.run = interop_test_udp_checksum_corrupt },
+		{ .name = "TCP-DATA-11 invalid TCP checksum is rejected",
+			.run = interop_test_tcp_checksum_corrupt },
+		{ .name = "TCP-DATA-12 valid-checksum out-of-window segment is rejected",
+			.run = interop_test_tcp_sequence_corrupt },
+		{ .name = "IP4-FRAG-1 two fragments reassemble in order",
+			.run = interop_test_udp_fragment_in_order },
+		{ .name = "IP4-FRAG-2 reverse-order fragments reassemble",
+			.run = interop_test_udp_fragment_reverse },
+		{ .name = "IP4-FRAG-3 missing fragment is not delivered",
+			.run = interop_test_udp_fragment_missing },
+		{ .name = "IP4-FRAG-4 duplicate fragment does not duplicate UDP",
+			.run = interop_test_udp_fragment_duplicate },
+		{ .name = "IP4-FRAG-5 consistent overlap is handled safely",
+			.run = interop_test_udp_fragment_overlap },
+		{ .name = "IP4-FRAG-6 three fragments reassemble",
+			.run = interop_test_udp_fragment_three_parts },
+		{ .name = "IP4-FRAG-7 conflicting overlap is rejected",
+			.run = interop_test_udp_fragment_conflicting_overlap },
+		{ .name = "TCP-WIN-4 zero window pauses and update resumes sending",
+			.run = interop_test_zero_window_recovery },
+		{ .name = "TCP-CLOSE-1 lost FIN is retransmitted and closes",
+			.run = interop_test_fin_segment_loss },
+		{ .name = "TCP-CLOSE-2 lost FIN ACK recovers without duplicate EOF",
+			.run = interop_test_fin_ack_loss },
+		{ .name = "TCP-CLOSE-5 simultaneous close completes once",
+			.run = interop_test_simultaneous_close },
+		{ .name = "TCP-CC-2 lwIP RTO reduces congestion window and recovers",
+			.run = interop_test_lwip_rto_congestion },
+		{ .name = "TCP-KA-2 keepalive continues after one lost probe",
+			.run = interop_test_keepalive_probe_loss },
+		{ .name = "TCP-CC-5 two duplicate ACKs wait for RTO",
+			.run = interop_test_lwip_two_duplicate_acks_wait_for_rto },
+		{ .name = "TCP-CC-6 three duplicate ACKs trigger fast retransmit",
+			.run = interop_test_lwip_fast_retransmit },
+		{ .name = "ICMP-UNREACH-1 injected unreachable reaches iip callback",
+			.run = interop_test_icmp_unreachable },
+		{ .name = "ICMP-PMTU-1 fragmentation-needed updates iip path MTU",
+			.run = interop_test_icmp_pmtu },
+		{ .name = "UDP-RECOVERY-1 new datagram succeeds after outage",
+			.run = interop_test_udp_blackhole_recovery },
+		{ .name = "TCP-DATA-15 retransmission succeeds after outage",
+			.run = interop_test_tcp_blackhole_recovery },
+		{ .name = "RANDOM-1 seeded deterministic UDP impairments",
+			.run = interop_test_seeded_random_impairment,
+			.full_only = 1 },
+	};
+	unsigned int i, failed = 0, selected = 0, number = 0;
+
+	for (i = 0; i < ARRAY_LENGTH(tests); i++)
+		if ((full || !tests[i].full_only) &&
+				interop_test_name_matches(tests[i].name, filter))
+			selected++;
+	if (!selected) {
+		fprintf(stderr, "no lwIP impairment test matches '%s'\n",
+				filter ? filter : "");
+		return EXIT_FAILURE;
+	}
+	interop_pcap_single = selected == 1;
+	printf("TAP version 13\n1..%u\n", selected);
+	printf("# mode=%s seed=0x%08x%s%s\n", full ? "full" : "short",
+			interop_failure_seed, filter ? " filter=" : "",
+			filter ? filter : "");
+	fflush(stdout);
+	for (i = 0; i < ARRAY_LENGTH(tests); i++) {
+		pid_t child;
+		int status;
+		if ((!full && tests[i].full_only) ||
+				!interop_test_name_matches(tests[i].name, filter))
+			continue;
+		number++;
+		child = fork();
+		assert(child >= 0);
+		if (!child) {
+			int result = tests[i].run();
+			if (!interop_write_pcap(tests[i].name))
+				result = 0;
+			if (!result && !tests[i].expected_failure)
+				interop_dump_failure_trace(tests[i].name);
+			fflush(NULL);
+			_exit(result ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		assert(waitpid(child, &status, 0) == child);
+		if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS)
+			printf("ok %u - %s\n", number, tests[i].name);
+		else if (tests[i].expected_failure)
+			printf("not ok %u - %s # TODO iip does not ACK a "
+					"retransmitted SYN+ACK after entering "
+					"ESTABLISHED\n", number, tests[i].name);
+		else {
+			printf("not ok %u - %s\n", number, tests[i].name);
+			failed++;
+		}
+		fflush(stdout);
+	}
+	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+#endif
+
 static void run_self_tests(void)
 {
 	fake_clock_self_test();
@@ -7251,6 +10118,9 @@ static void run_self_tests(void)
 	udp_path_self_test();
 	udp_fragment_limit_self_test();
 	arp_path_self_test();
+#ifdef IIP_LWIP_INTEROP
+	lwip_interop_self_test();
+#endif
 }
 
 static int robustness_test_main(void)
@@ -7263,6 +10133,8 @@ static int robustness_test_main(void)
 			"reproducible malformed-packet fuzzing" },
 		{ test_tcp_state_transition_coverage,
 			"extended TCP state-transition regression coverage" },
+		{ test_retransmitted_syn_ack_in_established,
+			"ESTABLISHED acknowledges a retransmitted SYN+ACK exactly once" },
 	};
 	struct test_summary summary = { 0 };
 	unsigned int i;
@@ -7294,19 +10166,106 @@ static int robustness_test_main(void)
 	return summary.failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+static int fast_open_test_main(uint8_t strict)
+{
+	static const struct requirement_test tests[] = {
+		{ test_tcp_fast_open_passive_data,
+			"SYN data is delivered once before final ACK" },
+		{ test_tcp_fast_open_rejects_unvalidated_data,
+			"unvalidated SYN data is not consumed or delivered" },
+		{ test_tcp_fast_open_rejects_duplicate_option,
+			"duplicate Fast Open options invalidate SYN data" },
+		{ test_tcp_fast_open_cookie_generation_disabled,
+			"cookie generation can be disabled with length zero" },
+		{ test_tcp_fast_open_active_cookie_and_data,
+			"active endpoint saves a cookie and sends acknowledged SYN data" },
+		{ test_tcp_fast_open_active_rejection_fallback,
+			"rejected active SYN data is retransmitted without SYN" },
+	};
+	unsigned int failed = 0;
+	unsigned int unsupported = 0;
+	unsigned int i;
+
+	printf("TAP version 13\n1..%zu\n", ARRAY_LENGTH(tests));
+	for (i = 0; i < ARRAY_LENGTH(tests); i++) {
+		const char *why = NULL;
+		enum result result = tests[i].run(&why);
+
+		if (result == RESULT_PASS) {
+			printf("ok %u - TFO-%u %s\n",
+					i + 1, i + 1, tests[i].description);
+		} else if (strict) {
+			printf("not ok %u - TFO-%u %s%s%s\n",
+					i + 1, i + 1, tests[i].description,
+					why ? " - " : "", why ? why : "");
+			failed++;
+		} else {
+			printf("not ok %u - TFO-%u %s"
+					" # TODO TCP Fast Open is not implemented%s%s\n",
+					i + 1, i + 1, tests[i].description,
+					why ? " - " : "", why ? why : "");
+			unsupported++;
+		}
+	}
+	if (failed) {
+		fprintf(stderr, "TCP Fast Open capability summary: %u/%zu failed\n",
+				failed, ARRAY_LENGTH(tests));
+		return EXIT_FAILURE;
+	}
+	if (unsupported) {
+		fprintf(stderr, "TCP Fast Open capability summary: "
+				"%u/%zu not supported (TODO)\n",
+				unsupported, ARRAY_LENGTH(tests));
+		return EXIT_SUCCESS;
+	}
+	fprintf(stderr, "TCP Fast Open capability summary: supported\n");
+	return EXIT_SUCCESS;
+}
+
 static int run_test_suites(void)
 {
 	int legacy_result = legacy_test_main();
 	int rfc9293_result = rfc9293_test_main();
 	int ip4_result = ip4_requirement_test_main();
 	int robustness_result = robustness_test_main();
+	int fast_open_result = fast_open_test_main(0);
 
 	return legacy_result || rfc9293_result || ip4_result ||
-		robustness_result;
+		robustness_result || fast_open_result;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+#ifdef IIP_LWIP_INTEROP
+	const char *seed_string = getenv("IIP_LWIP_SEED");
+	char *seed_end = NULL;
+
+	interop_failure_seed = 0x1a2b3c4dU;
+	interop_pcap_path = getenv("IIP_LWIP_PCAP");
+	if (seed_string && *seed_string) {
+		unsigned long seed = strtoul(seed_string, &seed_end, 0);
+		if (!seed_end || *seed_end || seed > UINT32_MAX) {
+			fprintf(stderr, "invalid IIP_LWIP_SEED: %s\n",
+					seed_string);
+			return EXIT_FAILURE;
+		}
+		interop_failure_seed = (uint32_t)seed;
+	}
+	if (argc == 2 && !strcmp(argv[1], "--lwip-only")) {
+		lwip_interop_self_test();
+		return EXIT_SUCCESS;
+	}
+	if (argc == 2 && !strcmp(argv[1], "--lwip-impairment"))
+		return lwip_impairment_test_main(NULL, 0);
+	if (argc == 2 && !strcmp(argv[1], "--lwip-impairment-full"))
+		return lwip_impairment_test_main(NULL, 1);
+	if (argc == 3 && !strcmp(argv[1], "--lwip-test"))
+		return lwip_impairment_test_main(argv[2], 1);
+#endif
+	if (argc == 2 && !strcmp(argv[1], "--fast-open"))
+		return fast_open_test_main(1);
+	(void)argc;
+	(void)argv;
 	run_self_tests();
 	return run_test_suites();
 }
