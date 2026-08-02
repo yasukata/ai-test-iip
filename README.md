@@ -134,6 +134,19 @@ make check-lwip
 make check-lwip-impairment
 ```
 
+Run the same CI-oriented suites with AddressSanitizer and UndefinedBehaviorSanitizer:
+
+```sh
+make check-asan
+make check-ubsan
+make check-sanitizers
+```
+
+The sanitizer builds use separate binaries, stop at the first reported error,
+and retain frame pointers for useful stack traces. The ASan target disables
+leak detection so it also works in test runners that execute processes under
+`ptrace`; it still checks invalid memory accesses.
+
 The default impairment target is the CI-oriented short suite. The full suite
 adds deterministic seeded impairment sequences:
 

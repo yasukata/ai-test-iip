@@ -19,6 +19,7 @@
 #define LWIP_IGMP                       0
 #define LWIP_DNS                        0
 #define LWIP_STATS                      0
+#define MEM_ALIGNMENT                   8
 #define MEM_SIZE                        (64 * 1024)
 #define MEMP_NUM_PBUF                   64
 #define PBUF_POOL_SIZE                  64
