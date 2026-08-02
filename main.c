@@ -27,6 +27,7 @@ static long test_tcp_fastopen_check(uint32_t, uint32_t, const uint8_t *,
 		uint8_t);
 static void test_tcp_fastopen_request(uint32_t, uint32_t, uint8_t *,
 		uint8_t *);
+static void test_tcp_state_close_wait(void *, void *, void *);
 #define IIP_TEST_CALLBACK_TCP_STATE_SET() \
 	test_event_tcp_state_set(opaque, conn, conn->state)
 #define IIP_TEST_CALLBACK_TIMER(_timer) \
@@ -54,6 +55,8 @@ static void test_tcp_fastopen_request(uint32_t, uint32_t, uint8_t *,
 	test_tcp_fastopen_check((_ip_s), (_ip_d), (_b), (_l))
 #define IIP_EX_OPS_TCP_FASTOPEN_REQUEST(_ip_s, _ip_d, _b, _l) \
 	test_tcp_fastopen_request((_ip_s), (_ip_d), (_b), (_l))
+#define IIP_EX_OPS_TCP_STATE_CLOSE_WAIT(_mem, _conn, _opaque) \
+	test_tcp_state_close_wait((_mem), (_conn), (_opaque))
 
 #ifndef IIP_OPS_DEBUG_PRINTF
 #define IIP_OPS_DEBUG_PRINTF printf
@@ -410,6 +413,12 @@ struct test_state {
 	uint8_t use_fake_clock;
 	uint8_t defer_payload_consumption;
 	uint8_t quiet_payload;
+	struct {
+		uint8_t auto_close;
+		unsigned int count;
+		unsigned int payload_chunk_count;
+		void *conn;
+	} close_wait;
 	uint32_t deferred_payload_len;
 	uint64_t now_ns;
 	unsigned int payload_chunk_count;
@@ -428,6 +437,17 @@ struct test_state {
 	uint32_t source_address_query_peer_ip4_be;
 	struct test_source_route source_routes[TEST_SOURCE_ROUTE_MAX];
 };
+
+static void test_tcp_state_close_wait(void *mem, void *conn, void *opaque)
+{
+	struct test_state *state = opaque;
+
+	state->close_wait.count++;
+	state->close_wait.payload_chunk_count = state->payload_chunk_count;
+	state->close_wait.conn = conn;
+	if (state->close_wait.auto_close)
+		(void)iip_tcp_close(mem, conn, opaque);
+}
 
 static struct test_source_route *test_source_route_find(
 		struct test_state *state, void *handle,
@@ -3478,6 +3498,12 @@ static int tcp_state_basic_flags_scenario(void)
 	TEST_CONDITION(fin.conn.state == __IIP_TCP_STATE_CLOSE_WAIT,
 			"ESTABLISHED + FIN|ACK ended in state=%u; expected CLOSE-WAIT",
 			fin.conn.state);
+	TEST_CONDITION(fin.state.close_wait.count == 1 &&
+				fin.state.close_wait.conn == &fin.conn,
+			"FIN invoked CLOSE-WAIT hook %u time(s) with handle=%p; "
+			"expected once with handle=%p",
+			fin.state.close_wait.count, fin.state.close_wait.conn,
+			(void *)&fin.conn);
 
 	fixture_incoming_spec(&rst, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_RST | TEST_TCP_ACK;
@@ -3490,6 +3516,122 @@ static int tcp_state_basic_flags_scenario(void)
 			"ESTABLISHED + RST|ACK produced %u closed callback(s); expected 1",
 			test_event_count(&rst.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED));
+	return 1;
+}
+
+static int tcp_half_close_scenario(void)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	struct pb *fin;
+	void *payload;
+	const uint8_t data[] = { 0x48, 0x41, 0x4c, 0x46 };
+
+	if (!fixture_init(&f))
+		return 0;
+	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
+	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_CLOSE_WAIT,
+			"half-close hook did not preserve CLOSE-WAIT: state=%u",
+			f.conn.state);
+	TEST_CONDITION(f.state.close_wait.count == 1 &&
+				f.state.close_wait.conn == &f.conn,
+			"half-close hook invocation mismatch: count=%u handle=%p",
+			f.state.close_wait.count, f.state.close_wait.conn);
+
+	free_output(&f.state);
+	payload = iip_ops_pkt_alloc(&f.state);
+	TEST_CONDITION(payload != NULL,
+			"failed to allocate payload for CLOSE-WAIT send");
+	memcpy(iip_ops_pkt_get_data(payload, &f.state), data, sizeof(data));
+	iip_ops_pkt_set_len(payload, sizeof(data), &f.state);
+	TEST_CONDITION(iip_tcp_send(f.ws, &f.conn, payload, 0,
+				&f.state) == 0 && f.conn.head[1][0] &&
+				PB_TCP_PAYLOAD_LEN(f.conn.head[1][0]) == sizeof(data),
+			"CLOSE-WAIT send did not queue %zu payload bytes",
+			sizeof(data));
+
+	TEST_CONDITION(iip_tcp_close(f.ws, &f.conn, &f.state) == 0,
+			"application close from CLOSE-WAIT failed");
+	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_LAST_ACK,
+			"application close from CLOSE-WAIT ended in state=%u; "
+			"expected LAST-ACK", f.conn.state);
+	fin = f.conn.head[1][1];
+	TEST_CONDITION(fin && PB_TCP_HDR_HAS_FIN(fin),
+			"application close from CLOSE-WAIT did not queue FIN");
+
+	fixture_incoming_spec(&f, &spec, 1, NULL, 0);
+	spec.tcp_flags = TEST_TCP_ACK;
+	spec.ack_seq = __iip_ntohl(f.conn.fin_ack_seq_be);
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	TEST_CONDITION(test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED) == 1,
+			"LAST-ACK completion produced %u closed callback(s); expected 1",
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_CLOSED));
+	return 1;
+}
+
+static int tcp_close_wait_auto_close_scenario(void)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	void *out;
+
+	if (!fixture_init(&f))
+		return 0;
+	f.state.close_wait.auto_close = 1;
+	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
+	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	TEST_CONDITION(f.state.close_wait.count == 1,
+			"automatic CLOSE-WAIT hook invoked %u time(s); expected once",
+			f.state.close_wait.count);
+	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_LAST_ACK,
+			"automatic CLOSE-WAIT close ended in state=%u; "
+			"expected LAST-ACK", f.conn.state);
+	TEST_CONDITION(output_count_ethertype(&f.state, 0x0800) == 1,
+			"automatic CLOSE-WAIT close emitted %u IPv4 packets; "
+			"expected one FIN|ACK",
+			output_count_ethertype(&f.state, 0x0800));
+	out = output_nth_ethertype(&f.state, 0x0800, 0);
+	TEST_CONDITION(out && PB_TCP_HDR_HAS_FIN(out) &&
+				PB_TCP_HDR_HAS_ACK(out),
+			"automatic CLOSE-WAIT close did not emit one FIN|ACK");
+	return 1;
+}
+
+static int tcp_payload_fin_scenario(void)
+{
+	struct fixture f;
+	struct tcp_packet_spec spec;
+	const struct test_event *payload_event;
+	const uint8_t payload[] = { 0, 1, 2, 3 };
+
+	if (!fixture_init(&f))
+		return 0;
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	payload_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_PAYLOAD, 0);
+	TEST_CONDITION(f.state.payload_chunk_count == 1 && payload_event &&
+				payload_event->value[0] == sizeof(payload) &&
+				f.state.payload_byte_count == sizeof(payload),
+			"payload+FIN delivered chunks=%u bytes=%llu first_len=%llu; "
+			"expected one %zu-byte payload",
+			f.state.payload_chunk_count,
+			(unsigned long long)f.state.payload_byte_count,
+			(unsigned long long)(payload_event ?
+				payload_event->value[0] : 0), sizeof(payload));
+	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_CLOSE_WAIT &&
+				f.state.close_wait.count == 1 &&
+				f.state.close_wait.payload_chunk_count == 1,
+			"payload+FIN did not enter CLOSE-WAIT exactly once: "
+			"state=%u hook_count=%u payload_chunks_at_hook=%u",
+			f.conn.state, f.state.close_wait.count,
+			f.state.close_wait.payload_chunk_count);
 	return 1;
 }
 
@@ -3601,6 +3743,12 @@ static int tcp_state_transition_coverage_scenario(void)
 	/* Run every family even when an earlier transition exposes a defect. */
 	TEST_ACCUMULATE(ok, tcp_state_basic_flags_scenario(),
 			"basic ACK/FIN/RST handling failed: expected ESTABLISHED data delivery, CLOSE-WAIT on FIN, and CLOSED on RST");
+	TEST_ACCUMULATE(ok, tcp_half_close_scenario(),
+			"half-close failed: expected CLOSE-WAIT hook, delayed application close, LAST-ACK, and CLOSED");
+	TEST_ACCUMULATE(ok, tcp_close_wait_auto_close_scenario(),
+			"automatic CLOSE-WAIT close failed: expected one FIN|ACK and LAST-ACK");
+	TEST_ACCUMULATE(ok, tcp_payload_fin_scenario(),
+			"payload+FIN failed: expected payload delivery followed by one CLOSE-WAIT notification");
 	TEST_ACCUMULATE(ok, tcp_simultaneous_close_scenario(),
 			"simultaneous close failed: expected FIN-WAIT-1 -> CLOSING -> TIME-WAIT");
 	TEST_ACCUMULATE(ok, tcp_sequence_wraparound_scenario(),
