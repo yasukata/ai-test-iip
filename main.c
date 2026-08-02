@@ -30,6 +30,7 @@ static void test_tcp_fastopen_request(uint32_t, uint32_t, uint8_t *,
 static void test_tcp_state_close_wait(void *, void *, void *);
 static void test_no_pb(void *);
 static void test_no_tcp_conn(void *);
+static uint16_t test_pkt_get_capacity(void *, void *);
 #define IIP_TEST_CALLBACK_TCP_STATE_SET() \
 	test_event_tcp_state_set(opaque, conn, conn->state)
 #define IIP_TEST_CALLBACK_TIMER(_timer) \
@@ -61,6 +62,8 @@ static void test_no_tcp_conn(void *);
 	test_tcp_state_close_wait((_mem), (_conn), (_opaque))
 #define IIP_EX_OPS_NO_PB() test_no_pb(s)
 #define IIP_EX_OPS_NO_TCP_CONN() test_no_tcp_conn(s)
+#define IIP_EX_OPS_PKT_GET_CAPACITY(_pkt, _opaque) \
+	test_pkt_get_capacity((_pkt), (_opaque))
 
 #ifndef IIP_OPS_DEBUG_PRINTF
 #define IIP_OPS_DEBUG_PRINTF printf
@@ -91,6 +94,44 @@ static struct pb *shortage_pb;
 static struct iip_tcp_conn *shortage_tcp_conn;
 static unsigned int shortage_pb_calls;
 static unsigned int shortage_tcp_conn_calls;
+static uint16_t packet_capacity_sequence[4];
+static unsigned int packet_capacity_sequence_count;
+static unsigned int packet_capacity_sequence_index;
+static void *packet_capacity_last_pkt;
+static uint8_t packet_clone_tracking;
+static void *packet_tracked_clone;
+static uint8_t packet_tracked_clone_freed;
+
+static uint16_t test_pkt_get_capacity(void *pkt, void *opaque)
+{
+	if (!packet_capacity_sequence_count)
+		return 2048;
+	if (pkt != packet_capacity_last_pkt) {
+		if (packet_capacity_last_pkt &&
+				packet_capacity_sequence_index + 1 <
+				packet_capacity_sequence_count)
+			packet_capacity_sequence_index++;
+		packet_capacity_last_pkt = pkt;
+	}
+	(void)opaque;
+	return packet_capacity_sequence[packet_capacity_sequence_index];
+}
+
+static void packet_capacity_sequence_begin(uint16_t first, uint16_t second)
+{
+	packet_capacity_sequence[0] = first;
+	packet_capacity_sequence[1] = second;
+	packet_capacity_sequence_count = 2;
+	packet_capacity_sequence_index = 0;
+	packet_capacity_last_pkt = NULL;
+}
+
+static void packet_capacity_sequence_end(void)
+{
+	packet_capacity_sequence_count = 0;
+	packet_capacity_sequence_index = 0;
+	packet_capacity_last_pkt = NULL;
+}
 
 static void test_no_pb(void *mem)
 {
@@ -877,6 +918,8 @@ static void iip_ops_pkt_free(void *pkt, void *opaque)
 {
 	if (pkt) {
 		long *buf = (long *)((long *) pkt)[1];
+		if (packet_clone_tracking && pkt == packet_tracked_clone)
+			packet_tracked_clone_freed = 1;
 		if (--buf[0] == 0)
 			free(buf);
 		if (buf != pkt) { /* cloned */
@@ -945,6 +988,10 @@ static void *iip_ops_pkt_clone(void *pkt, void *opaque)
 	cloned_pkt[3] = ((long *) pkt)[3]; /* head */
 	cloned_pkt[4] = 0; /* next */
 	buf[0]++;
+	if (packet_clone_tracking) {
+		packet_tracked_clone = cloned_pkt;
+		packet_tracked_clone_freed = 0;
+	}
 	return (void *) cloned_pkt;
 	{ /* unused */
 		(void) opaque;
@@ -2283,6 +2330,111 @@ static int fixture_send_data(struct fixture *f, uint16_t len)
 	return f->conn.head[2][0] != NULL;
 }
 
+static void *fixture_oversized_tcp_payload(struct fixture *f)
+{
+	void *payload = iip_ops_pkt_alloc(&f->state);
+
+	if (payload)
+		iip_ops_pkt_set_len(payload, (uint16_t)(f->conn.mss + 1),
+				&f->state);
+	return payload;
+}
+
+static uint16_t fixture_send_with_capacity_failure(struct fixture *f,
+		void *payload, uint16_t failing_capacity)
+{
+	uint16_t result;
+
+	packet_capacity_sequence_begin(2048, failing_capacity);
+	result = iip_tcp_send(f->ws, &f->conn, payload, 0, &f->state);
+	packet_capacity_sequence_end();
+	return result;
+}
+
+static enum result test_tcp_capacity_failure_is_atomic(const char **why)
+{
+	struct fixture f;
+	struct pb *p, *next;
+	void *payload;
+	uint32_t seq_before;
+	uint16_t result;
+	int queue_empty;
+	int seq_unchanged;
+
+	if (!fixture_init(&f)) {
+		*why = "fixture initialization failed";
+		return RESULT_FAIL;
+	}
+	payload = fixture_oversized_tcp_payload(&f);
+	if (!payload) {
+		*why = "payload allocation failed";
+		return RESULT_FAIL;
+	}
+	seq_before = f.conn.seq_be;
+
+	result = fixture_send_with_capacity_failure(&f, payload, 32);
+
+	queue_empty = f.conn.head[1][0] == NULL && f.conn.head[1][1] == NULL;
+	seq_unchanged = f.conn.seq_be == seq_before;
+	__iip_q_for_each_safe(f.conn.head[1], p, next, 0) {
+		__iip_dequeue_obj(f.conn.head[1], p, 0);
+		__iip_free_pb(f.ws, p, &f.state);
+	}
+	if (result != 0xffff) {
+		*why = "capacity failure was not reported";
+		return RESULT_FAIL;
+	}
+	if (!queue_empty) {
+		*why = "a preceding segment remained queued after failure";
+		return RESULT_FAIL;
+	}
+	if (!seq_unchanged) {
+		*why = "send sequence advanced after an atomic send failure";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
+}
+
+static enum result test_tcp_payload_capacity_failure_frees_clone(
+		const char **why)
+{
+	struct fixture f;
+	void *payload;
+	uint16_t result;
+	int clone_freed;
+
+	if (!fixture_init(&f)) {
+		*why = "fixture initialization failed";
+		return RESULT_FAIL;
+	}
+	payload = fixture_oversized_tcp_payload(&f);
+	if (!payload) {
+		*why = "payload allocation failed";
+		return RESULT_FAIL;
+	}
+
+	packet_clone_tracking = 1;
+	packet_tracked_clone = NULL;
+	packet_tracked_clone_freed = 0;
+	result = fixture_send_with_capacity_failure(&f, payload, 66);
+	clone_freed = packet_tracked_clone && packet_tracked_clone_freed;
+	packet_clone_tracking = 0;
+
+	if (!clone_freed && packet_tracked_clone)
+		iip_ops_pkt_free(packet_tracked_clone, &f.state);
+	packet_tracked_clone = NULL;
+	packet_tracked_clone_freed = 0;
+	if (result != 0xffff) {
+		*why = "payload capacity failure was not reported";
+		return RESULT_FAIL;
+	}
+	if (!clone_freed) {
+		*why = "current segment clone leaked after payload capacity failure";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
+}
+
 static int fixture_queue_data_at_zero_window(struct fixture *f)
 {
 	void *payload;
@@ -2299,6 +2451,59 @@ static int fixture_queue_data_at_zero_window(struct fixture *f)
 	fixture_run_timers(f);
 	return f->state.out_cnt == 0 && f->conn.head[1][0] != NULL &&
 		f->conn.head[2][0] == NULL;
+}
+
+static enum result test_tcp_capacity_failure_preserves_existing_queue(
+		const char **why)
+{
+	struct fixture f;
+	struct pb *pending;
+	void *pending_pkt;
+	void *payload;
+	uint32_t seq_before;
+	uint16_t result;
+
+	if (!fixture_init(&f)) {
+		*why = "fixture initialization failed";
+		return RESULT_FAIL;
+	}
+	if (!fixture_queue_data_at_zero_window(&f)) {
+		*why = "failed to prepare an existing queued segment";
+		return RESULT_FAIL;
+	}
+	pending = f.conn.head[1][0];
+	pending_pkt = pending->pkt;
+	seq_before = f.conn.seq_be;
+
+	payload = fixture_oversized_tcp_payload(&f);
+	if (!payload) {
+		*why = "payload allocation failed";
+		return RESULT_FAIL;
+	}
+
+	result = fixture_send_with_capacity_failure(&f, payload, 32);
+
+	if (result != 0xffff) {
+		*why = "capacity failure was not reported";
+		return RESULT_FAIL;
+	}
+	if (f.conn.head[1][0] != pending || f.conn.head[1][1] != pending) {
+		*why = "existing send queue endpoints changed after failure";
+		return RESULT_FAIL;
+	}
+	if (pending->pkt != pending_pkt) {
+		*why = "existing queued packet was released after failure";
+		return RESULT_FAIL;
+	}
+	if (pending->prev[0] != NULL || pending->next[0] != NULL) {
+		*why = "existing send queue links changed after failure";
+		return RESULT_FAIL;
+	}
+	if (f.conn.seq_be != seq_before) {
+		*why = "send sequence advanced after an atomic send failure";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
 }
 
 static unsigned int fixture_wait_for_zero_window_probes(struct fixture *f,
@@ -10377,6 +10582,12 @@ static int robustness_test_main(void)
 			"extended TCP state-transition regression coverage" },
 		{ test_retransmitted_syn_ack_in_established,
 			"ESTABLISHED acknowledges a retransmitted SYN+ACK exactly once" },
+		{ test_tcp_capacity_failure_is_atomic,
+			"multi-segment capacity failure is atomic" },
+		{ test_tcp_payload_capacity_failure_frees_clone,
+			"payload capacity failure frees the current segment clone" },
+		{ test_tcp_capacity_failure_preserves_existing_queue,
+			"capacity failure preserves an existing send queue" },
 	};
 	struct test_summary summary = { 0 };
 	unsigned int i;
