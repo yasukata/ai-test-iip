@@ -2102,6 +2102,94 @@ static uint16_t fixture_transmit_with_capacity_failure(struct fixture *f,
 	return rc == IIP_ERR_OK ? 0 : UINT16_MAX;
 }
 
+/* This tests a zero effective send MSS, separately from a received MSS=0. */
+static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
+		const char **why)
+{
+	struct fixture f;
+	struct ii_pb *p;
+	void *payload;
+	uint32_t sent_seq_before;
+	enum iip_rc rc;
+	int progress_ok, closing;
+
+	if (!fixture_init(&f)) {
+		*why = "fixture initialization failed";
+		return RESULT_FAIL;
+	}
+	f.conn->mss = mss;
+	if (timestamps)
+		f.conn->flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+	else
+		f.conn->flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
+	payload = iip_ops_pkt_alloc(&f.state);
+	if (!payload) {
+		free(f.ws);
+		*why = "payload allocation failed";
+		return RESULT_FAIL;
+	}
+	memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, 4);
+	iip_ops_pkt_set_len(payload, 4, &f.state);
+	test_api_push(f.ws, f.conn, payload, 0, 1, 0, 0, 0,
+			NULL, 0, &f.state);
+	free_output(&f.state);
+	p = test_ring_end(f.ws, &f.conn->tx_ring, 0);
+	if (!p || ii_pb_ring_num_used(&f.conn->tx_ring) != 1) {
+		*why = "payload was not queued before zero-MSS transmission";
+		return RESULT_FAIL;
+	}
+	sent_seq_before = f.conn->sent_seq;
+	rc = ii_tcp_conn_xmit_queued_data(f.ws,
+			test_conn_id(f.ws, f.conn), 4, &f.state);
+	progress_ok = !f.state.out_cnt &&
+		f.conn->sent_seq == sent_seq_before && p->tcp.sent_bytes == 0 &&
+		ii_pb_ring_num_used(&f.conn->tx_ring) == 1 &&
+		test_ring_end(f.ws, &f.conn->tx_ring, 0) == p &&
+		ii_pb_ring_num_used(&f.conn->sent_ring) == 0;
+	closing = !!(f.conn->flags & II_TCP_CONN_FLAGS_CLOSING);
+	/* Finish the deferred close and verify its externally visible callback
+	 * and all four descriptor queues. ASan also detects invalid cleanup. */
+	if (closing && ii_tcp_conn_close_check(f.ws,
+			test_conn_id(f.ws, f.conn), &f.state) != IIP_ERR_OK) {
+		*why = "zero-MSS connection cleanup failed";
+		return RESULT_FAIL;
+	}
+	if (rc != IIP_ERR_OK)
+		*why = "zero-MSS transmission escaped as a stack error";
+	else if (!progress_ok)
+		*why = "zero-MSS transmission emitted data or advanced unsent queue/sequence state";
+	else if (!closing)
+		*why = "zero-MSS transmission did not request connection closure";
+	else if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_CLOSED) != 1 ||
+			ii_pb_ring_num_used(&f.conn->rx_ring) ||
+			ii_pb_ring_num_used(&f.conn->tx_ring) ||
+			ii_pb_ring_num_used(&f.conn->sent_ring) ||
+			ii_pb_ring_num_used(&f.conn->pending_ring))
+		*why = "zero-MSS close did not notify once and clear all queues";
+	else {
+		free_output(&f.state);
+		free(f.ws);
+		return RESULT_PASS;
+	}
+	free_output(&f.state);
+	free(f.ws);
+	return RESULT_FAIL;
+}
+
+static enum result test_zero_effective_send_mss(const char **why)
+{
+	/* Cover zero, subtraction underflow, and an exactly zero difference. */
+	if (zero_send_mss_case(0, 0, why) != RESULT_PASS)
+		return RESULT_FAIL;
+	if (II_CONF_TCP_OPT_TS_OK) {
+		if (zero_send_mss_case(1, 1, why) != RESULT_PASS ||
+				zero_send_mss_case(12, 1, why) != RESULT_PASS)
+			return RESULT_FAIL;
+	}
+	return RESULT_PASS;
+}
+
 static enum result test_tcp_capacity_failure_is_atomic(const char **why)
 {
 	struct fixture f;
@@ -3139,18 +3227,65 @@ static int invalid_flag_combination_cases(void)
 	return 1;
 }
 
-static int mss_boundary_case(uint16_t advertised_mss, uint16_t expected_mss)
+static int mss_boundary_case(uint16_t advertised_mss)
 {
 	struct fixture f;
 	struct tcp_packet_spec spec;
+	struct ii_pb *p;
+	void *payload;
+	uint32_t expected_seq;
+	unsigned int total = 0;
+	const uint16_t payload_len = advertised_mss == 1 ? 4 : 1600;
+
 	if (!fixture_init(&f))
 		return 0;
 	f.conn->state = II_TCP_STATE_SYN_SENT;
+	/* Exercise small MSS without Timestamp option overhead. */
+	f.conn->flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+	spec.ack_seq = f.conn->seq + 1;
 	tcp_packet_add_mss(&spec, advertised_mss);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn->mss == expected_mss;
+	if (f.state.payload_chunk_count != 0)
+		return 0;
+	/* Zero is a robustness case: rejection or a usable fallback is allowed.
+	 * RFC 9293 does not prescribe retaining the configured initial MSS. */
+	if (!advertised_mss && f.conn->state != II_TCP_STATE_ESTABLISHED)
+		return 1;
+	if (f.conn->state != II_TCP_STATE_ESTABLISHED || !f.conn->mss)
+		return 0;
+
+	/* Check wire behavior, without prescribing how peer MSS is stored. */
+	expected_seq = f.conn->seq;
+	payload = iip_ops_pkt_alloc(&f.state);
+	if (!payload)
+		return 0;
+	memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, payload_len);
+	iip_ops_pkt_set_len(payload, payload_len, &f.state);
+	test_api_push(f.ws, f.conn, payload, 0, 1, 0, 0, 0,
+			NULL, 0, &f.state);
+	free_output(&f.state);
+	p = test_ring_end(f.ws, &f.conn->tx_ring, 0);
+	if (!p || ii_tcp_xmit_queued_data_one(f.ws,
+			test_conn_id(f.ws, f.conn), (uint32_t)(p - f.ws->pbs.array),
+			0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
+		return 0;
+	for (unsigned int i = 0; i < f.state.out_cnt; i++) {
+		void *pkt = f.state.out[i];
+		uint16_t len = PB_TCP_PAYLOAD_LEN(pkt);
+		if (!len || (advertised_mss && len > advertised_mss) ||
+				ii_ntohs(PB_IP4(pkt)->len_be) > f.conn->path_mtu ||
+				ii_ntohl(PB_TCP(pkt)->seq_be) != expected_seq ||
+				!ip4_checksum_valid(pkt) || !checksum_valid(pkt))
+			return 0;
+		for (uint16_t j = 0; j < len; j++)
+			if (PB_TCP_PAYLOAD(pkt)[j] != 0x5a)
+				return 0;
+		expected_seq += len;
+		total += len;
+	}
+	return total == payload_len;
 }
 
 static int payload_length_boundary_cases(void)
@@ -3202,15 +3337,13 @@ static int additional_malformed_boundary_scenario(void)
 			"a physically truncated IPv4/TCP packet was not silently discarded");
 	TEST_ACCUMULATE(ok, invalid_flag_combination_cases(),
 			"SYN/FIN/RST flag precedence or reset notification was incorrect");
-	TEST_ACCUMULATE(ok, mss_boundary_case(0, IIP_CONF_TCP_INIT_MSS),
-			"MSS=0 was not ignored: expected effective MSS=%u",
-			IIP_CONF_TCP_INIT_MSS);
-	TEST_ACCUMULATE(ok, mss_boundary_case(1, 1),
-			"MSS=1 was not accepted as the effective MSS");
+	TEST_ACCUMULATE(ok, mss_boundary_case(0),
+			"MSS=0 was neither safely rejected nor handled with a usable fallback");
+	TEST_ACCUMULATE(ok, mss_boundary_case(1),
+			"MSS=1 handshake or one-octet payload segmentation failed");
 	TEST_ACCUMULATE(ok,
-			mss_boundary_case(UINT16_MAX, IIP_CONF_TCP_INIT_MSS),
-			"MSS=65535 was not capped at configured MSS=%u",
-			IIP_CONF_TCP_INIT_MSS);
+			mss_boundary_case(UINT16_MAX),
+			"MSS=65535 handshake or path-MTU-limited transmission failed");
 	TEST_ACCUMULATE(ok, payload_length_boundary_cases(),
 			"zero-length or maximum-length payload boundary handling failed");
 	return ok;
@@ -3942,8 +4075,8 @@ static enum result test_default_send_mss(const char **why)
 	struct ii_pb *p;
 	const uint16_t default_port_be = ii_htons(21001);
 	const uint16_t advertised_port_be = ii_htons(21002);
-	const uint16_t tcp_option_len = II_CONF_TCP_OPT_TS_OK ? 12 : 0;
-	const uint16_t expected_first_payload = 536 - tcp_option_len;
+	uint16_t tcp_option_len;
+	uint16_t expected_first_payload;
 	void *payload;
 	uint16_t lengths[2] = { 0, 0 };
 	uint16_t total = 0;
@@ -3961,6 +4094,10 @@ static enum result test_default_send_mss(const char **why)
 	default_conn = fixture_find_peer_port(&f, default_port_be);
 	if (!default_conn || default_conn->mss != 536)
 		return RESULT_FAIL;
+	/* Account for timestamps only when enabled on this connection. */
+	tcp_option_len = II_CONF_TCP_OPT_TS_OK &&
+		(default_conn->flags & II_TCP_CONN_FLAGS_OPT_SET_TS) ? 12 : 0;
+	expected_first_payload = 536 - tcp_option_len;
 
 	/* An MSS option must override the default, proving absence is detected. */
 	fixture_incoming_spec(&f, &spec, 200, NULL, 0);
@@ -8170,6 +8307,8 @@ static int robustness_test_main(void)
 			"payload capacity failure frees the current segment clone" },
 		{ test_tcp_capacity_failure_preserves_existing_queue,
 			"capacity failure preserves an existing send queue" },
+		{ test_zero_effective_send_mss,
+			"zero effective MSS closes without marking unsent data as sent" },
 	};
 	struct test_summary summary = { 0 };
 	unsigned int i;
