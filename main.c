@@ -7019,21 +7019,60 @@ static enum result test_syn_options(const char **why)
 
 static enum result test_required_options(const char **why)
 {
-	struct fixture f;
-	void *pkt;
-	uint8_t *o;
-	uint16_t i, n;
-	int nop = 0, eol = 0;
-	(void)why;
-	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 1, 0, 0)))
-		return RESULT_FAIL;
-	o = PB_TCP_OPT(pkt); n = PB_TCP_OPTLEN(pkt);
-	for (i = 0; i < n; i++) {
-		nop |= o[i] == 1;
-		if (o[i] == 0) { eol = 1; break; }
+	/* A header ending at an option boundary needs no EOL. Also exercise
+	 * NOP before an unaligned MSS, and EOL followed by zero padding. */
+	for (unsigned int variant = 0; variant < 3; variant++) {
+		struct fixture f;
+		struct tcp_packet_spec spec;
+		const uint8_t payload[] = { 0 };
+		const uint8_t padding[] = { 0, 0 };
+		int accepted;
+
+		if (!fixture_init(&f)) {
+			*why = "fixture initialization failed";
+			return RESULT_FAIL;
+		}
+		f.conn->state = II_TCP_STATE_SYN_SENT;
+		f.conn->flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
+		fixture_incoming_spec(&f, &spec, 100, NULL, 0);
+		spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+		spec.ack_seq = f.conn->seq + 1;
+		if (variant)
+			tcp_packet_add_nop(&spec);
+		/* The zero inside this MSS value is data, not an EOL kind. */
+		tcp_packet_add_mss(&spec, 1024);
+		if (variant == 1) {
+			for (unsigned int i = 0; i < 3; i++)
+				tcp_packet_add_nop(&spec);
+		} else if (variant == 2) {
+			tcp_packet_add_eol(&spec);
+			tcp_packet_add_raw_option(&spec, padding, sizeof(padding));
+		}
+		fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+		accepted = f.conn->state == II_TCP_STATE_ESTABLISHED &&
+			f.conn->mss == 1024 && f.conn->seq_next_expected == 101;
+		if (accepted) {
+			/* Valid options must not prevent subsequent data delivery. */
+			fixture_incoming_spec(&f, &spec, 101, payload, sizeof(payload));
+			fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+			accepted = f.state.payload_chunk_count == 1 &&
+				f.state.payload_byte_count == sizeof(payload) &&
+				f.conn->seq_next_expected == 102;
+		}
+		ii_tcp_conn_enter_close_phase(f.ws, test_conn_id(f.ws, f.conn));
+		if (ii_tcp_conn_close_check(f.ws, test_conn_id(f.ws, f.conn),
+				&f.state) != IIP_ERR_OK)
+			accepted = 0;
+		free_output(&f.state);
+		free(f.ws);
+		if (!accepted) {
+			*why = variant == 0 ? "MSS without EOL was not accepted" :
+				variant == 1 ? "NOP and unaligned MSS were not accepted" :
+				"EOL with zero padding prevented MSS negotiation or data delivery";
+			return RESULT_FAIL;
+		}
 	}
-	iip_ops_pkt_free(pkt, &f.state);
-	return nop && eol ? test_syn_options(why) : RESULT_FAIL;
+	return test_syn_options(why);
 }
 
 static enum result test_ttl(const char **why)
