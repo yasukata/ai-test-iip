@@ -1,8 +1,8 @@
 /ai-test-iip
-/ai-test-iip-lwip
+/ai-test-iip-asan
+/ai-test-iip-ubsan
 /blake2-upstream/
 /blake2.h
 /blake2-impl.h
 /blake2s-ref.c
 /iip/
-/lwip-2.2.1/

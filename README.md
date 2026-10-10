@@ -22,12 +22,11 @@ security assurance artifact.
 The following project files are published in this repository:
 
 - `main.c` — the test implementation
-- `Makefile` — standalone and lwIP interoperability build targets
-- `lwipopts.h` — deterministic `NO_SYS` configuration for the lwIP peer
+- `Makefile` — build and test targets
 - `README.md` — setup, build, and usage instructions
 - `LICENSE` — the MIT License
 
-The iip, BLAKE2, and lwIP sources are intentionally not included. Download
+The iip and BLAKE2 sources are intentionally not included. Download
 them separately from their upstream locations as described below.
 
 ## Downloading dependencies
@@ -43,11 +42,6 @@ cp blake2-upstream/ref/blake2-impl.h .
 cp blake2-upstream/ref/blake2s-ref.c .
 ```
 
-Download
-[lwIP 2.2.1](https://download-mirror.savannah.gnu.org/releases/lwip/lwip-2.2.1.zip)
-manually, then extract the ZIP archive in this repository root. The extracted
-directory must be named `lwip-2.2.1`.
-
 The resulting source layout should be:
 
 ```text
@@ -58,10 +52,7 @@ The resulting source layout should be:
 │   └── main.c
 ├── blake2.h
 ├── blake2-impl.h
-├── blake2s-ref.c
-└── lwip-2.2.1/
-    ├── contrib/
-    └── src/
+└── blake2s-ref.c
 ```
 
 The downloaded dependencies remain subject to their respective upstream
@@ -82,8 +73,7 @@ build with `NDEBUG` defined.
 
 ### TCP Fast Open capability test
 
-The standalone iip test includes `TFO-PASSIVE-1`, independently of the lwIP
-tests. It requests a TCP Fast Open cookie (option kind 34), then uses the
+The iip test includes `TFO-PASSIVE-1`. It requests a TCP Fast Open cookie (option kind 34), then uses the
 returned cookie with SYN data. A supported implementation must accept and
 deliver that data once before the final handshake ACK, suppress duplicate
 delivery on SYN retransmission, and complete the handshake without repeating
@@ -97,44 +87,16 @@ it is unavailable:
 ./ai-test-iip --fast-open
 ```
 
-### lwIP 2.2.1 interoperability test
+### Make targets
 
-With `lwip-2.2.1` extracted directly under this repository, the in-memory
-interoperability test can be built and run without TAP devices or root
-privileges:
+Build and run the full test suite with:
 
 ```sh
+make
 make check
 ```
 
-The test connects iip to a real lwIP 2.2.1 `NO_SYS` instance through a virtual
-Ethernet link. It verifies UDP payload delivery in both directions (including
-lwIP's ARP resolution) and a TCP three-way handshake followed by payload
-delivery from iip to lwIP. It also runs deterministic loss-and-recovery tests
-for ARP, UDP, the three TCP handshake segments, and a TCP data ACK. Both stacks
-use a shared virtual clock in these tests, so retransmission tests do not sleep.
-The impairment link also exercises deadline-based delay, UDP duplication and
-reordering, TCP duplicate-segment suppression, IPv4/TCP/UDP checksum and
-length corruption, valid-checksum semantic TCP mutation, and IPv4 fragment
-reassembly with two or three fragments, reverse order, missing/duplicate
-fragments, and consistent or conflicting overlap.
-TCP stateful impairment coverage includes zero-window pause/recovery, FIN and
-FIN-ACK loss, simultaneous close, duplicate-EOF prevention, lwIP RTO
-congestion-state observation through PCB snapshots, and the boundary between
-two duplicate ACKs and three-ACK Fast Retransmit.
-The virtual link can synthesize quoted ICMP errors: the suite verifies TCP
-Destination Unreachable notification and Path-MTU update from Fragmentation
-Needed. Rules can be disabled during a scenario to test UDP and TCP recovery
-after a temporary one-way blackhole.
-
-The suites can also be run separately:
-
-```sh
-make check-lwip
-make check-lwip-impairment
-```
-
-Run the same CI-oriented suites with AddressSanitizer and UndefinedBehaviorSanitizer:
+Run the suite with AddressSanitizer and UndefinedBehaviorSanitizer:
 
 ```sh
 make check-asan
@@ -146,40 +108,6 @@ The sanitizer builds use separate binaries, stop at the first reported error,
 and retain frame pointers for useful stack traces. The ASan target disables
 leak detection so it also works in test runners that execute processes under
 `ptrace`; it still checks invalid memory accesses.
-
-The default impairment target is the CI-oriented short suite. The full suite
-adds deterministic seeded impairment sequences:
-
-```sh
-make check-lwip-impairment-full
-IIP_LWIP_SEED=0x12345678 make check-lwip-impairment-full
-```
-
-Run one scenario by its ID with either the binary or Make:
-
-```sh
-./ai-test-iip-lwip --lwip-test TCP-HS-1
-make check-lwip-test LWIP_TEST=TCP-HS-1
-```
-
-The TAP header reports the selected mode, seed, and filter. If a non-TODO
-scenario fails, the harness prints up to 64 recent frame events with virtual
-time, direction, selected impairment rule, protocol, TCP flags, and payload
-length so the failure can be reproduced with the reported seed.
-
-Set `IIP_LWIP_PCAP` to save frames that were actually delivered across the
-virtual Ethernet link:
-
-```sh
-IIP_LWIP_PCAP=./tcp-fast-retransmit.pcap \
-  ./ai-test-iip-lwip --lwip-test TCP-CC-6
-```
-
-For one selected test, the exact path is used. For a suite, the test ID and
-`.pcap` are appended to the supplied prefix. Captures use virtual time and
-Ethernet link type and can be opened by standard pcap readers.
-
-`make` also builds the original full test binary.
 
 The enhanced negative and state-transition tests are expected to expose known
 failures in the current stack. A nonzero exit status can therefore represent a
