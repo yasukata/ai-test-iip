@@ -1,4 +1,6 @@
 CC ?= cc
+PYTHON ?= python3
+TEST_OUTPUT_FLAGS ?=
 CFLAGS ?= -O2 -g
 WARNINGS = -Wall -Wextra -Wpedantic
 SANITIZER_CFLAGS = -O1 -g -fno-omit-frame-pointer
@@ -22,13 +24,13 @@ ai-test-iip-ubsan: $(TEST_SOURCES)
 		-std=gnu11 -o $@ main.c
 
 check: ai-test-iip
-	./ai-test-iip
+	$(PYTHON) run_tests.py $(TEST_OUTPUT_FLAGS) -- ./ai-test-iip
 
 check-asan: ai-test-iip-asan
-	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 ./ai-test-iip-asan
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 $(PYTHON) run_tests.py $(TEST_OUTPUT_FLAGS) --log test-results-asan.log -- ./ai-test-iip-asan
 
 check-ubsan: ai-test-iip-ubsan
-	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ./ai-test-iip-ubsan
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) run_tests.py $(TEST_OUTPUT_FLAGS) --log test-results-ubsan.log -- ./ai-test-iip-ubsan
 
 check-sanitizers: check-asan check-ubsan
 

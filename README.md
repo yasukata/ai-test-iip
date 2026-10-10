@@ -106,6 +106,18 @@ make
 make check
 ```
 
+`make check` requires Python 3 and groups results by suite with explicit
+`PASS`, `FAIL`, `SKIP`, and `TODO` labels. Failed cases are listed again at the
+end. Full output, including packet traces and assertion diagnostics, is saved
+to `test-results.log`. The command preserves the harness exit status.
+Show diagnostics inline with `make check TEST_OUTPUT_FLAGS=--verbose`.
+Running `./ai-test-iip` directly retains the original output format.
+The formatter can also run a single mode:
+
+```sh
+python3 run_tests.py -- ./ai-test-iip --self-tests
+```
+
 Run the suite with AddressSanitizer and UndefinedBehaviorSanitizer:
 
 ```sh
@@ -115,7 +127,9 @@ make check-sanitizers
 ```
 
 The sanitizer builds use separate binaries and retain frame pointers for useful
-stack traces. Each scenario runs in a child process with a timeout. A sanitizer
+stack traces. Their full logs are saved separately to `test-results-asan.log`
+and `test-results-ubsan.log`.
+Each scenario runs in a child process with a timeout. A sanitizer
 error stops that child; the harness records a failure and continues with later
 scenarios. The ASan target disables
 leak detection so it also works in test runners that execute processes under

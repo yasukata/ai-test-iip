@@ -6,3 +6,4 @@
 /blake2-impl.h
 /blake2s-ref.c
 /iip/
+test-results*.log
