@@ -21,7 +21,10 @@ security assurance artifact.
 
 The following project files are published in this repository:
 
-- `main.c` — the test implementation
+- `main.c` — test scenarios, fixtures, packet builders, and assertions
+- `test_api.c` and `test_api.h` — adapters and helpers for the current iip API
+- `test_backend.c` and `test_backend.h` — packet backend and callback bindings
+- `test_wire.h` — test-side wire-format definitions
 - `Makefile` — build and test targets
 - `README.md` — setup, build, and usage instructions
 - `LICENSE` — the MIT License
@@ -68,6 +71,13 @@ cc -std=gnu11 -O2 -Wall -Wextra -o ai-test-iip main.c
 ./ai-test-iip
 ```
 
+Run the harness self-tests, including a two-endpoint TCP handshake, bidirectional
+payload transfer, and connection teardown, with:
+
+```sh
+./ai-test-iip --self-tests
+```
+
 A successful test run exits with status `0`. The tests use `assert`, so do not
 build with `NDEBUG` defined.
 
@@ -104,14 +114,30 @@ make check-ubsan
 make check-sanitizers
 ```
 
-The sanitizer builds use separate binaries, stop at the first reported error,
-and retain frame pointers for useful stack traces. The ASan target disables
+The sanitizer builds use separate binaries and retain frame pointers for useful
+stack traces. Each scenario runs in a child process with a timeout. A sanitizer
+error stops that child; the harness records a failure and continues with later
+scenarios. The ASan target disables
 leak detection so it also works in test runners that execute processes under
 `ptrace`; it still checks invalid memory accesses.
 
-The enhanced negative and state-transition tests are expected to expose known
-failures in the current stack. A nonzero exit status can therefore represent a
-successfully detected implementation defect rather than a test harness crash.
+### Current API migration
+
+The migration retains all 101 original `test_*` scenario functions. The test
+tables still expose 69 RFC entries, 23 IPv4 entries, eight robustness entries,
+and six TCP Fast Open entries; some entries reuse scenario functions. Existing assertions are adapted to pool IDs and rings, host-order
+connection fields, the current callback interface, and caller-maintained time.
+The API adapters and backend bindings are included by `main.c` in the same
+translation unit as iip
+so internal state assertions can still inspect the implementation.
+
+Transmit descriptors now contain queued payload rather than serialized headers.
+Wire-format checks therefore inspect packets emitted by the native transmit path.
+Capacity-error tests inject failure during serialization after successful enqueue;
+they check transmission atomicity, cleanup, and preservation of accepted queues.
+Requirements without a corresponding current API are reported as failures.
+The normal-mode TCP Fast Open `TODO` policy is preserved; `--fast-open`
+requires those capabilities.
 
 ### Reproducible packet fuzzing
 

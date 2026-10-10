@@ -11,71 +11,24 @@
 
 #define ARRAY_LENGTH(_array) (sizeof(_array) / sizeof((_array)[0]))
 
+#include <stdbool.h>
+#include "test_wire.h"
+#define IIP_PKT_P void *
+#define IIP_OPAQUE_P void *
+#define IIP_TCP_CONN_STRUCT_EXTRA void *opaque
+#define SKIP_IIP_IMPLEMENTATION
+#include "iip/main.c"
+#undef SKIP_IIP_IMPLEMENTATION
 static void test_event_tcp_state_set(void *, void *, uint8_t);
 static void test_event_timer(void *, uint8_t, uint32_t);
-static void test_event_tcp_retransmission(void *, void *, void *, uint8_t,
-		uint32_t, uint32_t, uint32_t);
-static void test_event_loss_detected(void *, void *, uint8_t, uint16_t,
-		uint16_t, uint16_t, uint16_t);
-static void test_event_ip4_negative_advice(void *, void *);
-static void test_event_tcp_icmp_error(void *, void *, void *, uint8_t,
-		uint8_t, void *);
-static void test_event_tcp_urgent(void *, void *, void *, void *);
-static void test_craft_ip4_options(void *, void *, void *, void *,
-		uint32_t *, uint8_t *, uint16_t *, void *);
-static long test_tcp_fastopen_check(uint32_t, uint32_t, const uint8_t *,
-		uint8_t);
-static void test_tcp_fastopen_request(uint32_t, uint32_t, uint8_t *,
-		uint8_t *);
-static void test_tcp_state_close_wait(void *, void *, void *);
-static void test_no_pb(void *);
-static void test_no_tcp_conn(void *);
-static uint16_t test_pkt_get_capacity(void *, void *);
-#define IIP_TEST_CALLBACK_TCP_STATE_SET() \
-	test_event_tcp_state_set(opaque, conn, conn->state)
-#define IIP_TEST_CALLBACK_TIMER(_timer) \
-	test_event_timer(opaque, (_timer), now_ms)
-#define IIP_TEST_CALLBACK_TCP_RETRANSMISSION() \
-	test_event_tcp_retransmission(opaque, conn, clone_pkt, \
-			p->debug.tcp.flags.retransmit, conn->retrans_cnt, \
-			(conn->head[2][0] ? conn->head[2][0]->tcp.rto_ms : 0), \
-			now_ms)
-#define IIP_TEST_CALLBACK_LOSS_DETECTED(_reason) \
-	test_event_loss_detected(opaque, conn, (_reason), old_cc_win, \
-			conn->cc.win, old_cc_ssthresh, conn->cc.ssthresh)
-#define IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE(_s, _handle, _tcp_opaque, _o) \
-	test_event_ip4_negative_advice((_o), (_handle))
-#define IIP_EX_OPS_TCP_ICMP_ERROR(_s, _handle, _tcp_opaque, _type, _code, _p, _o) \
-	test_event_tcp_icmp_error((_o), (_handle), (_tcp_opaque), (_type), \
-			(_code), (_p))
-#define IIP_EX_OPS_TCP_URGENT(_s, _handle, _tcp_opaque, _p, _o) \
-	test_event_tcp_urgent((_o), (_handle), (_tcp_opaque), (_p))
-#define IIP_EX_OPS_TCP_CRAFT_IP4_OPT(_s, _handle, _tcp_opaque, _p, \
-		_dst_ip4_be, _ip4_opt, _ip4_opt_len, _o) \
-	test_craft_ip4_options((_s), (_handle), (_tcp_opaque), (_p), \
-			(_dst_ip4_be), (_ip4_opt), (_ip4_opt_len), (_o))
-#define IIP_EX_OPS_TCP_FASTOPEN_CHECK(_ip_s, _ip_d, _b, _l) \
-	test_tcp_fastopen_check((_ip_s), (_ip_d), (_b), (_l))
-#define IIP_EX_OPS_TCP_FASTOPEN_REQUEST(_ip_s, _ip_d, _b, _l) \
-	test_tcp_fastopen_request((_ip_s), (_ip_d), (_b), (_l))
-#define IIP_EX_OPS_TCP_STATE_CLOSE_WAIT(_mem, _conn, _opaque) \
-	test_tcp_state_close_wait((_mem), (_conn), (_opaque))
-#define IIP_EX_OPS_NO_PB() test_no_pb(s)
-#define IIP_EX_OPS_NO_TCP_CONN() test_no_tcp_conn(s)
-#define IIP_EX_OPS_PKT_GET_CAPACITY(_pkt, _opaque) \
-	test_pkt_get_capacity((_pkt), (_opaque))
-
-#ifndef IIP_OPS_DEBUG_PRINTF
-#define IIP_OPS_DEBUG_PRINTF printf
-#endif
-
-static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t _src_port, uint16_t _dst_port);
-#define ____IIP_OPS_TCP_ISS_OFF() \
-	do { \
-		conn->seq_be = conn->iss_be = __iip_htonl(s->tcp.iss + iip_ops_tcp_iss_off(local_ip4_be, peer_ip4_be, local_port_be, peer_port_be)); \
-	} while (0)
-
+static void test_event_tcp_retransmission(void *, void *, void *, uint8_t, uint32_t, uint32_t, uint32_t);
+static void test_event_loss_detected(void *, void *, uint8_t, uint16_t, uint16_t, uint16_t, uint16_t);
+static uint32_t iip_ops_tcp_iss_off(uint32_t, uint32_t, uint16_t, uint16_t);
+#include "test_backend.h"
+#define SKIP_IIP_DEFINITION
 #include "iip/main.c"
+#undef SKIP_IIP_DEFINITION
+#include "test_api.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -90,21 +43,18 @@ static uint32_t iip_ops_tcp_iss_off(uint32_t _src_ip, uint32_t _dst_ip, uint16_t
 
 #include "blake2s-ref.c"
 
-static struct pb *shortage_pb;
-static struct iip_tcp_conn *shortage_tcp_conn;
-static unsigned int shortage_pb_calls;
-static unsigned int shortage_tcp_conn_calls;
 static uint16_t packet_capacity_sequence[4];
 static unsigned int packet_capacity_sequence_count;
 static unsigned int packet_capacity_sequence_index;
 static void *packet_capacity_last_pkt;
+static void *packet_capacity_exempt_payload;
 static uint8_t packet_clone_tracking;
 static void *packet_tracked_clone;
 static uint8_t packet_tracked_clone_freed;
 
 static uint16_t test_pkt_get_capacity(void *pkt, void *opaque)
 {
-	if (!packet_capacity_sequence_count)
+	if (!packet_capacity_sequence_count || pkt == packet_capacity_exempt_payload)
 		return 2048;
 	if (pkt != packet_capacity_last_pkt) {
 		if (packet_capacity_last_pkt &&
@@ -133,27 +83,10 @@ static void packet_capacity_sequence_end(void)
 	packet_capacity_last_pkt = NULL;
 }
 
-static void test_no_pb(void *mem)
-{
-	assert(shortage_pb);
-	shortage_pb_calls++;
-	iip_add_pb(mem, shortage_pb);
-	shortage_pb = NULL;
-}
-
-static void test_no_tcp_conn(void *mem)
-{
-	assert(shortage_tcp_conn);
-	shortage_tcp_conn_calls++;
-	iip_add_tcp_conn(mem, shortage_tcp_conn);
-	shortage_tcp_conn = NULL;
-}
-
-
 /*
- * The stack keeps parsed L3/L4 headers in struct pb, while application
- * callbacks and the test packet builders still exchange opaque packet
- * objects.  Keep the test assertions usable with either representation.
+ * Receive descriptors now hold packet arrays.  Resolve their wire headers
+ * from the first fragment, while packet builders use the opaque packet
+ * directly.  Transmit descriptors hold payloads rather than wire headers.
  */
 static struct iip_ip4_hdr *test_pkt_ip4(void *pkt)
 {
@@ -161,20 +94,22 @@ static struct iip_ip4_hdr *test_pkt_ip4(void *pkt)
 			iip_ops_l2_hdr_len(pkt, NULL));
 }
 
-static struct iip_ip4_hdr *test_pb_ip4(struct pb *p)
+static struct iip_ip4_hdr *test_pb_ip4(struct ii_pb *p)
 {
-	return (struct iip_ip4_hdr *)p->l3_hdr;
+	return test_pkt_ip4(p->part_pkt[0]);
 }
 
 static void *test_pkt_l4(void *pkt)
 {
 	struct iip_ip4_hdr *ip4 = test_pkt_ip4(pkt);
+	if (ii_ntohs(*(uint16_t *)((uint8_t *)ip4 - 2)) == 0x0806)
+		return ip4;
 	return (uint8_t *)ip4 + ((ip4->vl & 0x0f) << 2);
 }
 
-static void *test_pb_l4(struct pb *p)
+static void *test_pb_l4(struct ii_pb *p)
 {
-	return p->l4_hdr;
+	return test_pkt_l4(p->part_pkt[0]);
 }
 
 #undef PB_IP4
@@ -209,14 +144,14 @@ static void *test_pb_l4(struct pb *p)
 #undef PB_UDP_PAYLOAD_LEN
 
 #define TEST_L3(_b) _Generic((_b), \
-		struct pb *: test_pb_ip4, \
+		struct ii_pb *: test_pb_ip4, \
 		default: test_pkt_ip4)(_b)
 #define TEST_L4(_b) _Generic((_b), \
-		struct pb *: test_pb_l4, \
+		struct ii_pb *: test_pb_l4, \
 		default: test_pkt_l4)(_b)
 #define PB_IP4(_b) TEST_L3(_b)
 #define PB_IP4_HDR_LEN(_b) ((PB_IP4(_b)->vl & 0x0f) << 2)
-#define PB_IP4_TOTAL_LEN(_b) (__iip_ntohs(PB_IP4(_b)->len_be))
+#define PB_IP4_TOTAL_LEN(_b) (ii_ntohs(PB_IP4(_b)->len_be))
 #define PB_ARP(_b) ((struct iip_arp_hdr *)TEST_L4(_b))
 #define PB_ARP_HW_SENDER(_b) ((uint8_t *)PB_ARP(_b) + sizeof(struct iip_arp_hdr))
 #define PB_ARP_IP_SENDER(_b) (PB_ARP_HW_SENDER(_b) + PB_ARP(_b)->lhw)
@@ -226,22 +161,22 @@ static void *test_pb_l4(struct pb *p)
 #define PB_ICMP_DATA(_b) ((uint8_t *)PB_ICMP(_b) + sizeof(struct iip_icmp_hdr))
 #define PB_TCP(_b) ((struct iip_tcp_hdr *)TEST_L4(_b))
 #define PB_TCP_HDR_LEN(_b) \
-	(((uint16_t)__iip_ntohs(PB_TCP(_b)->flags)) >> 12)
-#define PB_TCP_HDR_HAS_FIN(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x01U) != 0)
-#define PB_TCP_HDR_HAS_SYN(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x02U) != 0)
-#define PB_TCP_HDR_HAS_RST(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x04U) != 0)
-#define PB_TCP_HDR_HAS_PSH(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x08U) != 0)
-#define PB_TCP_HDR_HAS_ACK(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x10U) != 0)
-#define PB_TCP_HDR_HAS_URG(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x20U) != 0)
-#define PB_TCP_HDR_HAS_ECE(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x40U) != 0)
-#define PB_TCP_HDR_HAS_CWR(_b) ((__iip_ntohs(PB_TCP(_b)->flags) & 0x80U) != 0)
+	(((uint16_t)ii_ntohs(PB_TCP(_b)->flags)) >> 12)
+#define PB_TCP_HDR_HAS_FIN(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x01U) != 0)
+#define PB_TCP_HDR_HAS_SYN(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x02U) != 0)
+#define PB_TCP_HDR_HAS_RST(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x04U) != 0)
+#define PB_TCP_HDR_HAS_PSH(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x08U) != 0)
+#define PB_TCP_HDR_HAS_ACK(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x10U) != 0)
+#define PB_TCP_HDR_HAS_URG(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x20U) != 0)
+#define PB_TCP_HDR_HAS_ECE(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x40U) != 0)
+#define PB_TCP_HDR_HAS_CWR(_b) ((ii_ntohs(PB_TCP(_b)->flags) & 0x80U) != 0)
 #define PB_TCP_HDR_SET_LEN(_b, _l) do { \
-	PB_TCP(_b)->flags = __iip_htons(((_l) << 12) | \
-			(__iip_ntohs(PB_TCP(_b)->flags) & 0xffU)); \
+	PB_TCP(_b)->flags = ii_htons(((_l) << 12) | \
+			(ii_ntohs(PB_TCP(_b)->flags) & 0xffU)); \
 } while (0)
 #define PB_TCP_HDR_SET_FLAGS(_b, _f) do { \
-	PB_TCP(_b)->flags = (PB_TCP(_b)->flags & __iip_htons(~0xffU)) | \
-			__iip_htons(_f); \
+	PB_TCP(_b)->flags = (PB_TCP(_b)->flags & ii_htons(~0xffU)) | \
+			ii_htons(_f); \
 } while (0)
 #define PB_TCP_PAYLOAD(_b) ((uint8_t *)PB_TCP(_b) + PB_TCP_HDR_LEN(_b) * 4)
 #define PB_TCP_PAYLOAD_LEN(_b) ((uint16_t)(PB_IP4_TOTAL_LEN(_b) - \
@@ -251,11 +186,10 @@ static void *test_pb_l4(struct pb *p)
 	(PB_TCP_HDR_LEN(_b) * 4 - sizeof(struct iip_tcp_hdr))
 #define PB_UDP(_b) ((struct iip_udp_hdr *)TEST_L4(_b))
 #define PB_UDP_PAYLOAD(_b) ((uint8_t *)PB_UDP(_b) + sizeof(struct iip_udp_hdr))
-#define PB_UDP_TOTAL_LEN(_b) (__iip_ntohs(PB_UDP(_b)->len_be))
+#define PB_UDP_TOTAL_LEN(_b) (ii_ntohs(PB_UDP(_b)->len_be))
 #define PB_UDP_PAYLOAD_LEN(_b) \
 	((uint16_t)(PB_UDP_TOTAL_LEN(_b) - sizeof(struct iip_udp_hdr)))
 
-static void *test_pb_take_packet(struct pb *, void *);
 
 static uint8_t _iss_key[32];
 static const uint8_t _fastopen_key[32] = {
@@ -445,6 +379,8 @@ static int legacy_sack_tests_passed;
 static int legacy_malformed_tests_passed;
 
 struct test_state {
+	uint8_t local_mac[6];
+	uint32_t local_ip4_be;
 	void *out[TEST_PKT_MAX];
 	unsigned int out_cnt;
 	uint8_t next_payload;
@@ -485,7 +421,7 @@ static void test_tcp_state_close_wait(void *mem, void *conn, void *opaque)
 	state->close_wait.payload_chunk_count = state->payload_chunk_count;
 	state->close_wait.conn = conn;
 	if (state->close_wait.auto_close)
-		(void)iip_tcp_close(mem, conn, opaque);
+		(void)test_api_close(mem, conn, opaque);
 }
 
 static struct test_source_route *test_source_route_find(
@@ -556,7 +492,7 @@ static const uint8_t *test_ip4_source_route_option(void *pkt,
 			return NULL;
 		len = option[1];
 		if (kind == 131 || kind == 137) {
-			*padded_len = __iip_round_up(len, 4);
+			*padded_len = ROUND_UP(len, 4);
 			return option;
 		}
 		option += len;
@@ -611,26 +547,7 @@ static struct test_source_route *test_capture_return_route(
 	return existing;
 }
 
-static void test_craft_ip4_options(void *mem, void *handle,
-		void *tcp_opaque, void *pkt, uint32_t *dst_ip4_be,
-		uint8_t *ip4_opt, uint16_t *ip4_opt_len, void *opaque)
-{
-	struct test_state *state = opaque;
-	struct iip_tcp_conn *conn = handle;
-	struct test_source_route *route = tcp_opaque;
-	if (!route)
-		route = test_source_route_find(state, handle,
-				conn->local_ip4_be, conn->local_port_be,
-				conn->peer_ip4_be, conn->peer_port_be);
-	if (route) {
-		route->handle = handle;
-		*dst_ip4_be = route->wire_dst_ip4_be;
-		memcpy(ip4_opt, route->option, route->option_len);
-		*ip4_opt_len = route->option_len;
-	}
-	(void)mem;
-	(void)pkt;
-}
+
 
 static struct test_listener *test_tcp_listen(struct test_state *state,
 		uint32_t local_ip4_be, uint16_t local_port_be,
@@ -680,7 +597,7 @@ static uint16_t test_tcp_active_open(void *mem, uint8_t local_mac[],
 	else if (!test_ip4_select_source_address(state, peer_ip4_be,
 			&local_ip4_be))
 		return 0xffff;
-	return iip_tcp_connect(mem, local_mac, local_ip4_be, local_port_be,
+	return test_api_connect(mem, local_mac, local_ip4_be, local_port_be,
 			peer_mac, peer_ip4_be, peer_port_be, state);
 }
 
@@ -798,7 +715,7 @@ static void test_event_tcp_retransmission(void *opaque, void *conn,
 {
 	(void)now_ms;
 	test_event_append(opaque, TEST_EVENT_RETRANSMISSION, reason, conn,
-			__iip_ntohl(PB_TCP(pkt)->seq_be), retrans_count, rto_ms,
+			ii_ntohl(PB_TCP(pkt)->seq_be), retrans_count, rto_ms,
 			PB_TCP_PAYLOAD_LEN(pkt));
 }
 
@@ -816,24 +733,17 @@ static void test_event_ip4_negative_advice(void *opaque, void *conn)
 			TEST_CALLBACK_IP4_NEGATIVE_ADVICE, conn, 0, 0, 0, 0);
 }
 
-static void test_event_tcp_icmp_error(void *opaque, void *conn,
-		void *tcp_opaque, uint8_t type, uint8_t code, void *pkt)
-{
-	test_event_append(opaque, TEST_EVENT_CALLBACK,
-			TEST_CALLBACK_TCP_ICMP_ERROR, conn, type, code,
-			tcp_opaque == ((struct iip_tcp_conn *)conn)->opaque,
-			pkt != NULL);
-}
+
 
 static void test_event_tcp_urgent(void *opaque, void *conn,
 		void *tcp_opaque, void *pkt)
 {
 	test_event_append(opaque, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_TCP_URGENT, conn,
-			tcp_opaque == ((struct iip_tcp_conn *)conn)->opaque,
+			tcp_opaque == ((struct ii_tcp_conn *)conn)->opaque,
 			pkt != NULL,
-			pkt ? __iip_ntohl(PB_TCP(pkt)->seq_be) : 0,
-			pkt ? __iip_ntohs(PB_TCP(pkt)->urg_p_be) : 0);
+			pkt ? ii_ntohl(PB_TCP(pkt)->seq_be) : 0,
+			pkt ? ii_ntohs(PB_TCP(pkt)->urg_p_be) : 0);
 }
 
 static void fake_clock_set_ns(struct test_state *state, uint64_t now_ns)
@@ -874,7 +784,7 @@ static void fake_clock_use_real_time(struct test_state *state)
 
 static void *iip_ops_pkt_alloc(void *opaque)
 {
-	long *pkt = malloc(2048 + 2);
+	long *pkt = malloc(2048 + 8 * sizeof(long) + 2);
 	assert(pkt);
 	pkt[0] = 1; /* ref */
 	pkt[1] = (long) pkt; /* ptr */
@@ -934,21 +844,9 @@ static void iip_ops_pkt_set_len(void *pkt, uint16_t len, void *opaque)
 	}
 }
 
-static void iip_ops_pkt_increment_head(void *pkt, uint16_t len, void *opaque)
-{
-	((long *) pkt)[3] = len;
-	{ /* unused */
-		(void) opaque;
-	}
-}
 
-static void iip_ops_pkt_decrement_tail(void *pkt, uint16_t len, void *opaque)
-{
-	((long *) pkt)[2] -= len;
-	{ /* unused */
-		(void) opaque;
-	}
-}
+
+
 
 static void *iip_ops_pkt_clone(void *pkt, void *opaque)
 {
@@ -982,13 +880,6 @@ static void iip_ops_pkt_scatter_gather_chain_append(void *pkt_head, void *pkt_ta
 	}
 }
 
-static void *iip_ops_pkt_scatter_gather_chain_get_next(void *pkt_head, void *opaque)
-{
-	return (void *)((long *) pkt_head)[4];
-	{ /* unused */
-		(void) opaque;
-	}
-}
 
 static void iip_ops_util_now_ns(uint32_t t[3], void *opaque)
 {
@@ -1043,13 +934,7 @@ static uint16_t	iip_ops_l2_addr_len(void *opaque)
 	}
 }
 
-static void iip_ops_l2_broadcast_addr(uint8_t bcaddr[], void *opaque)
-{
-	memset(bcaddr, 0xff, 6);
-	{ /* unused */
-		(void) opaque;
-	}
-}
+
 
 static void iip_ops_l2_hdr_craft(void *pkt, uint8_t src[], uint8_t dst[], uint16_t ethertype_be, void *opaque)
 {
@@ -1058,24 +943,14 @@ static void iip_ops_l2_hdr_craft(void *pkt, uint8_t src[], uint8_t dst[], uint16
 	*((uint16_t *)((uint8_t *)iip_ops_pkt_get_data(pkt, opaque) + 12)) = ethertype_be;
 }
 
-static uint8_t iip_ops_l2_skip(void *pkt, void *opaque)
-{
-	return 0;
-	{ /* unused */
-		(void) pkt;
-		(void) opaque;
-	}
-}
 
-static void iip_ops_l2_flush(void *opaque)
-{
-	(void) opaque;
-}
+
+
 
 static void iip_ops_l2_push(void *p, void *opaque)
 {
 	struct test_state *state = opaque;
-	uint16_t ethertype = __iip_ntohs(iip_ops_l2_ethertype_be(p, opaque));
+	uint16_t ethertype = ii_ntohs(iip_ops_l2_ethertype_be(p, opaque));
 	if (ethertype == 0x0800 && PB_IP4(p)->proto == 6) {
 		uint32_t flags = (PB_TCP_HDR_HAS_SYN(p) ? 0x02U : 0) |
 			(PB_TCP_HDR_HAS_ACK(p) ? 0x10U : 0) |
@@ -1084,8 +959,8 @@ static void iip_ops_l2_push(void *p, void *opaque)
 			(PB_TCP_HDR_HAS_PSH(p) ? 0x08U : 0) |
 			(PB_TCP_HDR_HAS_URG(p) ? 0x20U : 0);
 		test_event_append(state, TEST_EVENT_TX_PACKET, 0, p,
-				__iip_ntohl(PB_TCP(p)->seq_be),
-				__iip_ntohl(PB_TCP(p)->ack_seq_be), flags,
+				ii_ntohl(PB_TCP(p)->seq_be),
+				ii_ntohl(PB_TCP(p)->ack_seq_be), flags,
 				PB_TCP_PAYLOAD_LEN(p));
 		printf("TCP-OUT: src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 			(PB_IP4(p)->src_be >>  0) & 0x0ff,
@@ -1096,10 +971,10 @@ static void iip_ops_l2_push(void *p, void *opaque)
 			(PB_IP4(p)->dst_be >>  8) & 0x0ff,
 			(PB_IP4(p)->dst_be >> 16) & 0x0ff,
 			(PB_IP4(p)->dst_be >> 24) & 0x0ff,
-			__iip_ntohs(PB_TCP(p)->src_be),
-			__iip_ntohs(PB_TCP(p)->dst_be),
+			ii_ntohs(PB_TCP(p)->src_be),
+			ii_ntohs(PB_TCP(p)->dst_be),
 			PB_TCP_HDR_HAS_SYN(p), PB_TCP_HDR_HAS_ACK(p), PB_TCP_HDR_HAS_FIN(p), PB_TCP_HDR_HAS_RST(p),
-			__iip_ntohl(PB_TCP(p)->seq_be), __iip_ntohl(PB_TCP(p)->ack_seq_be),
+			ii_ntohl(PB_TCP(p)->seq_be), ii_ntohl(PB_TCP(p)->ack_seq_be),
 			PB_TCP_PAYLOAD_LEN(p));
 	} else {
 		test_event_append(state, TEST_EVENT_TX_PACKET, 0, p,
@@ -1111,26 +986,26 @@ static void iip_ops_l2_push(void *p, void *opaque)
 	state->out[state->out_cnt++] = p;
 }
 
-static uint8_t  iip_ops_nic_feature_offload_tx_scatter_gather(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_feature_offload_ip4_rx_checksum(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_feature_offload_ip4_tx_checksum(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_offload_ip4_rx_checksum(void *m, void *opaque) { (void) m; (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_offload_tcp_rx_checksum(void *m, void *opaque) { (void) m; (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_offload_udp_rx_checksum(void *m, void *opaque) { (void) m; (void) opaque; return 0; }
-static void     iip_ops_nic_offload_ip4_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
-static uint8_t  iip_ops_nic_feature_offload_tcp_rx_checksum(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_feature_offload_tcp_tx_checksum(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_feature_offload_tcp_tx_tso(void *opaque) { (void) opaque; return 0; }
-static void     iip_ops_nic_offload_tcp_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
-static void     iip_ops_nic_offload_tcp_tx_tso_mark(void *m, void *opaque) { (void) m; (void) opaque; }
-static uint8_t  iip_ops_nic_feature_offload_udp_rx_checksum(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_feature_offload_udp_tx_checksum(void *opaque) { (void) opaque; return 0; }
-static uint8_t  iip_ops_nic_feature_offload_udp_tx_tso(void *opaque) { (void) opaque; return 0; }
-static void     iip_ops_nic_offload_udp_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
-static void     iip_ops_nic_offload_udp_tx_tso_mark(void *m, void *opaque) { (void) m; (void) opaque; }
 
-static uint8_t	iip_ops_arp_lhw(void *opaque) { (void) opaque; return 6; }
-static uint8_t	iip_ops_arp_lproto(void *opaque) { (void) opaque; return 4; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static void iip_ops_arp_reply(void *mem, void *m, void *opaque)
 {
 	uint32_t sender_ip4_be, target_ip4_be;
@@ -1138,13 +1013,13 @@ static void iip_ops_arp_reply(void *mem, void *m, void *opaque)
 	memcpy(&sender_ip4_be, PB_ARP_IP_SENDER(m), sizeof(sender_ip4_be));
 	memcpy(&target_ip4_be, PB_ARP_IP_TARGET(m), sizeof(target_ip4_be));
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_ARP_REPLY,
-			m, __iip_ntohs(PB_ARP(m)->op_be),
+			m, ii_ntohs(PB_ARP(m)->op_be),
 			sender_ip4_be, target_ip4_be, 0);
 	(void)mem;
 }
-static void     iip_ops_icmp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
 
-static uint8_t iip_ops_tcp_accept(void *mem, void *m, void *opaque)
+
+static uint8_t iip_ops_tcp_accept(void *mem, struct ii_pb *m, void *opaque)
 {
 	struct test_state *state = opaque;
 	unsigned int i;
@@ -1167,17 +1042,17 @@ static uint8_t iip_ops_tcp_accept(void *mem, void *m, void *opaque)
 	test_event_append(state, TEST_EVENT_CALLBACK, TEST_CALLBACK_ACCEPT,
 			m, accepted && state->listener_mode ? i + 1 : 0, 0, 0, 0);
 	if (accepted)
-		test_capture_return_route(state, NULL, m);
+		test_capture_return_route(state, NULL, m->part_pkt[0]);
 	(void)mem;
 	return accepted;
 }
 
 static void *iip_ops_tcp_accepted(void *mem, void *handle, void *m, void *opaque)
 {
-	struct iip_tcp_conn *conn = handle;
+	struct ii_tcp_conn *conn = handle;
 	struct test_source_route *route = test_source_route_find(opaque, handle,
-			conn->local_ip4_be, conn->local_port_be,
-			conn->peer_ip4_be, conn->peer_port_be);
+			ii_htonl(conn->src_ip[0]), ii_htons(conn->src_port),
+			ii_htonl(conn->dst_ip[0]), ii_htons(conn->dst_port));
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_ACCEPTED,
 			handle, 0, 0, 0, 0);
 	(void)mem; (void)m;
@@ -1186,44 +1061,19 @@ static void *iip_ops_tcp_accepted(void *mem, void *handle, void *m, void *opaque
 
 static void *iip_ops_tcp_connected(void *mem, void *handle, void *m, void *opaque)
 {
-	struct iip_tcp_conn *conn = handle;
+	struct ii_tcp_conn *conn = handle;
 	struct test_source_route *route = test_source_route_find(opaque, handle,
-			conn->local_ip4_be, conn->local_port_be,
-			conn->peer_ip4_be, conn->peer_port_be);
+			ii_htonl(conn->src_ip[0]), ii_htons(conn->src_port),
+			ii_htonl(conn->dst_ip[0]), ii_htons(conn->dst_port));
 	if (!route || !route->application_defined)
-		route = test_capture_return_route(opaque, handle, m);
+		route = test_capture_return_route(opaque, handle, ((struct ii_pb *)m)->part_pkt[0]);
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_CONNECTED,
 			handle, 0, 0, 0, 0);
 	(void)mem; (void)m;
 	return route;
 }
 
-static uint16_t test_ip4_fragment_payload_len(void *pkt, void *next)
-{
-	struct iip_ip4_hdr *ip4 = test_pkt_ip4(pkt);
-	uint16_t ip_header_len = (uint16_t)(ip4->vl & 0x0f) << 2;
 
-	if (next) {
-		struct iip_ip4_hdr *next_ip4 = test_pkt_ip4(next);
-		uint16_t fragment_offset =
-			(__iip_ntohs(ip4->off_be) & 0x1fffU) << 3;
-		uint16_t next_offset =
-			(__iip_ntohs(next_ip4->off_be) & 0x1fffU) << 3;
-
-		/*
-		 * Reassembly rewrites the first IPv4 Total Length to the complete
-		 * datagram length.  The next fragment's offset remains the reliable
-		 * boundary for every non-final scatter-gather element.
-		 */
-		assert(next_offset >= fragment_offset);
-		return next_offset - fragment_offset;
-	} else {
-		uint16_t ip_total_len = __iip_ntohs(ip4->len_be);
-
-		assert(ip_total_len >= ip_header_len);
-		return ip_total_len - ip_header_len;
-	}
-}
 
 static void test_record_tcp_payload(struct test_state *state, void *handle,
 		const uint8_t *data, uint16_t len)
@@ -1245,67 +1095,9 @@ static void test_record_tcp_payload(struct test_state *state, void *handle,
 	}
 }
 
-static void iip_ops_tcp_payload(void *mem, void *handle, void *m,
-		void *tcp_opaque, uint16_t increment_head,
-		uint16_t decrement_tail, void *opaque)
-{
-	struct test_state *state = opaque;
-	void *pkt = m;
-	uint32_t consumed = 0;
-	uint8_t first = 1;
 
-	while (pkt) {
-		struct iip_ip4_hdr *ip4 = test_pkt_ip4(pkt);
-		uint16_t ip_header_len = (uint16_t)(ip4->vl & 0x0f) << 2;
-		void *next = iip_ops_pkt_scatter_gather_chain_get_next(pkt,
-				opaque);
-		uint16_t ip_payload_len =
-			test_ip4_fragment_payload_len(pkt, next);
-		uint16_t skip = 0;
-		uint16_t len;
-		uint8_t *data;
 
-		if (first) {
-			struct iip_tcp_hdr *tcp =
-				(struct iip_tcp_hdr *)((uint8_t *)ip4 +
-						ip_header_len);
-			skip = (uint16_t)((__iip_ntohs(tcp->flags) >> 12) << 2);
-			assert(skip <= UINT16_MAX - increment_head);
-			skip += increment_head;
-		}
-		assert(ip_payload_len >= skip);
-		len = ip_payload_len - skip;
-		if (!next) {
-			assert(len >= decrement_tail);
-			len -= decrement_tail;
-		}
-		data = (uint8_t *)ip4 + ip_header_len + skip;
 
-		test_record_tcp_payload(state, handle, data, len);
-		consumed += len;
-		first = 0;
-		pkt = next;
-	}
-
-	assert(consumed <= UINT16_MAX);
-	if (!state->defer_payload_consumption)
-		iip_tcp_rxbuf_consumed(mem, handle, (uint16_t)consumed, opaque);
-	else {
-		assert(!state->deferred_payload_len);
-		state->deferred_payload_len = consumed;
-	}
-	{ /* unused */
-		(void) tcp_opaque;
-	}
-}
-
-static void iip_ops_tcp_acked(void *mem, void *handle, void *m,
-		void *tcp_opaque, void *opaque)
-{
-	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_ACKED,
-			handle, 0, 0, 0, 0);
-	(void)mem; (void)m; (void)tcp_opaque;
-}
 
 static void iip_ops_tcp_closed(void *handle, uint8_t local_mac[],
 		uint32_t local_ip4_be, uint16_t local_port_be, uint8_t peer_mac[],
@@ -1313,20 +1105,24 @@ static void iip_ops_tcp_closed(void *handle, uint8_t local_mac[],
 		void *opaque)
 {
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED,
-			handle, __iip_ntohs(local_port_be), __iip_ntohs(peer_port_be), 0, 0);
+			handle, ii_ntohs(local_port_be), ii_ntohs(peer_port_be), 0, 0);
 	(void)local_mac; (void)local_ip4_be; (void)peer_mac; (void)peer_ip4_be;
 	(void)tcp_opaque;
 }
 static void iip_ops_udp_payload(void *mem, void *m, void *opaque)
 {
-	uint16_t payload_len = PB_UDP_PAYLOAD_LEN(m);
-	uint8_t first = payload_len ? PB_UDP_PAYLOAD(m)[0] : 0;
+	struct ii_pb *pb = m;
+	uint16_t payload_len = PB_UDP_PAYLOAD_LEN(pb);
+	uint8_t first = payload_len ? PB_UDP_PAYLOAD(pb)[0] : 0;
 
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_UDP_PAYLOAD,
-			m, __iip_ntohs(PB_UDP(m)->src_be),
-			__iip_ntohs(PB_UDP(m)->dst_be), payload_len, first);
+			m, ii_ntohs(PB_UDP(pb)->src_be),
+			ii_ntohs(PB_UDP(pb)->dst_be), payload_len, first);
 	(void)mem;
 }
+
+#include "test_backend.c"
+#include "test_api.c"
 
 static void free_output(struct test_state *state)
 {
@@ -1339,69 +1135,34 @@ static void free_output(struct test_state *state)
 static void buffer_shortage_self_test(void)
 {
 	struct test_state state = { 0 };
-
-	{
-		struct workspace *ws = calloc(1, iip_workspace_size());
-		struct pb *reserve = calloc(1, iip_pb_size());
-		void *pkt = iip_ops_pkt_alloc(&state);
-		struct pb *p;
-
-		assert(ws && reserve && pkt);
-		shortage_pb = reserve;
-		shortage_pb_calls = 0;
-		p = __iip_alloc_pb(ws, pkt, &state);
-		assert(p == reserve);
-		assert(shortage_pb_calls == 1);
-		assert(!shortage_pb);
-		__iip_free_pb(ws, p, &state);
-		free(reserve);
-		free(ws);
+	struct iip_workspace *ws = calloc(1, sizeof(*ws));
+	uint32_t id, before;
+	assert(ws);
+	test_workspace_init(ws);
+	/* Exhaustion must not overwrite an allocated descriptor or pool count. */
+	for (uint32_t i = 0; i < II_CONF_POOL_NUM_PB; i++) {
+		assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_OK);
+		assert(id == i);
 	}
-
-	{
-		struct workspace *ws = calloc(1, iip_workspace_size());
-		struct pb *reserve = calloc(1, iip_pb_size());
-		struct pb orig = { 0 };
-		struct pb *clone;
-
-		assert(ws && reserve);
-		orig.pkt = iip_ops_pkt_alloc(&state);
-		assert(orig.pkt);
-		orig.buf = iip_ops_pkt_get_data(orig.pkt, &state);
-		shortage_pb = reserve;
-		shortage_pb_calls = 0;
-		clone = __iip_clone_pb(ws, &orig, &state);
-		assert(clone == reserve);
-		assert(shortage_pb_calls == 1);
-		assert(!shortage_pb);
-		assert(clone->pkt != orig.pkt);
-		__iip_free_pb(ws, clone, &state);
-		iip_ops_pkt_free(orig.pkt, &state);
-		free(reserve);
-		free(ws);
-	}
-
-	{
-		struct workspace *ws = calloc(1, iip_workspace_size());
-		struct pb *pb = calloc(1, iip_pb_size());
-		struct iip_tcp_conn *reserve = calloc(1, iip_tcp_conn_size());
-		uint8_t local_mac[6] = { 0x02 };
-		uint8_t peer_mac[6] = { 0x04 };
-		uint16_t result;
-
-		assert(ws && pb && reserve);
-		iip_add_pb(ws, pb);
-		shortage_tcp_conn = reserve;
-		shortage_tcp_conn_calls = 0;
-		result = iip_tcp_connect(ws, local_mac, __iip_htonl(0xc0000201U),
-				__iip_htons(10000), peer_mac,
-				__iip_htonl(0xc6336402U), __iip_htons(20000), &state);
-		assert(result != 0xffff);
-		assert(shortage_tcp_conn_calls == 1);
-		assert(!shortage_tcp_conn);
-		assert(ws->tcp.conns[0] == reserve);
-		free_output(&state);
-	}
+	before = ws->pbs.used_cnt;
+	assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_FATAL_MEM);
+	assert(ws->pbs.used_cnt == before);
+	assert(ii_free_pb(&ws->pbs, before - 1) == IIP_ERR_OK);
+	assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_OK && id == before - 1);
+	/* Packet cloning remains independent of descriptor exhaustion. */
+	void *pkt = iip_ops_pkt_alloc(&state);
+	void *clone = iip_ops_pkt_clone(pkt, &state);
+	assert(pkt && clone && pkt != clone);
+	iip_ops_pkt_free(clone, &state);
+	iip_ops_pkt_free(pkt, &state);
+	for (uint32_t i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++)
+		assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_OK && id == i);
+	before = ws->tcp_conns.used_cnt;
+	assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_FATAL_MEM);
+	assert(ws->tcp_conns.used_cnt == before);
+	assert(ii_free_tcp_conn(&ws->tcp_conns, before - 1) == IIP_ERR_OK);
+	assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_OK && id == before - 1);
+	free(ws);
 }
 
 static unsigned int output_count_ethertype(const struct test_state *state,
@@ -1410,7 +1171,7 @@ static unsigned int output_count_ethertype(const struct test_state *state,
 	unsigned int i, count = 0;
 	void *opaque = (void *)state;
 	for (i = 0; i < state->out_cnt; i++)
-		if (__iip_ntohs(iip_ops_l2_ethertype_be(state->out[i], opaque)) ==
+		if (ii_ntohs(iip_ops_l2_ethertype_be(state->out[i], opaque)) ==
 				ethertype)
 			count++;
 	return count;
@@ -1422,7 +1183,7 @@ static void *output_nth_ethertype(const struct test_state *state,
 	unsigned int i, count = 0;
 	void *opaque = (void *)state;
 	for (i = 0; i < state->out_cnt; i++)
-		if (__iip_ntohs(iip_ops_l2_ethertype_be(state->out[i], opaque)) ==
+		if (ii_ntohs(iip_ops_l2_ethertype_be(state->out[i], opaque)) ==
 				ethertype && count++ == wanted)
 			return state->out[i];
 	return NULL;
@@ -1458,7 +1219,7 @@ static uint32_t load_be32(const uint8_t *p)
 {
 	uint32_t value;
 	memcpy(&value, p, sizeof(value));
-	return __iip_ntohl(value);
+	return ii_ntohl(value);
 }
 
 static void expect_ack(struct test_state *state, uint32_t ack,
@@ -1472,7 +1233,7 @@ static void expect_ack(struct test_state *state, uint32_t ack,
 		uint8_t *sack;
 		unsigned int j;
 		if (!PB_TCP_HDR_HAS_ACK(pkt) || PB_TCP_HDR_HAS_SYN(pkt) ||
-				__iip_ntohl(PB_TCP(pkt)->ack_seq_be) != ack)
+				ii_ntohl(PB_TCP(pkt)->ack_seq_be) != ack)
 			continue;
 		sack = find_sack(pkt, &sack_len);
 		if (!block_cnt) {
@@ -1493,33 +1254,33 @@ static void expect_ack(struct test_state *state, uint32_t ack,
 	free_output(state);
 }
 
-static void *make_segment(struct workspace *ws, struct iip_tcp_conn *conn,
+static void *make_segment(struct iip_workspace *ws, struct ii_tcp_conn *conn,
 		uint32_t seq, uint8_t first_value, uint16_t len, void *opaque)
 {
 	void *payload = iip_ops_pkt_alloc(opaque);
-	struct pb *out_p;
+	struct ii_pb *out_p;
 	uint16_t i;
 	assert(payload);
 	for (i = 0; i < len; i++)
 		((uint8_t *) iip_ops_pkt_get_data(payload, opaque))[i] = (uint8_t) (first_value + i);
 	iip_ops_pkt_set_len(payload, len, opaque);
-	conn->seq_be = __iip_htonl(seq);
-	__iip_tcp_push(ws, conn, payload, 0, 1, 0, 0, 0, NULL, 0, opaque);
-	out_p = conn->head[1][0];
-	assert(out_p == conn->head[1][1]);
-	__iip_dequeue_obj(conn->head[1], out_p, 0);
+	conn->seq = seq;
+	test_api_push(ws, conn, payload, 0, 1, 0, 0, 0, NULL, 0, opaque);
+	out_p = test_ring_end(ws, &conn->tx_ring, 0);
+	assert(out_p == test_ring_end(ws, &conn->tx_ring, 1));
+	test_ring_remove(ws, &conn->tx_ring, out_p);
 	{
-		void *pkt = test_pb_take_packet(out_p, opaque);
-		__iip_free_pb(ws, out_p, opaque);
+		void *pkt = test_emit_queued(ws, conn, out_p, opaque);
+		test_free_pb(ws, out_p, opaque);
 		return pkt;
 	}
 }
 
-static void deliver(struct workspace *ws, uint8_t mac[], uint32_t ip4_be,
+static void deliver(struct iip_workspace *ws, uint8_t mac[], uint32_t ip4_be,
 		void *pkt[], uint16_t cnt, void *opaque)
 {
 	uint32_t next_us = 1000000U;
-	assert(iip_run(ws, mac, ip4_be, pkt, cnt, &next_us, opaque) == cnt);
+	assert(test_api_run(ws, mac, ip4_be, pkt, cnt, &next_us, opaque) == cnt);
 }
 
 static void update_ip4_checksum(void *pkt)
@@ -1528,7 +1289,7 @@ static void update_ip4_checksum(void *pkt)
 	uint16_t len[1] = { (uint16_t) ((PB_IP4(pkt)->vl & 0x0f) * 4) };
 
 	PB_IP4(pkt)->csum_be = 0;
-	PB_IP4(pkt)->csum_be = __iip_htons(__iip_netcsum16(buf, len, 1, 0));
+	PB_IP4(pkt)->csum_be = ii_htons(test_netcsum16(buf, len, 1, 0));
 }
 
 static void update_tcp_checksum(void *pkt)
@@ -1544,36 +1305,29 @@ static void update_tcp_checksum(void *pkt)
 	pseudo.pad = 0;
 	pseudo.proto = PB_IP4(pkt)->proto;
 	ip_header_len = (uint16_t)(PB_IP4(pkt)->vl & 0x0f) * 4;
-	assert(__iip_ntohs(PB_IP4(pkt)->len_be) >= ip_header_len);
-	tcp_segment_len = __iip_ntohs(PB_IP4(pkt)->len_be) - ip_header_len;
+	assert(ii_ntohs(PB_IP4(pkt)->len_be) >= ip_header_len);
+	tcp_segment_len = ii_ntohs(PB_IP4(pkt)->len_be) - ip_header_len;
 	assert(tcp_segment_len >= sizeof(struct iip_tcp_hdr));
-	pseudo.len_be = __iip_htons(tcp_segment_len);
+	pseudo.len_be = ii_htons(tcp_segment_len);
 	PB_TCP(pkt)->csum_be = 0;
 	buf[0] = (uint8_t *) &pseudo;
 	buf[1] = (uint8_t *) PB_TCP(pkt);
 	len[0] = sizeof(pseudo);
 	len[1] = tcp_segment_len;
-	PB_TCP(pkt)->csum_be = __iip_htons(__iip_netcsum16(buf, len, 2, 0));
+	PB_TCP(pkt)->csum_be = ii_htons(test_netcsum16(buf, len, 2, 0));
 }
 
 static void update_icmp_checksum(void *pkt)
 {
 	uint8_t *buf[1] = { (uint8_t *)PB_ICMP(pkt) };
-	uint16_t len[1] = { (uint16_t)(__iip_ntohs(PB_IP4(pkt)->len_be) -
+	uint16_t len[1] = { (uint16_t)(ii_ntohs(PB_IP4(pkt)->len_be) -
 			(PB_IP4(pkt)->vl & 0x0f) * 4) };
 
 	PB_ICMP(pkt)->csum_be = 0;
-	PB_ICMP(pkt)->csum_be = __iip_htons(__iip_netcsum16(buf, len, 1, 0));
+	PB_ICMP(pkt)->csum_be = ii_htons(test_netcsum16(buf, len, 1, 0));
 }
 
-static void *test_pb_take_packet(struct pb *p, void *opaque)
-{
-	void *pkt = p->pkt;
 
-	(void)opaque;
-	p->pkt = NULL;
-	return pkt;
-}
 
 #define TEST_IP4_OPT_MAX 40
 #define TEST_TCP_OPT_MAX 40
@@ -1654,7 +1408,7 @@ static void tcp_packet_add_eol(struct tcp_packet_spec *spec)
 
 static void tcp_packet_add_mss(struct tcp_packet_spec *spec, uint16_t mss)
 {
-	uint16_t mss_be = __iip_htons(mss);
+	uint16_t mss_be = ii_htons(mss);
 	tcp_packet_add_option(spec, 2, &mss_be, sizeof(mss_be));
 }
 
@@ -1669,9 +1423,9 @@ static void *build_tcp_packet(const struct tcp_packet_spec *spec, void *opaque)
 	assert(spec->ip_options_len <= TEST_IP4_OPT_MAX);
 	assert(spec->tcp_options_len <= TEST_TCP_OPT_MAX);
 	ip_header_len = sizeof(struct iip_ip4_hdr) +
-		__iip_round_up(spec->ip_options_len, 4);
+		ROUND_UP(spec->ip_options_len, 4);
 	tcp_header_len = sizeof(struct iip_tcp_hdr) +
-		__iip_round_up(spec->tcp_options_len, 4);
+		ROUND_UP(spec->tcp_options_len, 4);
 	assert(ip_header_len / 4 <= 15);
 	assert(tcp_header_len / 4 <= 15);
 	assert(spec->payload_len <= UINT16_MAX - ip_header_len - tcp_header_len);
@@ -1685,12 +1439,12 @@ static void *build_tcp_packet(const struct tcp_packet_spec *spec, void *opaque)
 	memset(data, 0, packet_len);
 	iip_ops_pkt_set_len(pkt, packet_len, opaque);
 	iip_ops_l2_hdr_craft(pkt, (uint8_t *)spec->src_mac,
-			(uint8_t *)spec->dst_mac, __iip_htons(0x0800), opaque);
+			(uint8_t *)spec->dst_mac, ii_htons(0x0800), opaque);
 
 	ip4 = PB_IP4(pkt);
 	ip4->vl = (4U << 4) | (ip_header_len / 4);
 	ip4->tos = spec->tos;
-	ip4->len_be = __iip_htons(ip_total_len);
+	ip4->len_be = ii_htons(ip_total_len);
 	ip4->id_be = 0;
 	ip4->off_be = 0;
 	ip4->ttl = spec->ttl;
@@ -1704,11 +1458,11 @@ static void *build_tcp_packet(const struct tcp_packet_spec *spec, void *opaque)
 	tcp = (struct iip_tcp_hdr *)((uint8_t *)ip4 + ip_header_len);
 	tcp->src_be = spec->src_port_be;
 	tcp->dst_be = spec->dst_port_be;
-	tcp->seq_be = __iip_htonl(spec->seq);
-	tcp->ack_seq_be = __iip_htonl(spec->ack_seq);
-	tcp->flags = __iip_htons((tcp_header_len / 4 << 12) | spec->tcp_flags);
-	tcp->win_be = __iip_htons(spec->window);
-	tcp->urg_p_be = __iip_htons(spec->urgent_pointer);
+	tcp->seq_be = ii_htonl(spec->seq);
+	tcp->ack_seq_be = ii_htonl(spec->ack_seq);
+	tcp->flags = ii_htons((tcp_header_len / 4 << 12) | spec->tcp_flags);
+	tcp->win_be = ii_htons(spec->window);
+	tcp->urg_p_be = ii_htons(spec->urgent_pointer);
 	tcp_opt = (uint8_t *)tcp + sizeof(*tcp);
 	if (spec->tcp_options_len)
 		memcpy(tcp_opt, spec->tcp_options, spec->tcp_options_len);
@@ -1721,9 +1475,9 @@ static void *build_tcp_packet(const struct tcp_packet_spec *spec, void *opaque)
 	update_ip4_checksum(pkt);
 	update_tcp_checksum(pkt);
 	if (spec->corrupt_ip_checksum)
-		ip4->csum_be ^= __iip_htons(1);
+		ip4->csum_be ^= ii_htons(1);
 	if (spec->corrupt_tcp_checksum)
-		tcp->csum_be ^= __iip_htons(1);
+		tcp->csum_be ^= ii_htons(1);
 	return pkt;
 }
 
@@ -1732,12 +1486,12 @@ enum malformed_packet_kind {
 	MALFORMED_IP_TOTAL_LENGTH,
 };
 
-static int expect_malformed_packet_rejected(struct workspace *tx_ws,
-		struct workspace *rx_ws, struct iip_tcp_conn *conn, uint8_t mac[],
+static int expect_malformed_packet_rejected(struct iip_workspace *tx_ws,
+		struct iip_workspace *rx_ws, struct ii_tcp_conn *conn, uint8_t mac[],
 		uint32_t ip4_be, enum malformed_packet_kind kind, void *opaque)
 {
 	void *pkt = make_segment(tx_ws, conn,
-			__iip_ntohl(conn->iss_be) + 18, 17, 1, opaque);
+			conn->iss + 18, 17, 1, opaque);
 	pid_t child;
 	int status = 0;
 	unsigned int waited_ms;
@@ -1753,7 +1507,7 @@ static int expect_malformed_packet_rejected(struct workspace *tx_ws,
 		break;
 	case MALFORMED_IP_TOTAL_LENGTH:
 		name = "IPv4 total length smaller than TCP header";
-		PB_IP4(pkt)->len_be = __iip_htons(sizeof(struct iip_ip4_hdr));
+		PB_IP4(pkt)->len_be = ii_htons(sizeof(struct iip_ip4_hdr));
 		update_ip4_checksum(pkt);
 		break;
 	default:
@@ -1794,34 +1548,15 @@ static int expect_malformed_packet_rejected(struct workspace *tx_ws,
 	return 1;
 }
 
+static int wait_test_child(pid_t, unsigned int);
+
 static int legacy_test_main(void)
 {
 	struct test_state state = { 0 };
-	struct workspace *ws = calloc(2, iip_workspace_size());
+	struct iip_workspace *ws = calloc(2, sizeof(struct iip_workspace));
 	assert(ws);
-	{
-		int i;
-		for (i = 0; i < 2; i++) {
-			{
-				struct pb *pb_array = calloc(8192, iip_pb_size());
-				assert(pb_array);
-				{
-					int j;
-					for (j = 0; j < 8192; j++)
-						iip_add_pb(&ws[i], &pb_array[j]);
-				}
-			}
-			{
-				struct iip_tcp_conn *tcp_conn_array = calloc(512, iip_tcp_conn_size());
-				assert(tcp_conn_array);
-				{
-					int j;
-					for (j = 0; j < 512; j++)
-						iip_add_tcp_conn(&ws[i], &tcp_conn_array[j]);
-				}
-			}
-		}
-	}
+	test_workspace_init(&ws[0]);
+	test_workspace_init(&ws[1]);
 	{
 		void *opaque = &state;
 		uint8_t local_mac[6]   = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, };
@@ -1830,38 +1565,38 @@ static int legacy_test_main(void)
 		uint16_t local_port_be = 2;
 		uint32_t peer_ip4_be   = 3;
 		uint16_t peer_port_be  = 4;
-		struct iip_tcp_conn conn = { 0 };
+		struct ii_tcp_conn *conn = &ws[0].tcp_conns.array[0];
+		uint32_t conn_id;
+		assert(ii_alloc_tcp_conn(&ws[0].tcp_conns, &conn_id) == IIP_ERR_OK && conn_id == 0);
 		uint32_t sender_isn;
 		uint32_t receiver_isn = 0;
 		{ /* connection init */
-			__iip_tcp_conn_init(&ws[0], &conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
-			sender_isn = __iip_ntohl(conn.iss_be);
-			__iip_dequeue_obj(ws[0].tcp.conns_ht[(conn.peer_ip4_be + conn.local_port_be + conn.peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], &conn, 1);
-			__iip_dequeue_obj(ws[0].tcp.conns, &conn, 0);
+			test_api_conn_init(&ws[0], conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, II_TCP_STATE_SYN_SENT, opaque);
+			sender_isn = ii_ntohl(ii_htonl(conn->iss));
 		}
 		{ /* send syn */
 			void *pkt[1];
 			{
-				__iip_tcp_push(&ws[0], &conn, NULL, 1, 0, 0, 0, 0,
+				test_api_push(&ws[0], conn, NULL, 1, 0, 0, 0, 0,
 						NULL, 0, opaque);
 				{
-					struct pb *out_p = conn.head[1][0];
-					assert(out_p == conn.head[1][1]);
-					pkt[0] = test_pb_take_packet(out_p, opaque);
-					__iip_dequeue_obj(conn.head[1], out_p, 0);
-					__iip_free_pb(&ws[0], out_p, opaque);
+					struct ii_pb *out_p = test_ring_end(&ws[0], &conn->tx_ring, 0);
+					assert(out_p == test_ring_end(&ws[0], &conn->tx_ring, 1));
+					pkt[0] = test_emit_queued(&ws[0], conn, out_p, opaque);
+					test_ring_remove(&ws[0], &conn->tx_ring, out_p);
+					test_free_pb(&ws[0], out_p, opaque);
 				}
 			}
 			{
 				uint32_t _next_us = 1000000U;
-				iip_run(&ws[1], peer_mac, peer_ip4_be, pkt, 1, &_next_us, opaque);
+				test_api_run(&ws[1], peer_mac, peer_ip4_be, pkt, 1, &_next_us, opaque);
 			}
 			{
 				unsigned int i;
 				for (i = 0; i < state.out_cnt; i++) {
 					void *out = state.out[i];
 					if (PB_TCP_HDR_HAS_SYN(out) && PB_TCP_HDR_HAS_ACK(out)) {
-						receiver_isn = __iip_ntohl(PB_TCP(out)->seq_be);
+						receiver_isn = ii_ntohl(PB_TCP(out)->seq_be);
 						break;
 					}
 				}
@@ -1869,31 +1604,35 @@ static int legacy_test_main(void)
 			}
 		}
 		{ /* update connection */
-			conn.state = __IIP_TCP_STATE_ESTABLISHED;
-			conn.ack_seq_be = __iip_htonl(receiver_isn + 1);
-			conn.acked_seq = sender_isn + 1;
+			conn->state = II_TCP_STATE_ESTABLISHED;
+			conn->flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+			conn->ack_seq = receiver_isn + 1;
+			conn->acked_seq = sender_isn + 1;
 		}
 		{
 			void *pkt[1];
 			{
-				__iip_tcp_push(&ws[0], &conn, NULL, 0, 1, 0, 0, 0,
+				test_api_push(&ws[0], conn, NULL, 0, 1, 0, 0, 0,
 						NULL, 0, opaque);
 				{
-					struct pb *out_p = conn.head[1][0];
-					assert(out_p == conn.head[1][1]);
-					pkt[0] = test_pb_take_packet(out_p, opaque);
-					__iip_dequeue_obj(conn.head[1], out_p, 0);
-					__iip_free_pb(&ws[0], out_p, opaque);
+					struct ii_pb *out_p = test_ring_end(&ws[0], &conn->tx_ring, 0);
+					assert(out_p == test_ring_end(&ws[0], &conn->tx_ring, 1));
+					pkt[0] = test_emit_queued(&ws[0], conn, out_p, opaque);
+					test_ring_remove(&ws[0], &conn->tx_ring, out_p);
+					test_free_pb(&ws[0], out_p, opaque);
 				}
 			}
 			{
 				uint32_t _next_us = 1000000U;
-				iip_run(&ws[1], peer_mac, peer_ip4_be, pkt, 1, &_next_us, opaque);
+				test_api_run(&ws[1], peer_mac, peer_ip4_be, pkt, 1, &_next_us, opaque);
 			}
 		}
 		/* connection is established */
 		free_output(&state); /* discard SYN-ACK and any handshake output */
-		{
+		fflush(NULL);
+		pid_t sack_child = fork();
+		assert(sack_child >= 0);
+		if (!sack_child) {
 			void *pkt[2];
 			const uint32_t one_block[][2] = {
 				{ sender_isn + 5, sender_isn + 11 }
@@ -1907,66 +1646,106 @@ static int legacy_test_main(void)
 			};
 
 			/* Receive [5,11) while [1,5) is missing: one merged SACK block. */
-			pkt[0] = make_segment(&ws[0], &conn, sender_isn + 5,
+			pkt[0] = make_segment(&ws[0], conn, sender_isn + 5,
 					4, 4, opaque);
-			pkt[1] = make_segment(&ws[0], &conn, sender_isn + 9,
+			pkt[1] = make_segment(&ws[0], conn, sender_isn + 9,
 					8, 2, opaque);
 			deliver(&ws[1], peer_mac, peer_ip4_be, pkt, 2, opaque);
 			expect_ack(&state, sender_isn + 1, one_block, 1);
 
 			/* Fill the hole: data is delivered once and SACK disappears. */
-			pkt[0] = make_segment(&ws[0], &conn, sender_isn + 1,
+			pkt[0] = make_segment(&ws[0], conn, sender_isn + 1,
 					0, 4, opaque);
 			deliver(&ws[1], peer_mac, peer_ip4_be, pkt, 1, opaque);
 			expect_ack(&state, sender_isn + 11, NULL, 0);
 			assert(state.next_payload == 10);
 
 			/* Leave two holes and verify newest-block-first ordering. */
-			pkt[0] = make_segment(&ws[0], &conn, sender_isn + 12,
+			pkt[0] = make_segment(&ws[0], conn, sender_isn + 12,
 					11, 2, opaque);
-			pkt[1] = make_segment(&ws[0], &conn, sender_isn + 16,
+			pkt[1] = make_segment(&ws[0], conn, sender_isn + 16,
 					15, 2, opaque);
 			deliver(&ws[1], peer_mac, peer_ip4_be, pkt, 2, opaque);
 			expect_ack(&state, sender_isn + 11, two_blocks, 2);
 
 			/* Fill only the first hole; the later block must remain. */
-			pkt[0] = make_segment(&ws[0], &conn, sender_isn + 11,
+			pkt[0] = make_segment(&ws[0], conn, sender_isn + 11,
 					10, 1, opaque);
 			deliver(&ws[1], peer_mac, peer_ip4_be, pkt, 1, opaque);
 			expect_ack(&state, sender_isn + 14, remaining_block, 1);
 			assert(state.next_payload == 13);
 
 			/* Fill the final hole and verify cumulative ACK and delivery. */
-			pkt[0] = make_segment(&ws[0], &conn, sender_isn + 14,
+			pkt[0] = make_segment(&ws[0], conn, sender_isn + 14,
 					13, 2, opaque);
 			deliver(&ws[1], peer_mac, peer_ip4_be, pkt, 1, opaque);
 			expect_ack(&state, sender_isn + 18, NULL, 0);
 				assert(state.next_payload == 17);
 				printf("SACK tests: PASS\n");
-				legacy_sack_tests_passed = 1;
+				fflush(NULL);
+				_exit(EXIT_SUCCESS);
 			}
+			legacy_sack_tests_passed = wait_test_child(sack_child, 3000);
 			{
 				int malformed_ok = 1;
 				malformed_ok &= expect_malformed_packet_rejected(&ws[0], &ws[1],
-						&conn, peer_mac, peer_ip4_be,
+						conn, peer_mac, peer_ip4_be,
 						MALFORMED_TCP_OPTION_ZERO_LENGTH, opaque);
 				malformed_ok &= expect_malformed_packet_rejected(&ws[0], &ws[1],
-						&conn, peer_mac, peer_ip4_be,
+						conn, peer_mac, peer_ip4_be,
 						MALFORMED_IP_TOTAL_LENGTH, opaque);
-				assert(malformed_ok);
-				legacy_malformed_tests_passed = 1;
+				legacy_malformed_tests_passed = malformed_ok;
 			}
 		}
-	return 0;
+	return !(legacy_sack_tests_passed && legacy_malformed_tests_passed);
 	{
-		(void) iip_udp_send;
-		(void) iip_tcp_connect;
-		(void) iip_tcp_close;
-		(void) iip_tcp_send;
-		(void) iip_arp_request;
+		(void) iip_udp_ipv4_ethernet_send_copy;
+		(void) test_api_connect;
+		(void) test_api_close;
+		(void) test_api_send;
+		(void) test_api_arp_request;
 	}
 }
 enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP };
+
+/* A stack assertion or hang is a failed test, and must not hide later tests. */
+static int test_process_failed;
+
+static enum result run_isolated_test(enum result (*run)(const char **), const char **why)
+{
+	struct child_result { enum result result; char why[512]; } report = { RESULT_FAIL, { 0 } };
+	static char reason[512];
+	test_process_failed = 0;
+	int channel[2], status;
+	fflush(NULL);
+	if (pipe(channel)) { *why = "cannot create result pipe"; return RESULT_FAIL; }
+	pid_t child = fork();
+	if (child < 0) { close(channel[0]); close(channel[1]); *why = "cannot fork test"; return RESULT_FAIL; }
+	if (!child) {
+		close(channel[0]);
+		alarm(30);
+		const char *detail = NULL;
+		report.result = run(&detail);
+		if (detail) snprintf(report.why, sizeof(report.why), "%s", detail);
+		fflush(NULL);
+		ssize_t n = write(channel[1], &report, sizeof(report));
+		close(channel[1]);
+		_exit(n == sizeof(report) ? EXIT_SUCCESS : EXIT_FAILURE);
+	}
+	close(channel[1]);
+	while (waitpid(child, &status, 0) < 0) assert(errno == EINTR);
+	ssize_t n = read(channel[0], &report, sizeof(report));
+	close(channel[0]);
+	if (!WIFEXITED(status) || WEXITSTATUS(status) || n != sizeof(report)) {
+		snprintf(reason, sizeof(reason), "test process failed (signal=%d, exit=%d)", WIFSIGNALED(status) ? WTERMSIG(status) : 0, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+		*why = reason;
+		test_process_failed = 1;
+		return RESULT_FAIL;
+	}
+	snprintf(reason, sizeof(reason), "%s", report.why);
+	*why = reason[0] ? reason : NULL;
+	return report.result;
+}
 
 static int test_condition_failed(const char *scenario, unsigned int line,
 		const char *format, ...)
@@ -1997,39 +1776,32 @@ static int test_condition_failed(const char *scenario, unsigned int line,
 
 struct fixture {
 	struct test_state state;
-	struct workspace *ws;
-	struct iip_tcp_conn conn;
+	struct iip_workspace *ws;
+	struct ii_tcp_conn *conn;
 	uint8_t local_mac[6];
 	uint8_t peer_mac[6];
 };
 
 static int fixture_init(struct fixture *f)
 {
-	unsigned int i;
-	struct pb *pbs;
-	struct iip_tcp_conn *conns;
-
+	uint32_t conn_id;
 	memset(f, 0, sizeof(*f));
 	f->local_mac[0] = 0x02;
 	f->peer_mac[0] = 0x04;
-	f->ws = calloc(1, iip_workspace_size());
-	pbs = calloc(64, iip_pb_size());
-	if (!f->ws || !pbs)
-		return 0;
-	for (i = 0; i < 64; i++)
-		iip_add_pb(f->ws, &pbs[i]);
-	conns = calloc(4, iip_tcp_conn_size());
-	if (!conns)
-		return 0;
-	for (i = 0; i < 4; i++)
-		iip_add_tcp_conn(f->ws, &conns[i]);
+	f->ws = calloc(1, sizeof(*f->ws));
+	if (!f->ws) return 0;
+	test_workspace_init(f->ws);
+	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &conn_id) != IIP_ERR_OK) return 0;
+	f->conn = &f->ws->tcp_conns.array[conn_id];
 	f->ws->tcp.iss = 0x12345678U;
-	__iip_tcp_conn_init(f->ws, &f->conn, f->local_mac,
-			__iip_htonl(0xc0000201U), __iip_htons(10000),
-			f->peer_mac, __iip_htonl(0xc6336402U),
-			__iip_htons(20000), __IIP_TCP_STATE_ESTABLISHED, &f->state);
-	f->conn.mss = IIP_CONF_TCP_OPT_MSS;
-	f->conn.ack_seq_be = 0;
+	test_api_conn_init(f->ws, f->conn, f->local_mac,
+		ii_htonl(0xc0000201U), ii_htons(10000), f->peer_mac,
+		ii_htonl(0xc6336402U), ii_htons(20000), II_TCP_STATE_ESTABLISHED, &f->state);
+	f->state.use_fake_clock = 1;
+	f->state.now_ns = 1000000000ULL;
+	f->ws->now_ms = 1000;
+	f->conn->ack_seq = 0;
+	f->conn->flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 	return 1;
 }
 
@@ -2037,7 +1809,7 @@ static void *fixture_packet(struct fixture *f, uint8_t syn, uint16_t flags,
 		uint16_t payload_len)
 {
 	void *payload = NULL;
-	struct pb *p;
+	struct ii_pb *p;
 
 	if (payload_len) {
 		payload = iip_ops_pkt_alloc(&f->state);
@@ -2046,15 +1818,15 @@ static void *fixture_packet(struct fixture *f, uint8_t syn, uint16_t flags,
 		memset(iip_ops_pkt_get_data(payload, &f->state), 0x5a, payload_len);
 		iip_ops_pkt_set_len(payload, payload_len, &f->state);
 	}
-	__iip_tcp_push(f->ws, &f->conn, payload, syn, !syn, 0, 0, flags,
+	test_api_push(f->ws, f->conn, payload, syn, !syn, 0, 0, flags,
 			NULL, 0, &f->state);
-	p = f->conn.head[1][0];
+	p = test_ring_end(f->ws, &f->conn->tx_ring, 0);
 	if (!p)
 		return NULL;
-	__iip_dequeue_obj(f->conn.head[1], p, 0);
+	test_ring_remove(f->ws, &f->conn->tx_ring, p);
 	{
-		void *pkt = test_pb_take_packet(p, &f->state);
-		__iip_free_pb(f->ws, p, &f->state);
+		void *pkt = test_emit_queued(f->ws, f->conn, p, &f->state);
+		test_free_pb(f->ws, p, &f->state);
 		return pkt;
 	}
 }
@@ -2064,32 +1836,32 @@ static int checksum_valid(void *pkt)
 	struct iip_l4_ip4_pseudo_hdr pseudo;
 	uint8_t *b[2];
 	uint16_t l[2];
-	uint16_t supplied = __iip_ntohs(PB_TCP(pkt)->csum_be);
+	uint16_t supplied = ii_ntohs(PB_TCP(pkt)->csum_be);
 
 	pseudo.ip4_src_be = PB_IP4(pkt)->src_be;
 	pseudo.ip4_dst_be = PB_IP4(pkt)->dst_be;
 	pseudo.pad = 0;
 	pseudo.proto = 6;
-	pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(pkt) * 4 + PB_TCP_PAYLOAD_LEN(pkt));
+	pseudo.len_be = ii_htons(PB_TCP_HDR_LEN(pkt) * 4 + PB_TCP_PAYLOAD_LEN(pkt));
 	b[0] = (uint8_t *)&pseudo;
 	b[1] = (uint8_t *)PB_TCP(pkt);
 	l[0] = sizeof(pseudo);
 	l[1] = PB_TCP_HDR_LEN(pkt) * 4 + PB_TCP_PAYLOAD_LEN(pkt);
-	return supplied == __iip_netcsum16(b, l, 2, supplied);
+	return supplied == test_netcsum16(b, l, 2, supplied);
 }
 
 static int ip4_checksum_valid(void *pkt)
 {
 	uint8_t *b[1] = { (uint8_t *)PB_IP4(pkt) };
 	uint16_t l[1] = { (uint16_t)((PB_IP4(pkt)->vl & 0x0f) * 4) };
-	uint16_t supplied = __iip_ntohs(PB_IP4(pkt)->csum_be);
-	return supplied == __iip_netcsum16(b, l, 1, supplied);
+	uint16_t supplied = ii_ntohs(PB_IP4(pkt)->csum_be);
+	return supplied == test_netcsum16(b, l, 1, supplied);
 }
 
 static int icmp_checksum_valid(void *pkt)
 {
 	uint16_t ip_header_len = (uint16_t)(PB_IP4(pkt)->vl & 0x0f) << 2;
-	uint16_t ip_total_len = __iip_ntohs(PB_IP4(pkt)->len_be);
+	uint16_t ip_total_len = ii_ntohs(PB_IP4(pkt)->len_be);
 	uint8_t *b[1] = { (uint8_t *)PB_ICMP(pkt) };
 	uint16_t l[1];
 	uint16_t supplied;
@@ -2097,8 +1869,8 @@ static int icmp_checksum_valid(void *pkt)
 	if (ip_total_len < ip_header_len + sizeof(struct iip_icmp_hdr))
 		return 0;
 	l[0] = ip_total_len - ip_header_len;
-	supplied = __iip_ntohs(PB_ICMP(pkt)->csum_be);
-	return supplied == __iip_netcsum16(b, l, 1, supplied);
+	supplied = ii_ntohs(PB_ICMP(pkt)->csum_be);
+	return supplied == test_netcsum16(b, l, 1, supplied);
 }
 
 static uint8_t *option_find(void *pkt, uint8_t wanted)
@@ -2129,12 +1901,12 @@ static void fixture_incoming_spec(struct fixture *f,
 	tcp_packet_spec_init(spec);
 	memcpy(spec->src_mac, f->peer_mac, sizeof(spec->src_mac));
 	memcpy(spec->dst_mac, f->local_mac, sizeof(spec->dst_mac));
-	spec->src_ip_be = f->conn.peer_ip4_be;
-	spec->dst_ip_be = f->conn.local_ip4_be;
-	spec->src_port_be = f->conn.peer_port_be;
-	spec->dst_port_be = f->conn.local_port_be;
+	spec->src_ip_be = ii_htonl(f->conn->dst_ip[0]);
+	spec->dst_ip_be = ii_htonl(f->conn->src_ip[0]);
+	spec->src_port_be = ii_htons(f->conn->dst_port);
+	spec->dst_port_be = ii_htons(f->conn->src_port);
 	spec->seq = seq;
-	spec->ack_seq = __iip_ntohl(f->conn.seq_be);
+	spec->ack_seq = f->conn->seq;
 	spec->tcp_flags = TEST_TCP_ACK;
 	spec->payload = payload;
 	spec->payload_len = payload_len;
@@ -2143,7 +1915,7 @@ static void fixture_incoming_spec(struct fixture *f,
 static void fixture_deliver(struct fixture *f, void *pkt)
 {
 	void *input[1] = { pkt };
-	deliver(f->ws, f->local_mac, f->conn.local_ip4_be, input, 1, &f->state);
+	deliver(f->ws, f->local_mac, ii_htonl(f->conn->src_ip[0]), input, 1, &f->state);
 }
 
 static void *fixture_ip4_fragment(struct fixture *f, void *datagram,
@@ -2158,7 +1930,7 @@ static void *fixture_ip4_fragment(struct fixture *f, void *datagram,
 	void *opaque = &f->state;
 
 	ip_header_len = (PB_IP4(datagram)->vl & 0x0f) * 4;
-	ip_payload_len = __iip_ntohs(PB_IP4(datagram)->len_be) - ip_header_len;
+	ip_payload_len = ii_ntohs(PB_IP4(datagram)->len_be) - ip_header_len;
 	assert((payload_offset & 7U) == 0);
 	assert(payload_offset <= ip_payload_len);
 	assert(payload_len <= ip_payload_len - payload_offset);
@@ -2173,21 +1945,21 @@ static void *fixture_ip4_fragment(struct fixture *f, void *datagram,
 	memcpy(dst + 14 + ip_header_len,
 			src + 14 + ip_header_len + payload_offset, payload_len);
 	iip_ops_pkt_set_len(fragment, fragment_len, opaque);
-	PB_IP4(fragment)->id_be = __iip_htons(0x1234);
-	PB_IP4(fragment)->off_be = __iip_htons(
+	PB_IP4(fragment)->id_be = ii_htons(0x1234);
+	PB_IP4(fragment)->off_be = ii_htons(
 			(more_fragments ? 0x2000U : 0U) | (payload_offset / 8));
-	PB_IP4(fragment)->len_be = __iip_htons(ip_header_len + payload_len);
+	PB_IP4(fragment)->len_be = ii_htons(ip_header_len + payload_len);
 	update_ip4_checksum(fragment);
 	return fragment;
 }
 
 static uint8_t test_tcp_urgent_query(void *handle, uint32_t *queued)
 {
-	struct iip_tcp_conn *conn = handle;
+	struct ii_tcp_conn *conn = handle;
 	uint32_t remaining;
 
 	*queued = 0;
-	if (!(conn->flags & __IIP_TCP_CONN_FLAGS_URGENT_SET))
+	if (!(conn->flags & II_TCP_CONN_FLAGS_URGENT_SET))
 		return 0;
 	remaining = conn->urgent_ptr - conn->seq_next_expected;
 	if (!remaining || remaining >= 2147483648U)
@@ -2213,29 +1985,29 @@ static void *fixture_icmp_error_packet(struct fixture *f, uint8_t type,
 	memset(data, 0, packet_len);
 	iip_ops_pkt_set_len(pkt, packet_len, opaque);
 	iip_ops_l2_hdr_craft(pkt, f->peer_mac, f->local_mac,
-			__iip_htons(0x0800), opaque);
+			ii_htons(0x0800), opaque);
 
 	ip4 = PB_IP4(pkt);
 	ip4->vl = (4U << 4) | (sizeof(*ip4) / 4);
-	ip4->len_be = __iip_htons(sizeof(*ip4) + icmp_len);
+	ip4->len_be = ii_htons(sizeof(*ip4) + icmp_len);
 	ip4->ttl = 64;
 	ip4->proto = 1;
-	ip4->src_be = f->conn.peer_ip4_be;
-	ip4->dst_be = f->conn.local_ip4_be;
+	ip4->src_be = ii_htonl(f->conn->dst_ip[0]);
+	ip4->dst_be = ii_htonl(f->conn->src_ip[0]);
 
 	icmp = PB_ICMP(pkt);
 	icmp->type = type;
 	icmp->code = code;
 	quoted_ip4 = (struct iip_ip4_hdr *)PB_ICMP_DATA(pkt);
 	quoted_ip4->vl = (4U << 4) | (sizeof(*quoted_ip4) / 4);
-	quoted_ip4->len_be = __iip_htons(sizeof(*quoted_ip4) + sizeof(*quoted_tcp));
+	quoted_ip4->len_be = ii_htons(sizeof(*quoted_ip4) + sizeof(*quoted_tcp));
 	quoted_ip4->ttl = 64;
 	quoted_ip4->proto = 6;
-	quoted_ip4->src_be = f->conn.local_ip4_be;
-	quoted_ip4->dst_be = f->conn.peer_ip4_be;
+	quoted_ip4->src_be = ii_htonl(f->conn->src_ip[0]);
+	quoted_ip4->dst_be = ii_htonl(f->conn->dst_ip[0]);
 	quoted_tcp = (struct iip_tcp_hdr *)((uint8_t *)quoted_ip4 + sizeof(*quoted_ip4));
-	quoted_tcp->src_be = f->conn.local_port_be;
-	quoted_tcp->dst_be = f->conn.peer_port_be;
+	quoted_tcp->src_be = ii_htons(f->conn->src_port);
+	quoted_tcp->dst_be = ii_htons(f->conn->dst_port);
 
 	update_ip4_checksum(pkt);
 	update_icmp_checksum(pkt);
@@ -2245,7 +2017,7 @@ static void *fixture_icmp_error_packet(struct fixture *f, uint8_t type,
 static void fixture_run_timers(struct fixture *f)
 {
 	uint32_t next_us = UINT32_MAX;
-	assert(iip_run(f->ws, f->local_mac, f->conn.local_ip4_be,
+	assert(test_api_run(f->ws, f->local_mac, ii_htonl(f->conn->src_ip[0]),
 			NULL, 0, &next_us, &f->state) == 0);
 }
 
@@ -2285,10 +2057,10 @@ static int wait_test_child(pid_t child, unsigned int timeout_ms)
 static void fixture_prepare_sender(struct fixture *f)
 {
 	fake_clock_set_ns(&f->state, 1000000000ULL);
-	f->conn.peer_win = 65535;
-	f->conn.ws = 0;
-	f->conn.acked_seq = __iip_ntohl(f->conn.seq_be);
-	f->conn.ack_seq_sent = __iip_ntohl(f->conn.ack_seq_be);
+	f->conn->peer_win = 65535;
+	f->conn->ws = 0;
+	f->conn->acked_seq = f->conn->seq;
+	f->conn->ack_seq_sent = f->conn->ack_seq;
 }
 
 static int fixture_send_data(struct fixture *f, uint16_t len)
@@ -2298,9 +2070,9 @@ static int fixture_send_data(struct fixture *f, uint16_t len)
 		return 0;
 	memset(iip_ops_pkt_get_data(payload, &f->state), 0x5a, len);
 	iip_ops_pkt_set_len(payload, len, &f->state);
-	iip_tcp_send(f->ws, &f->conn, payload, 0, &f->state);
+	test_api_send(f->ws, f->conn, payload, 0, &f->state);
 	fixture_run_timers(f);
-	return f->conn.head[2][0] != NULL;
+	return test_ring_end(f->ws, &f->conn->sent_ring, 0) != NULL;
 }
 
 static void *fixture_oversized_tcp_payload(struct fixture *f)
@@ -2308,61 +2080,65 @@ static void *fixture_oversized_tcp_payload(struct fixture *f)
 	void *payload = iip_ops_pkt_alloc(&f->state);
 
 	if (payload)
-		iip_ops_pkt_set_len(payload, (uint16_t)(f->conn.mss + 1),
+		iip_ops_pkt_set_len(payload, (uint16_t)(f->conn->mss + 1),
 				&f->state);
 	return payload;
 }
 
-static uint16_t fixture_send_with_capacity_failure(struct fixture *f,
-		void *payload, uint16_t failing_capacity)
+/* Enqueue succeeds before serialization in the current API.  Snapshot only
+ * after enqueue, and inject failure into the operation that can reject capacity. */
+static uint16_t fixture_transmit_with_capacity_failure(struct fixture *f,
+		struct ii_pb *p, uint16_t failing_capacity)
 {
-	uint16_t result;
-
+	/* Existing input payload keeps its real capacity.  The first output
+	 * segment fits; the next allocation exercises failure after partial work. */
+	packet_capacity_exempt_payload = p->part_pkt[0];
 	packet_capacity_sequence_begin(2048, failing_capacity);
-	result = iip_tcp_send(f->ws, &f->conn, payload, 0, &f->state);
+	enum iip_rc rc = ii_tcp_xmit_queued_data_one(f->ws,
+		test_conn_id(f->ws, f->conn), (uint32_t)(p - f->ws->pbs.array),
+		0, p->tcp.payload_len, &f->state);
 	packet_capacity_sequence_end();
-	return result;
+	packet_capacity_exempt_payload = NULL;
+	return rc == IIP_ERR_OK ? 0 : UINT16_MAX;
 }
 
 static enum result test_tcp_capacity_failure_is_atomic(const char **why)
 {
 	struct fixture f;
-	struct pb *p, *next;
+	struct ii_pb *p;
 	void *payload;
-	uint32_t seq_before;
+	uint32_t seq_before, sent_seq_before;
 	uint16_t result;
-	int queue_empty;
-	int seq_unchanged;
 
 	if (!fixture_init(&f)) {
 		*why = "fixture initialization failed";
 		return RESULT_FAIL;
 	}
 	payload = fixture_oversized_tcp_payload(&f);
-	if (!payload) {
-		*why = "payload allocation failed";
+	if (!payload || test_api_send(f.ws, f.conn, payload, 0, &f.state)) {
+		*why = "failed to enqueue payload before capacity injection";
 		return RESULT_FAIL;
 	}
-	seq_before = f.conn.seq_be;
-
-	result = fixture_send_with_capacity_failure(&f, payload, 32);
-
-	queue_empty = f.conn.head[1][0] == NULL && f.conn.head[1][1] == NULL;
-	seq_unchanged = f.conn.seq_be == seq_before;
-	__iip_q_for_each_safe(f.conn.head[1], p, next, 0) {
-		__iip_dequeue_obj(f.conn.head[1], p, 0);
-		__iip_free_pb(f.ws, p, &f.state);
-	}
-	if (result != 0xffff) {
+	p = test_ring_end(f.ws, &f.conn->tx_ring, 0);
+	seq_before = f.conn->seq;
+	sent_seq_before = f.conn->sent_seq;
+	result = fixture_transmit_with_capacity_failure(&f, p, 32);
+	if (result != UINT16_MAX) {
 		*why = "capacity failure was not reported";
 		return RESULT_FAIL;
 	}
-	if (!queue_empty) {
-		*why = "a preceding segment remained queued after failure";
+	if (f.state.out_cnt) {
+		*why = "a preceding segment was transmitted before an atomic transmission failure";
 		return RESULT_FAIL;
 	}
-	if (!seq_unchanged) {
-		*why = "send sequence advanced after an atomic send failure";
+	if (test_ring_end(f.ws, &f.conn->tx_ring, 0) != p ||
+			test_ring_end(f.ws, &f.conn->tx_ring, 1) != p ||
+			ii_pb_ring_num_used(&f.conn->tx_ring) != 1) {
+		*why = "accepted payload queue changed after transmission failure";
+		return RESULT_FAIL;
+	}
+	if (f.conn->seq != seq_before || f.conn->sent_seq != sent_seq_before) {
+		*why = "send sequence advanced after an atomic transmission failure";
 		return RESULT_FAIL;
 	}
 	return RESULT_PASS;
@@ -2389,8 +2165,13 @@ static enum result test_tcp_payload_capacity_failure_frees_clone(
 	packet_clone_tracking = 1;
 	packet_tracked_clone = NULL;
 	packet_tracked_clone_freed = 0;
-	result = fixture_send_with_capacity_failure(&f, payload, 66);
-	clone_freed = packet_tracked_clone && packet_tracked_clone_freed;
+	if (test_api_send(f.ws, f.conn, payload, 0, &f.state)) {
+		*why = "failed to enqueue payload before capacity injection";
+		return RESULT_FAIL;
+	}
+	result = fixture_transmit_with_capacity_failure(&f,
+		test_ring_end(f.ws, &f.conn->tx_ring, 1), 66);
+	clone_freed = !packet_tracked_clone || packet_tracked_clone_freed;
 	packet_clone_tracking = 0;
 
 	if (!clone_freed && packet_tracked_clone)
@@ -2402,7 +2183,7 @@ static enum result test_tcp_payload_capacity_failure_frees_clone(
 		return RESULT_FAIL;
 	}
 	if (!clone_freed) {
-		*why = "current segment clone leaked after payload capacity failure";
+		*why = "a clone allocated during transmission leaked after capacity failure";
 		return RESULT_FAIL;
 	}
 	return RESULT_PASS;
@@ -2413,24 +2194,24 @@ static int fixture_queue_data_at_zero_window(struct fixture *f)
 	void *payload;
 
 	fixture_prepare_sender(f);
-	f->conn.peer_win = 0;
+	f->conn->peer_win = 0;
 	payload = iip_ops_pkt_alloc(&f->state);
 	if (!payload)
 		return 0;
 	*(uint8_t *)iip_ops_pkt_get_data(payload, &f->state) = 0x5a;
 	iip_ops_pkt_set_len(payload, 1, &f->state);
-	if (iip_tcp_send(f->ws, &f->conn, payload, 0, &f->state) == 0xffff)
+	if (test_api_send(f->ws, f->conn, payload, 0, &f->state) == 0xffff)
 		return 0;
 	fixture_run_timers(f);
-	return f->state.out_cnt == 0 && f->conn.head[1][0] != NULL &&
-		f->conn.head[2][0] == NULL;
+	return f->state.out_cnt == 0 && test_ring_end(f->ws, &f->conn->tx_ring, 0) != NULL &&
+		test_ring_end(f->ws, &f->conn->sent_ring, 0) == NULL;
 }
 
 static enum result test_tcp_capacity_failure_preserves_existing_queue(
 		const char **why)
 {
 	struct fixture f;
-	struct pb *pending;
+	struct ii_pb *pending, *queued;
 	void *pending_pkt;
 	void *payload;
 	uint32_t seq_before;
@@ -2444,9 +2225,8 @@ static enum result test_tcp_capacity_failure_preserves_existing_queue(
 		*why = "failed to prepare an existing queued segment";
 		return RESULT_FAIL;
 	}
-	pending = f.conn.head[1][0];
-	pending_pkt = pending->pkt;
-	seq_before = f.conn.seq_be;
+	pending = test_ring_end(f.ws, &f.conn->tx_ring, 0);
+	pending_pkt = pending->part_pkt[0];
 
 	payload = fixture_oversized_tcp_payload(&f);
 	if (!payload) {
@@ -2454,25 +2234,31 @@ static enum result test_tcp_capacity_failure_preserves_existing_queue(
 		return RESULT_FAIL;
 	}
 
-	result = fixture_send_with_capacity_failure(&f, payload, 32);
+	if (test_api_send(f.ws, f.conn, payload, 0, &f.state)) {
+		*why = "failed to enqueue payload before capacity injection";
+		return RESULT_FAIL;
+	}
+	queued = test_ring_end(f.ws, &f.conn->tx_ring, 1);
+	seq_before = ii_htonl(f.conn->seq);
+	result = fixture_transmit_with_capacity_failure(&f, queued, 32);
 
 	if (result != 0xffff) {
 		*why = "capacity failure was not reported";
 		return RESULT_FAIL;
 	}
-	if (f.conn.head[1][0] != pending || f.conn.head[1][1] != pending) {
+	if (test_ring_end(f.ws, &f.conn->tx_ring, 0) != pending || test_ring_end(f.ws, &f.conn->tx_ring, 1) != queued) {
 		*why = "existing send queue endpoints changed after failure";
 		return RESULT_FAIL;
 	}
-	if (pending->pkt != pending_pkt) {
+	if (pending->part_pkt[0] != pending_pkt) {
 		*why = "existing queued packet was released after failure";
 		return RESULT_FAIL;
 	}
-	if (pending->prev[0] != NULL || pending->next[0] != NULL) {
+	if (ii_pb_ring_num_used(&f.conn->tx_ring) != 2) {
 		*why = "existing send queue links changed after failure";
 		return RESULT_FAIL;
 	}
-	if (f.conn.seq_be != seq_before) {
+	if (ii_htonl(f.conn->seq) != seq_before) {
 		*why = "send sequence advanced after an atomic send failure";
 		return RESULT_FAIL;
 	}
@@ -2507,6 +2293,10 @@ static unsigned int fixture_wait_for_zero_window_probes(struct fixture *f,
 
 static enum result test_disable_nagle(const char **why)
 {
+#ifndef IIP_EX_TCP_SET_NAGLE_DISABLED
+	*why = "current iip API has no per-connection Nagle-disable control";
+	return RESULT_FAIL;
+#else
 	struct fixture enabled, disabled;
 	struct tcp_packet_spec spec;
 	uint32_t first_ack;
@@ -2516,19 +2306,19 @@ static enum result test_disable_nagle(const char **why)
 	if (!fixture_init(&enabled))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&enabled);
-	enabled.conn.cc.win = 8;
-	if (enabled.conn.flags & __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED)
+	enabled.conn->cc.win = 8;
+	if (enabled.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)
 		return RESULT_FAIL;
 	if (!fixture_send_data(&enabled, 1) || enabled.state.out_cnt != 1)
 		return RESULT_FAIL;
-	first_ack = enabled.conn.acked_seq + 1;
+	first_ack = enabled.conn->acked_seq + 1;
 	free_output(&enabled.state);
 	test_event_log_clear(&enabled.state);
 	fake_clock_advance_ms(&enabled.state, 200);
 	if (!fixture_send_data(&enabled, 1) || enabled.state.out_cnt != 0 ||
-			enabled.conn.head[1][0] == NULL) {
+			test_ring_end(enabled.ws, &enabled.conn->tx_ring, 0) == NULL) {
 		fprintf(stderr, "Nagle enabled hold: out=%u queued=%p\n",
-				enabled.state.out_cnt, (void *)enabled.conn.head[1][0]);
+				enabled.state.out_cnt, (void *)test_ring_end(enabled.ws, &enabled.conn->tx_ring, 0));
 		return RESULT_FAIL;
 	}
 	fixture_incoming_spec(&enabled, &spec, 0, NULL, 0);
@@ -2546,16 +2336,16 @@ static enum result test_disable_nagle(const char **why)
 	if (!fixture_init(&disabled))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&disabled);
-	disabled.conn.cc.win = 8;
-	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, &disabled.conn, 1,
+	disabled.conn->cc.win = 8;
+	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, disabled.conn, 1,
 			&disabled.state);
-	if (!(disabled.conn.flags & __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED))
+	if (!(disabled.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED))
 		return RESULT_FAIL;
-	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, &disabled.conn, 0,
+	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, disabled.conn, 0,
 			&disabled.state);
-	if (disabled.conn.flags & __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED)
+	if (disabled.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)
 		return RESULT_FAIL;
-	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, &disabled.conn, 1,
+	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, disabled.conn, 1,
 			&disabled.state);
 	if (!fixture_send_data(&disabled, 1) || disabled.state.out_cnt != 1) {
 		fprintf(stderr, "Nagle disabled first: out=%u\n",
@@ -2574,6 +2364,7 @@ static enum result test_disable_nagle(const char **why)
 	}
 
 	return RESULT_PASS;
+#endif
 }
 
 static enum result test_karn_rtt_sampling(const char **why)
@@ -2588,11 +2379,11 @@ static enum result test_karn_rtt_sampling(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
-	f.conn.rtt.srtt = 10;
-	f.conn.rtt.rttvar = 5;
+	f.conn->rtt.srtt = 10;
+	f.conn->rtt.rttvar = 5;
 	if (!fixture_send_data(&f, 1))
 		return RESULT_FAIL;
-	initial_rto = f.conn.head[2][0]->tcp.rto_ms;
+	initial_rto = f.conn->rto_ms;
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 
@@ -2610,21 +2401,21 @@ static enum result test_karn_rtt_sampling(const char **why)
 			sizeof(retransmission_tsval_be));
 	memcpy(&timestamp[4], &retransmission_tsval_be,
 			sizeof(retransmission_tsval_be));
-	srtt_before = f.conn.rtt.srtt;
-	rttvar_before = f.conn.rtt.rttvar;
+	srtt_before = f.conn->rtt.srtt;
+	rttvar_before = f.conn->rtt.rttvar;
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = __iip_ntohl(f.conn.seq_be);
+	spec.ack_seq = f.conn->seq;
 	/* Echo the retransmission's TSval in the ACK's TSecr. */
 	tcp_packet_add_option(&spec, 8, timestamp, sizeof(timestamp));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 
-	if (f.conn.rtt.srtt != srtt_before ||
-			f.conn.rtt.rttvar != rttvar_before) {
+	if (f.conn->rtt.srtt != srtt_before ||
+			f.conn->rtt.rttvar != rttvar_before) {
 		fprintf(stderr, "Karn RTT sampling: estimator changed from %u/%u to %u/%u after retransmission ACK\n",
-				srtt_before, rttvar_before, f.conn.rtt.srtt,
-				f.conn.rtt.rttvar);
+				srtt_before, rttvar_before, f.conn->rtt.srtt,
+				f.conn->rtt.rttvar);
 		*why = "RTT estimator was updated from an ACK for a retransmitted segment";
 		return RESULT_FAIL;
 	}
@@ -2639,14 +2430,14 @@ static int congestion_growth_scenario(uint16_t cwnd, uint16_t ssthresh,
 	if (!fixture_init(&f))
 		return 0;
 	fixture_prepare_sender(&f);
-	f.conn.cc.win = cwnd;
-	f.conn.cc.ssthresh = ssthresh;
+	f.conn->cc.win = cwnd;
+	f.conn->cc.ssthresh = ssthresh;
 	if (!fixture_send_data(&f, 1))
 		return 0;
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn.cc.win == expected_cwnd;
+	return f.conn->cc.win == expected_cwnd;
 }
 
 static int timeout_backoff_scenario(void)
@@ -2657,14 +2448,14 @@ static int timeout_backoff_scenario(void)
 	if (!fixture_init(&f))
 		return 0;
 	fixture_prepare_sender(&f);
-	f.conn.cc.win = 8;
-	f.conn.cc.ssthresh = 16;
-	seq = __iip_ntohl(f.conn.seq_be);
+	f.conn->cc.win = 8;
+	f.conn->cc.ssthresh = 16;
+	seq = f.conn->seq;
 	if (!fixture_send_data(&f, 1))
 		return 0;
 	if (test_event_count(&f.state, TEST_EVENT_RETRANSMISSION, 0) != 0)
 		return 0;
-	initial_rto = f.conn.head[2][0]->tcp.rto_ms;
+	initial_rto = f.conn->rto_ms;
 	if (!initial_rto)
 		return 0;
 	free_output(&f.state);
@@ -2709,9 +2500,9 @@ static int duplicate_ack_loss_scenario(void)
 	if (!fixture_init(&f))
 		return 0;
 	fixture_prepare_sender(&f);
-	f.conn.cc.win = 8;
-	f.conn.cc.ssthresh = 16;
-	ack = f.conn.acked_seq;
+	f.conn->cc.win = 8;
+	f.conn->cc.ssthresh = 16;
+	ack = f.conn->acked_seq;
 	if (!fixture_send_data(&f, 4))
 		return 0;
 	free_output(&f.state);
@@ -2746,10 +2537,10 @@ static int sack_loss_scenario(void)
 	if (!fixture_init(&f))
 		return 0;
 	fixture_prepare_sender(&f);
-	f.conn.sack_ok = 1;
-	f.conn.cc.win = 8;
-	f.conn.cc.ssthresh = 16;
-	ack = f.conn.acked_seq;
+	f.conn->flags |= II_TCP_CONN_FLAGS_SACK_OK;
+	f.conn->cc.win = 8;
+	f.conn->cc.ssthresh = 16;
+	ack = f.conn->acked_seq;
 	if (!fixture_send_data(&f, 4))
 		return 0;
 	free_output(&f.state);
@@ -2757,8 +2548,8 @@ static int sack_loss_scenario(void)
 
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.ack_seq = ack;
-	blocks_be[0] = __iip_htonl(ack + 1);
-	blocks_be[1] = __iip_htonl(ack + 4);
+	blocks_be[0] = ii_htonl(ack + 1);
+	blocks_be[1] = ii_htonl(ack + 4);
 	tcp_packet_add_option(&spec, 5, blocks_be, sizeof(blocks_be));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	loss = test_event_nth(&f.state, TEST_EVENT_LOSS_DETECTED,
@@ -2802,8 +2593,8 @@ static enum result test_r1_r2_failure_handling(const char **why)
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	r1 = f.conn.retrans_r1;
-	r2 = f.conn.retrans_r2;
+	r1 = f.conn->retrans_r1;
+	r2 = f.conn->retrans_r2;
 	if (!r1 || r2 <= r1)
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
@@ -2812,22 +2603,22 @@ static enum result test_r1_r2_failure_handling(const char **why)
 	if (output_count_ethertype(&f.state, 0x0800) != 1 ||
 			output_count_ethertype(&f.state, 0x0806) != 0)
 		return RESULT_FAIL;
-	data_seq = __iip_ntohl(PB_TCP(
+	data_seq = ii_ntohl(PB_TCP(
 			output_nth_ethertype(&f.state, 0x0800, 0))->seq_be);
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 
 	for (i = 1; i <= r2; i++) {
 		void *tcp_pkt;
-		uint32_t rto_ms = f.conn.head[2][0]->tcp.rto_ms;
+		uint32_t rto_ms = f.conn->rto_ms;
 		fake_clock_advance_ms(&f.state, (uint64_t)rto_ms + 1);
 		fixture_run_timers(&f);
 		tcp_pkt = output_nth_ethertype(&f.state, 0x0800, 0);
-		if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
-				f.conn.retrans_cnt != i || !tcp_pkt ||
+		if (f.conn->state != II_TCP_STATE_ESTABLISHED ||
+				f.conn->retrans_cnt != i || !tcp_pkt ||
 				output_count_ethertype(&f.state, 0x0800) != 1 ||
 				output_count_ethertype(&f.state, 0x0806) != 0 ||
-				__iip_ntohl(PB_TCP(tcp_pkt)->seq_be) != data_seq ||
+				ii_ntohl(PB_TCP(tcp_pkt)->seq_be) != data_seq ||
 				PB_TCP_PAYLOAD_LEN(tcp_pkt) != 1 ||
 				!checksum_valid(tcp_pkt) ||
 				test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -2837,16 +2628,16 @@ static enum result test_r1_r2_failure_handling(const char **why)
 		free_output(&f.state);
 	}
 
-	if (!f.conn.head[2][0])
+	if (!test_ring_end(f.ws, &f.conn->sent_ring, 0))
 		return RESULT_FAIL;
 	fake_clock_advance_ms(&f.state,
-			(uint64_t)f.conn.head[2][0]->tcp.rto_ms + 1);
+			(uint64_t)f.conn->rto_ms + 1);
 	fixture_run_timers(&f);
-	return f.conn.state == 0 && f.state.out_cnt == 0 &&
+	return f.conn->state == 0 && f.state.out_cnt == 0 &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_IP4_NEGATIVE_ADVICE) == 1 &&
-		test_event_has_state_transition(&f.state, &f.conn,
-				__IIP_TCP_STATE_ESTABLISHED, __IIP_TCP_STATE_CLOSED) &&
+		test_event_has_state_transition(&f.state, f.conn,
+				II_TCP_STATE_ESTABLISHED, II_TCP_STATE_CLOSED) &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1
 		? RESULT_PASS : RESULT_FAIL;
@@ -2855,9 +2646,9 @@ static enum result test_r1_r2_failure_handling(const char **why)
 static int fixture_timeout_once(struct fixture *f)
 {
 	uint32_t rto_ms;
-	if (!f->conn.head[2][0])
+	if (!test_ring_end(f->ws, &f->conn->sent_ring, 0))
 		return 0;
-	rto_ms = f->conn.head[2][0]->tcp.rto_ms;
+	rto_ms = f->conn->rto_ms;
 	fake_clock_advance_ms(&f->state, (uint64_t)rto_ms + 1);
 	fixture_run_timers(f);
 	free_output(&f->state);
@@ -2875,9 +2666,9 @@ static enum result test_application_configurable_r2(const char **why)
 		return RESULT_FAIL;
 	fixture_prepare_sender(&short_r2);
 	fixture_prepare_sender(&long_r2);
-	IIP_EX_TCP_SET_RETRANS_R2(short_r2.ws, &short_r2.conn, short_limit,
+	test_set_retrans_r2(short_r2.ws, short_r2.conn, short_limit,
 			&short_r2.state);
-	IIP_EX_TCP_SET_RETRANS_R2(long_r2.ws, &long_r2.conn, long_limit,
+	test_set_retrans_r2(long_r2.ws, long_r2.conn, long_limit,
 			&long_r2.state);
 	if (!fixture_send_data(&short_r2, 1) ||
 			!fixture_send_data(&long_r2, 1))
@@ -2892,9 +2683,9 @@ static enum result test_application_configurable_r2(const char **why)
 		if (!fixture_timeout_once(&short_r2) ||
 				!fixture_timeout_once(&long_r2))
 			return RESULT_FAIL;
-	if (short_r2.conn.state != 0 ||
-			long_r2.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
-			long_r2.conn.retrans_cnt != short_limit + 1 ||
+	if (short_r2.conn->state != 0 ||
+			long_r2.conn->state != II_TCP_STATE_ESTABLISHED ||
+			long_r2.conn->retrans_cnt != short_limit + 1 ||
 			test_event_count(&short_r2.state, TEST_EVENT_CALLBACK,
 					TEST_CALLBACK_CLOSED) != 1 ||
 			test_event_count(&long_r2.state, TEST_EVENT_CALLBACK,
@@ -2902,10 +2693,10 @@ static enum result test_application_configurable_r2(const char **why)
 		return RESULT_FAIL;
 
 	/* The other connection remains alive until its independently set R2. */
-	while (long_r2.conn.state == __IIP_TCP_STATE_ESTABLISHED)
+	while (long_r2.conn->state == II_TCP_STATE_ESTABLISHED)
 		if (!fixture_timeout_once(&long_r2))
 			return RESULT_FAIL;
-	return long_r2.conn.state == 0 &&
+	return long_r2.conn->state == 0 &&
 		test_event_count(&short_r2.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_IP4_NEGATIVE_ADVICE) == 1 &&
 		test_event_count(&long_r2.state, TEST_EVENT_CALLBACK,
@@ -2925,36 +2716,36 @@ static enum result test_syn_failure_mechanism(const char **why)
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	r2 = f.conn.retrans_r2;
+	r2 = f.conn->retrans_r2;
 	if (!r2)
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
-	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
-	__iip_tcp_push(f.ws, &f.conn, NULL, 1, 0, 0, 0, 0, NULL,
+	f.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
+	test_api_push(f.ws, f.conn, NULL, 1, 0, 0, 0, 0, NULL,
 			0, &f.state);
 	fixture_run_timers(&f);
 	tcp_pkt = output_nth_ethertype(&f.state, 0x0800, 0);
-	if (!f.conn.head[2][0] || output_count_ethertype(&f.state, 0x0800) != 1 ||
+	if (!test_ring_end(f.ws, &f.conn->sent_ring, 0) || output_count_ethertype(&f.state, 0x0800) != 1 ||
 			output_count_ethertype(&f.state, 0x0806) != 0 || !tcp_pkt ||
 			!PB_TCP_HDR_HAS_SYN(tcp_pkt) || PB_TCP_HDR_HAS_ACK(tcp_pkt) ||
 			PB_TCP_PAYLOAD_LEN(tcp_pkt) != 0 || !checksum_valid(tcp_pkt))
 		return RESULT_FAIL;
-	syn_seq = __iip_ntohl(PB_TCP(tcp_pkt)->seq_be);
+	syn_seq = ii_ntohl(PB_TCP(tcp_pkt)->seq_be);
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 
 	for (i = 1; i <= r2; i++) {
-		uint32_t rto_ms = f.conn.head[2][0]->tcp.rto_ms;
+		uint32_t rto_ms = f.conn->rto_ms;
 		fake_clock_advance_ms(&f.state, (uint64_t)rto_ms + 1);
 		fixture_run_timers(&f);
 		tcp_pkt = output_nth_ethertype(&f.state, 0x0800, 0);
-		if (f.conn.state != __IIP_TCP_STATE_SYN_SENT ||
-				f.conn.retrans_cnt != i || !tcp_pkt ||
+		if (f.conn->state != II_TCP_STATE_SYN_SENT ||
+				f.conn->retrans_cnt != i || !tcp_pkt ||
 				output_count_ethertype(&f.state, 0x0800) != 1 ||
 				output_count_ethertype(&f.state, 0x0806) != 0 ||
 				!PB_TCP_HDR_HAS_SYN(tcp_pkt) || PB_TCP_HDR_HAS_ACK(tcp_pkt) ||
-				__iip_ntohl(PB_TCP(tcp_pkt)->seq_be) != syn_seq ||
+				ii_ntohl(PB_TCP(tcp_pkt)->seq_be) != syn_seq ||
 				PB_TCP_PAYLOAD_LEN(tcp_pkt) != 0 || !checksum_valid(tcp_pkt) ||
 				test_event_count(&f.state, TEST_EVENT_RETRANSMISSION,
 						TEST_RETRANS_TIMEOUT) != i)
@@ -2962,15 +2753,15 @@ static enum result test_syn_failure_mechanism(const char **why)
 		free_output(&f.state);
 	}
 
-	if (!f.conn.head[2][0])
+	if (!test_ring_end(f.ws, &f.conn->sent_ring, 0))
 		return RESULT_FAIL;
 	fake_clock_advance_ms(&f.state,
-			(uint64_t)f.conn.head[2][0]->tcp.rto_ms + 1);
+			(uint64_t)f.conn->rto_ms + 1);
 	fixture_run_timers(&f);
-	return f.conn.state == 0 &&
+	return f.conn->state == 0 &&
 		f.state.out_cnt == 0 &&
-		test_event_has_state_transition(&f.state, &f.conn,
-				__IIP_TCP_STATE_SYN_SENT, __IIP_TCP_STATE_CLOSED) &&
+		test_event_has_state_transition(&f.state, f.conn,
+				II_TCP_STATE_SYN_SENT, II_TCP_STATE_CLOSED) &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1
 		? RESULT_PASS : RESULT_FAIL;
@@ -2985,33 +2776,33 @@ static enum result test_syn_retry_at_least_three_minutes(const char **why)
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	r2 = f.conn.retrans_r2;
+	r2 = f.conn->retrans_r2;
 	if (!r2)
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
-	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
-	__iip_tcp_push(f.ws, &f.conn, NULL, 1, 0, 0, 0, 0, NULL,
+	f.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
+	test_api_push(f.ws, f.conn, NULL, 1, 0, 0, 0, 0, NULL,
 			0, &f.state);
 	fixture_run_timers(&f);
-	if (!f.conn.head[2][0] || output_count_ethertype(&f.state, 0x0800) != 1)
+	if (!test_ring_end(f.ws, &f.conn->sent_ring, 0) || output_count_ethertype(&f.state, 0x0800) != 1)
 		return RESULT_FAIL;
 	started_ns = f.state.now_ns;
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 
-	while (f.conn.state == __IIP_TCP_STATE_SYN_SENT &&
+	while (f.conn->state == II_TCP_STATE_SYN_SENT &&
 			timeouts <= r2) {
 		void *tcp_pkt;
 		uint32_t rto_ms;
-		if (!f.conn.head[2][0])
+		if (!test_ring_end(f.ws, &f.conn->sent_ring, 0))
 			return RESULT_FAIL;
-		rto_ms = f.conn.head[2][0]->tcp.rto_ms;
+		rto_ms = f.conn->rto_ms;
 		fake_clock_advance_ms(&f.state, (uint64_t)rto_ms + 1);
 		fixture_run_timers(&f);
 		timeouts++;
 		tcp_pkt = output_nth_ethertype(&f.state, 0x0800, 0);
-		if (f.conn.state == __IIP_TCP_STATE_SYN_SENT &&
+		if (f.conn->state == II_TCP_STATE_SYN_SENT &&
 				(!tcp_pkt || !PB_TCP_HDR_HAS_SYN(tcp_pkt) ||
 				PB_TCP_HDR_HAS_ACK(tcp_pkt) ||
 				PB_TCP_PAYLOAD_LEN(tcp_pkt) != 0 ||
@@ -3020,10 +2811,10 @@ static enum result test_syn_retry_at_least_three_minutes(const char **why)
 		free_output(&f.state);
 	}
 
-	return f.conn.state == 0 && timeouts == r2 + 1 &&
+	return f.conn->state == 0 && timeouts == r2 + 1 &&
 		f.state.now_ns - started_ns >= 180ULL * 1000000000ULL &&
-		test_event_has_state_transition(&f.state, &f.conn,
-				__IIP_TCP_STATE_SYN_SENT, __IIP_TCP_STATE_CLOSED) &&
+		test_event_has_state_transition(&f.state, f.conn,
+				II_TCP_STATE_SYN_SENT, II_TCP_STATE_CLOSED) &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1
 		? RESULT_PASS : RESULT_FAIL;
@@ -3048,7 +2839,7 @@ static enum result test_rx_checksum(const char **why)
 	assert(child >= 0);
 	if (!child) {
 		fixture_deliver(&f, pkt);
-		_exit(f.state.payload_chunk_count == 0 && f.conn.seq_next_expected == 0 ? 0 : 1);
+		_exit(f.state.payload_chunk_count == 0 && f.conn->seq_next_expected == 0 ? 0 : 1);
 	}
 	ok = wait_test_child(child, 1000);
 	iip_ops_pkt_free(pkt, &f.state);
@@ -3068,7 +2859,7 @@ static enum result test_arbitrary_segment_options(const char **why)
 	tcp_packet_add_nop(&spec);
 	tcp_packet_add_raw_option(&spec, unknown, sizeof(unknown));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.state.payload_chunk_count == 1 && f.conn.seq_next_expected == 1
+	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 1
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -3096,23 +2887,23 @@ static int invalid_tcp_header_length_case(uint8_t data_offset_words)
 	 * recompute the checksum so rejection is specifically attributable to
 	 * the malformed TCP header length rather than a checksum failure.
 	 */
-	flags = __iip_ntohs(PB_TCP(pkt)->flags);
+	flags = ii_ntohs(PB_TCP(pkt)->flags);
 	flags = (uint16_t)((flags & 0x0fffU) |
 			((uint16_t)data_offset_words << 12));
-	PB_TCP(pkt)->flags = __iip_htons(flags);
+	PB_TCP(pkt)->flags = ii_htons(flags);
 	update_tcp_checksum(pkt);
 
-	state_before = f.conn.state;
-	seq_before = f.conn.seq_next_expected;
+	state_before = f.conn->state;
+	seq_before = f.conn->seq_next_expected;
 	payload_before = f.state.payload_chunk_count;
 	fixture_deliver(&f, pkt);
 
-	TEST_CONDITION(f.conn.state == state_before,
+	TEST_CONDITION(f.conn->state == state_before,
 			"Data Offset=%u changed state: expected=%u actual=%u",
-			data_offset_words, state_before, f.conn.state);
-	TEST_CONDITION(f.conn.seq_next_expected == seq_before,
+			data_offset_words, state_before, f.conn->state);
+	TEST_CONDITION(f.conn->seq_next_expected == seq_before,
 			"Data Offset=%u advanced RCV.NXT: expected=%u actual=%u",
-			data_offset_words, seq_before, f.conn.seq_next_expected);
+			data_offset_words, seq_before, f.conn->seq_next_expected);
 	TEST_CONDITION(f.state.payload_chunk_count == payload_before,
 			"Data Offset=%u delivered payload: before=%u after=%u",
 			data_offset_words, payload_before,
@@ -3173,7 +2964,7 @@ static int malformed_input_normal_controls(void)
 		return 0;
 	fixture_deliver(&checksum, pkt);
 	if (checksum.state.payload_chunk_count != 1 ||
-			checksum.conn.seq_next_expected != 1)
+			checksum.conn->seq_next_expected != 1)
 		return 0;
 
 	/* A physically complete IPv4/TCP packet must pass the truncation controls. */
@@ -3210,7 +3001,7 @@ static int malformed_input_normal_controls(void)
 		return 0;
 	fixture_deliver(&extended_header, pkt);
 	return extended_header.state.payload_chunk_count == 1 &&
-		extended_header.conn.seq_next_expected == 1;
+		extended_header.conn->seq_next_expected == 1;
 }
 
 static int malformed_checksum_cases(void)
@@ -3226,11 +3017,11 @@ static int malformed_checksum_cases(void)
 		fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 		pkt = build_tcp_packet(&spec, &f.state);
 		if (i == 0)
-			PB_IP4(pkt)->csum_be ^= __iip_htons(1);
+			PB_IP4(pkt)->csum_be ^= ii_htons(1);
 		else
-			PB_TCP(pkt)->csum_be ^= __iip_htons(1);
+			PB_TCP(pkt)->csum_be ^= ii_htons(1);
 		fixture_deliver(&f, pkt);
-		if (f.state.payload_chunk_count != 0 || f.conn.seq_next_expected != 0 ||
+		if (f.state.payload_chunk_count != 0 || f.conn->seq_next_expected != 0 ||
 			f.state.out_cnt != 0)
 			return 0;
 	}
@@ -3250,7 +3041,7 @@ static int truncated_packet_case(uint16_t packet_len)
 	assert(packet_len < iip_ops_pkt_get_len(pkt, &f.state));
 	iip_ops_pkt_set_len(pkt, packet_len, &f.state);
 	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 && f.conn.seq_next_expected == 0 &&
+	return f.state.payload_chunk_count == 0 && f.conn->seq_next_expected == 0 &&
 		f.state.out_cnt == 0;
 }
 
@@ -3281,15 +3072,15 @@ static int invalid_flag_combination_case(uint8_t tcp_flags)
 		return 0;
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 	spec.tcp_flags = tcp_flags;
-	state_before = f.conn.state;
-	seq_before = f.conn.seq_next_expected;
+	state_before = f.conn->state;
+	seq_before = f.conn->seq_next_expected;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	TEST_CONDITION(f.conn.state == state_before,
+	TEST_CONDITION(f.conn->state == state_before,
 			"flags=0x%02x changed state: expected=%u actual=%u",
-			tcp_flags, state_before, f.conn.state);
-	TEST_CONDITION(f.conn.seq_next_expected == seq_before,
+			tcp_flags, state_before, f.conn->state);
+	TEST_CONDITION(f.conn->seq_next_expected == seq_before,
 			"flags=0x%02x advanced RCV.NXT: expected=%u actual=%u",
-			tcp_flags, seq_before, f.conn.seq_next_expected);
+			tcp_flags, seq_before, f.conn->seq_next_expected);
 	TEST_CONDITION(f.state.payload_chunk_count == 0,
 			"flags=0x%02x delivered %u payload chunk(s)",
 			tcp_flags, f.state.payload_chunk_count);
@@ -3306,13 +3097,13 @@ static int reset_flag_combination_case(uint8_t tcp_flags)
 		return 0;
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 	spec.tcp_flags = tcp_flags;
-	state_before = f.conn.state;
+	state_before = f.conn->state;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	TEST_CONDITION(f.state.payload_chunk_count == 0,
 			"RST flags=0x%02x delivered %u payload chunk(s)",
 			tcp_flags, f.state.payload_chunk_count);
-	TEST_CONDITION(test_event_has_state_transition(&f.state, &f.conn,
-				state_before, __IIP_TCP_STATE_CLOSED),
+	TEST_CONDITION(test_event_has_state_transition(&f.state, f.conn,
+				state_before, II_TCP_STATE_CLOSED),
 			"RST flags=0x%02x did not transition state %u -> CLOSED",
 			tcp_flags, state_before);
 	TEST_CONDITION(test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -3354,12 +3145,12 @@ static int mss_boundary_case(uint16_t advertised_mss, uint16_t expected_mss)
 	struct tcp_packet_spec spec;
 	if (!fixture_init(&f))
 		return 0;
-	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
+	f.conn->state = II_TCP_STATE_SYN_SENT;
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
 	tcp_packet_add_mss(&spec, advertised_mss);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn.mss == expected_mss;
+	return f.conn->mss == expected_mss;
 }
 
 static int payload_length_boundary_cases(void)
@@ -3375,7 +3166,7 @@ static int payload_length_boundary_cases(void)
 		return 0;
 	fixture_incoming_spec(&empty, &spec, 0, NULL, 0);
 	fixture_deliver(&empty, build_tcp_packet(&spec, &empty.state));
-	if (empty.state.payload_chunk_count != 0 || empty.conn.seq_next_expected != 0)
+	if (empty.state.payload_chunk_count != 0 || empty.conn->seq_next_expected != 0)
 		return 0;
 	payload = malloc(maximum_payload);
 	if (!payload)
@@ -3393,7 +3184,7 @@ static int payload_length_boundary_cases(void)
 	return maximum.state.payload_chunk_count == 1 && payload_event &&
 		payload_event->value[0] == maximum_payload &&
 		maximum.state.payload_byte_count == maximum_payload &&
-		maximum.conn.seq_next_expected == maximum_payload;
+		maximum.conn->seq_next_expected == maximum_payload;
 }
 
 static int additional_malformed_boundary_scenario(void)
@@ -3411,15 +3202,15 @@ static int additional_malformed_boundary_scenario(void)
 			"a physically truncated IPv4/TCP packet was not silently discarded");
 	TEST_ACCUMULATE(ok, invalid_flag_combination_cases(),
 			"SYN/FIN/RST flag precedence or reset notification was incorrect");
-	TEST_ACCUMULATE(ok, mss_boundary_case(0, IIP_CONF_TCP_OPT_MSS),
+	TEST_ACCUMULATE(ok, mss_boundary_case(0, IIP_CONF_TCP_INIT_MSS),
 			"MSS=0 was not ignored: expected effective MSS=%u",
-			IIP_CONF_TCP_OPT_MSS);
+			IIP_CONF_TCP_INIT_MSS);
 	TEST_ACCUMULATE(ok, mss_boundary_case(1, 1),
 			"MSS=1 was not accepted as the effective MSS");
 	TEST_ACCUMULATE(ok,
-			mss_boundary_case(UINT16_MAX, IIP_CONF_TCP_OPT_MSS),
+			mss_boundary_case(UINT16_MAX, IIP_CONF_TCP_INIT_MSS),
 			"MSS=65535 was not capped at configured MSS=%u",
-			IIP_CONF_TCP_OPT_MSS);
+			IIP_CONF_TCP_INIT_MSS);
 	TEST_ACCUMULATE(ok, payload_length_boundary_cases(),
 			"zero-length or maximum-length payload boundary handling failed");
 	return ok;
@@ -3531,7 +3322,7 @@ static int fuzz_repair_ip4_tcp_checksums(void *pkt, void *opaque)
 	if ((ip4->vl >> 4) != 4)
 		return 0;
 	ip_header_len = (uint16_t)(ip4->vl & 0x0f) * 4;
-	ip_total_len = __iip_ntohs(ip4->len_be);
+	ip_total_len = ii_ntohs(ip4->len_be);
 	if (ip_header_len < sizeof(*ip4) || ip_header_len > 60 ||
 			ip_total_len < ip_header_len + sizeof(struct iip_tcp_hdr) ||
 			ip_total_len > frame_len - l2_len || ip4->proto != 6)
@@ -3651,7 +3442,7 @@ static enum result test_invalid_option_length(const char **why)
 static enum result test_clock_driven_isn(const char **why)
 {
 	struct test_state state = { 0 };
-	struct workspace *ws = calloc(1, iip_workspace_size());
+	struct iip_workspace *ws = calloc(1, sizeof(struct iip_workspace));
 	uint8_t mac[6] = { 0 };
 	uint32_t next_us;
 	uint32_t before;
@@ -3660,25 +3451,25 @@ static enum result test_clock_driven_isn(const char **why)
 		return RESULT_FAIL;
 	fake_clock_set_ns(&state, 1000000000ULL);
 	next_us = UINT32_MAX;
-	assert(iip_run(ws, mac, 0, NULL, 0, &next_us, &state) == 0);
+	assert(test_api_run(ws, mac, 0, NULL, 0, &next_us, &state) == 0);
 	before = ws->tcp.iss;
 	fake_clock_advance_ms(&state, 499);
 	next_us = UINT32_MAX;
-	assert(iip_run(ws, mac, 0, NULL, 0, &next_us, &state) == 0);
+	assert(test_api_run(ws, mac, 0, NULL, 0, &next_us, &state) == 0);
 	if (ws->tcp.iss != before)
 		return RESULT_FAIL;
 	fake_clock_advance_ms(&state, 1);
 	next_us = UINT32_MAX;
-	assert(iip_run(ws, mac, 0, NULL, 0, &next_us, &state) == 0);
+	assert(test_api_run(ws, mac, 0, NULL, 0, &next_us, &state) == 0);
 	return ws->tcp.iss == before + 1 ? RESULT_PASS : RESULT_FAIL;
 }
 
 static enum result test_isn_prf_security(const char **why)
 {
-	const uint32_t local_ip_be = __iip_htonl(0xc0000201U);
-	const uint32_t peer_ip_be = __iip_htonl(0xc6336402U);
-	const uint16_t local_port_be = __iip_htons(10000);
-	const uint16_t peer_port_be = __iip_htons(20000);
+	const uint32_t local_ip_be = ii_htonl(0xc0000201U);
+	const uint32_t peer_ip_be = ii_htonl(0xc6336402U);
+	const uint16_t local_port_be = ii_htons(10000);
+	const uint16_t peer_port_be = ii_htons(20000);
 	uint8_t saved_key[sizeof(_iss_key)];
 	uint8_t key_a[sizeof(_iss_key)];
 	uint8_t key_b[sizeof(_iss_key)];
@@ -3703,14 +3494,14 @@ static enum result test_isn_prf_security(const char **why)
 	ok &= base == 0x353d3738U;
 	ok &= iip_ops_tcp_iss_off(local_ip_be, peer_ip_be,
 			local_port_be, peer_port_be) == base;
-	ok &= iip_ops_tcp_iss_off(__iip_htonl(0xc0000202U), peer_ip_be,
+	ok &= iip_ops_tcp_iss_off(ii_htonl(0xc0000202U), peer_ip_be,
 			local_port_be, peer_port_be) != base;
-	ok &= iip_ops_tcp_iss_off(local_ip_be, __iip_htonl(0xc6336403U),
+	ok &= iip_ops_tcp_iss_off(local_ip_be, ii_htonl(0xc6336403U),
 			local_port_be, peer_port_be) != base;
 	ok &= iip_ops_tcp_iss_off(local_ip_be, peer_ip_be,
-			__iip_htons(10001), peer_port_be) != base;
+			ii_htons(10001), peer_port_be) != base;
 	ok &= iip_ops_tcp_iss_off(local_ip_be, peer_ip_be,
-			local_port_be, __iip_htons(20001)) != base;
+			local_port_be, ii_htons(20001)) != base;
 
 	memcpy(_iss_key, key_b, sizeof(_iss_key));
 	other_key = iip_ops_tcp_iss_off(local_ip_be, peer_ip_be,
@@ -3723,12 +3514,12 @@ static enum result test_isn_prf_security(const char **why)
 		ok = 0;
 	} else {
 		uint32_t expected = f.ws->tcp.iss + base;
-		ok &= __iip_ntohl(f.conn.iss_be) == expected;
+		ok &= f.conn->iss == expected;
 		syn = fixture_packet(&f, 1, 0, 0);
 		ok &= syn != NULL;
 		if (syn) {
 			ok &= PB_TCP_HDR_HAS_SYN(syn);
-			ok &= __iip_ntohl(PB_TCP(syn)->seq_be) == expected;
+			ok &= ii_ntohl(PB_TCP(syn)->seq_be) == expected;
 			iip_ops_pkt_free(syn, &f.state);
 		}
 	}
@@ -3751,12 +3542,12 @@ static int tcp_state_basic_flags_scenario(void)
 	fixture_deliver(&ack, build_tcp_packet(&spec, &ack.state));
 	payload_event = test_event_nth(&ack.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_PAYLOAD, 0);
-	TEST_CONDITION(ack.conn.state == __IIP_TCP_STATE_ESTABLISHED,
+	TEST_CONDITION(ack.conn->state == II_TCP_STATE_ESTABLISHED,
 			"ACK+1-byte payload changed state: expected=ESTABLISHED actual=%u",
-			ack.conn.state);
-	TEST_CONDITION(ack.conn.seq_next_expected == 1,
+			ack.conn->state);
+	TEST_CONDITION(ack.conn->seq_next_expected == 1,
 			"ACK+1-byte payload set RCV.NXT=%u; expected 1",
-			ack.conn.seq_next_expected);
+			ack.conn->seq_next_expected);
 	TEST_CONDITION(ack.state.payload_chunk_count == 1 && payload_event &&
 				payload_event->value[0] == sizeof(payload),
 			"ACK+1-byte payload delivery mismatch: chunks=%u first_chunk_len=%llu",
@@ -3766,21 +3557,21 @@ static int tcp_state_basic_flags_scenario(void)
 	fixture_incoming_spec(&fin, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
 	fixture_deliver(&fin, build_tcp_packet(&spec, &fin.state));
-	TEST_CONDITION(fin.conn.state == __IIP_TCP_STATE_CLOSE_WAIT,
+	TEST_CONDITION(fin.conn->state == II_TCP_STATE_CLOSE_WAIT,
 			"ESTABLISHED + FIN|ACK ended in state=%u; expected CLOSE-WAIT",
-			fin.conn.state);
+			fin.conn->state);
 	TEST_CONDITION(fin.state.close_wait.count == 1 &&
-				fin.state.close_wait.conn == &fin.conn,
+				fin.state.close_wait.conn == fin.conn,
 			"FIN invoked CLOSE-WAIT hook %u time(s) with handle=%p; "
 			"expected once with handle=%p",
 			fin.state.close_wait.count, fin.state.close_wait.conn,
-			(void *)&fin.conn);
+			(void *)fin.conn);
 
 	fixture_incoming_spec(&rst, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_RST | TEST_TCP_ACK;
 	fixture_deliver(&rst, build_tcp_packet(&spec, &rst.state));
-	TEST_CONDITION(test_event_has_state_transition(&rst.state, &rst.conn,
-				__IIP_TCP_STATE_ESTABLISHED, __IIP_TCP_STATE_CLOSED),
+	TEST_CONDITION(test_event_has_state_transition(&rst.state, rst.conn,
+				II_TCP_STATE_ESTABLISHED, II_TCP_STATE_CLOSED),
 			"ESTABLISHED + RST|ACK did not transition to CLOSED");
 	TEST_CONDITION(test_event_count(&rst.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1,
@@ -3794,7 +3585,7 @@ static int tcp_half_close_scenario(void)
 {
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct pb *fin;
+	struct ii_pb *fin;
 	void *payload;
 	const uint8_t data[] = { 0x48, 0x41, 0x4c, 0x46 };
 
@@ -3803,11 +3594,11 @@ static int tcp_half_close_scenario(void)
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_CLOSE_WAIT,
+	TEST_CONDITION(f.conn->state == II_TCP_STATE_CLOSE_WAIT,
 			"half-close hook did not preserve CLOSE-WAIT: state=%u",
-			f.conn.state);
+			f.conn->state);
 	TEST_CONDITION(f.state.close_wait.count == 1 &&
-				f.state.close_wait.conn == &f.conn,
+				f.state.close_wait.conn == f.conn,
 			"half-close hook invocation mismatch: count=%u handle=%p",
 			f.state.close_wait.count, f.state.close_wait.conn);
 
@@ -3817,24 +3608,24 @@ static int tcp_half_close_scenario(void)
 			"failed to allocate payload for CLOSE-WAIT send");
 	memcpy(iip_ops_pkt_get_data(payload, &f.state), data, sizeof(data));
 	iip_ops_pkt_set_len(payload, sizeof(data), &f.state);
-	TEST_CONDITION(iip_tcp_send(f.ws, &f.conn, payload, 0,
-				&f.state) == 0 && f.conn.head[1][0] &&
-				PB_TCP_PAYLOAD_LEN(f.conn.head[1][0]) == sizeof(data),
+	TEST_CONDITION(test_api_send(f.ws, f.conn, payload, 0,
+				&f.state) == 0 && test_ring_end(f.ws, &f.conn->tx_ring, 0) &&
+				test_ring_end(f.ws, &f.conn->tx_ring, 0)->tcp.payload_len == sizeof(data),
 			"CLOSE-WAIT send did not queue %zu payload bytes",
 			sizeof(data));
 
-	TEST_CONDITION(iip_tcp_close(f.ws, &f.conn, &f.state) == 0,
+	TEST_CONDITION(test_api_close(f.ws, f.conn, &f.state) == 0,
 			"application close from CLOSE-WAIT failed");
-	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_LAST_ACK,
+	TEST_CONDITION(f.conn->state == II_TCP_STATE_LAST_ACK,
 			"application close from CLOSE-WAIT ended in state=%u; "
-			"expected LAST-ACK", f.conn.state);
-	fin = f.conn.head[1][1];
+			"expected LAST-ACK", f.conn->state);
+	fin = test_ring_end(f.ws, &f.conn->tx_ring, 1);
 	TEST_CONDITION(fin && PB_TCP_HDR_HAS_FIN(fin),
 			"application close from CLOSE-WAIT did not queue FIN");
 
 	fixture_incoming_spec(&f, &spec, 1, NULL, 0);
 	spec.tcp_flags = TEST_TCP_ACK;
-	spec.ack_seq = __iip_ntohl(f.conn.fin_ack_seq_be);
+	spec.ack_seq = f.conn->fin_ack_seq;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	TEST_CONDITION(test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1,
@@ -3859,9 +3650,9 @@ static int tcp_close_wait_auto_close_scenario(void)
 	TEST_CONDITION(f.state.close_wait.count == 1,
 			"automatic CLOSE-WAIT hook invoked %u time(s); expected once",
 			f.state.close_wait.count);
-	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_LAST_ACK,
+	TEST_CONDITION(f.conn->state == II_TCP_STATE_LAST_ACK,
 			"automatic CLOSE-WAIT close ended in state=%u; "
-			"expected LAST-ACK", f.conn.state);
+			"expected LAST-ACK", f.conn->state);
 	TEST_CONDITION(output_count_ethertype(&f.state, 0x0800) == 1,
 			"automatic CLOSE-WAIT close emitted %u IPv4 packets; "
 			"expected one FIN|ACK",
@@ -3896,12 +3687,12 @@ static int tcp_payload_fin_scenario(void)
 			(unsigned long long)f.state.payload_byte_count,
 			(unsigned long long)(payload_event ?
 				payload_event->value[0] : 0), sizeof(payload));
-	TEST_CONDITION(f.conn.state == __IIP_TCP_STATE_CLOSE_WAIT &&
+	TEST_CONDITION(f.conn->state == II_TCP_STATE_CLOSE_WAIT &&
 				f.state.close_wait.count == 1 &&
 				f.state.close_wait.payload_chunk_count == 1,
 			"payload+FIN did not enter CLOSE-WAIT exactly once: "
 			"state=%u hook_count=%u payload_chunks_at_hook=%u",
-			f.conn.state, f.state.close_wait.count,
+			f.conn->state, f.state.close_wait.count,
 			f.state.close_wait.payload_chunk_count);
 	return 1;
 }
@@ -3912,20 +3703,20 @@ static int tcp_simultaneous_close_scenario(void)
 	struct tcp_packet_spec spec;
 	if (!fixture_init(&f))
 		return 0;
-	f.conn.state = __IIP_TCP_STATE_FIN_WAIT1;
-	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
+	f.conn->state = II_TCP_STATE_FIN_WAIT1;
+	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
 	test_event_log_clear(&f.state);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_FIN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.state != __IIP_TCP_STATE_CLOSING)
+	if (f.conn->state != II_TCP_STATE_CLOSING)
 		return 0;
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 1, NULL, 0);
 	spec.tcp_flags = TEST_TCP_ACK;
-	spec.ack_seq = __iip_ntohl(f.conn.seq_be);
+	spec.ack_seq = f.conn->seq;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn.state == __IIP_TCP_STATE_TIME_WAIT;
+	return f.conn->state == II_TCP_STATE_TIME_WAIT;
 }
 
 static int tcp_sequence_wraparound_scenario(void)
@@ -3936,14 +3727,14 @@ static int tcp_sequence_wraparound_scenario(void)
 	const uint8_t payload[] = { 0, 1, 2, 3 };
 	if (!fixture_init(&f))
 		return 0;
-	f.conn.seq_next_expected = UINT32_MAX - 1U;
-	f.conn.ack_seq_be = __iip_htonl(UINT32_MAX - 1U);
+	f.conn->seq_next_expected = UINT32_MAX - 1U;
+	f.conn->ack_seq = UINT32_MAX - 1U;
 	fixture_incoming_spec(&f, &spec, UINT32_MAX - 1U,
 		payload, sizeof(payload));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	payload_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_PAYLOAD, 0);
-	return f.conn.seq_next_expected == 2U && f.state.payload_chunk_count == 1 &&
+	return f.conn->seq_next_expected == 2U && f.state.payload_chunk_count == 1 &&
 		f.state.payload_byte_count == sizeof(payload) &&
 		payload_event && payload_event->value[0] == sizeof(payload);
 }
@@ -3959,7 +3750,7 @@ static int tcp_out_of_order_reassembly_scenario(void)
 		return 0;
 	fixture_incoming_spec(&f, &spec, 2, &payload[2], 2);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.seq_next_expected != 0 || f.state.payload_chunk_count != 0)
+	if (f.conn->seq_next_expected != 0 || f.state.payload_chunk_count != 0)
 		return 0;
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 0, &payload[0], 2);
@@ -3968,9 +3759,9 @@ static int tcp_out_of_order_reassembly_scenario(void)
 			TEST_CALLBACK_PAYLOAD, 0);
 	second_payload_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_PAYLOAD, 1);
-	TEST_CONDITION(f.conn.seq_next_expected == 4,
+	TEST_CONDITION(f.conn->seq_next_expected == 4,
 			"out-of-order reassembly stopped at RCV.NXT=%u; expected 4",
-			f.conn.seq_next_expected);
+			f.conn->seq_next_expected);
 	TEST_CONDITION(f.state.payload_chunk_count == 2,
 			"out-of-order reassembly delivered %u chunk(s); expected 2",
 			f.state.payload_chunk_count);
@@ -3996,15 +3787,15 @@ static int tcp_zero_window_update_scenario(void)
 		return 0;
 	fixture_prepare_sender(&f);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = 0;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.peer_win != 0)
+	if (f.conn->peer_win != 0)
 		return 0;
 	free_output(&f.state);
 	spec.window = 4096;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn.peer_win == 4096;
+	return f.conn->peer_win == 4096;
 }
 
 static int tcp_state_transition_coverage_scenario(void)
@@ -4066,19 +3857,19 @@ static enum result test_retransmitted_syn_ack_in_established(const char **why)
 	 * Model an active OPEN whose final ACK was lost.  The peer retransmits
 	 * its SYN+ACK after this endpoint has already entered ESTABLISHED.
 	 */
-	f.conn.seq_next_expected = peer_isn + 1;
-	f.conn.ack_seq_be = __iip_htonl(peer_isn + 1);
-	f.conn.ack_seq_sent = peer_isn + 1;
+	f.conn->seq_next_expected = peer_isn + 1;
+	f.conn->ack_seq = peer_isn + 1;
+	f.conn->ack_seq_sent = peer_isn + 1;
 	fixture_incoming_spec(&f, &spec, peer_isn, NULL, 0);
-	spec.ack_seq = __iip_ntohl(f.conn.iss_be) + 1;
+	spec.ack_seq = f.conn->iss + 1;
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 
-	if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED) {
+	if (f.conn->state != II_TCP_STATE_ESTABLISHED) {
 		*why = "retransmitted SYN+ACK changed the ESTABLISHED state";
 		return RESULT_FAIL;
 	}
-	if (f.conn.seq_next_expected != peer_isn + 1) {
+	if (f.conn->seq_next_expected != peer_isn + 1) {
 		*why = "retransmitted SYN+ACK consumed the SYN sequence twice";
 		return RESULT_FAIL;
 	}
@@ -4089,7 +3880,7 @@ static enum result test_retransmitted_syn_ack_in_established(const char **why)
 	ack = output_nth_ethertype(&f.state, 0x0800, 0);
 	if (!ack || !PB_TCP_HDR_HAS_ACK(ack) || PB_TCP_HDR_HAS_SYN(ack) ||
 			PB_TCP_HDR_HAS_FIN(ack) || PB_TCP_HDR_HAS_RST(ack) ||
-			__iip_ntohl(PB_TCP(ack)->ack_seq_be) != peer_isn + 1) {
+			ii_ntohl(PB_TCP(ack)->ack_seq_be) != peer_isn + 1) {
 		*why = "retransmitted SYN+ACK response was not the expected ACK";
 		return RESULT_FAIL;
 	}
@@ -4105,14 +3896,14 @@ static enum result test_simultaneous_open(const char **why)
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
+	f.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
 	test_event_log_clear(&f.state);
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_event_has_state_transition(&f.state, &f.conn,
-			__IIP_TCP_STATE_SYN_SENT, __IIP_TCP_STATE_SYN_RECVD)) {
+	if (!test_event_has_state_transition(&f.state, f.conn,
+			II_TCP_STATE_SYN_SENT, II_TCP_STATE_SYN_RECVD)) {
 		*why = "simultaneous open did not enter SYN-RECEIVED";
 		return RESULT_FAIL;
 	}
@@ -4131,13 +3922,14 @@ static int output_has_syn_ack(const struct test_state *state)
 	return 0;
 }
 
-static struct iip_tcp_conn *fixture_find_peer_port(struct fixture *f,
+static struct ii_tcp_conn *fixture_find_peer_port(struct fixture *f,
 		uint16_t peer_port_be)
 {
-	struct iip_tcp_conn *conn;
-	for (conn = f->ws->tcp.conns[0]; conn; conn = conn->next[0])
-		if (conn->peer_port_be == peer_port_be)
+	for (uint32_t i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
+		struct ii_tcp_conn *conn = &f->ws->tcp_conns.array[i];
+		if (conn->state != II_TCP_STATE_CLOSED && ii_htons(conn->dst_port) == peer_port_be)
 			return conn;
+	}
 	return NULL;
 }
 
@@ -4145,12 +3937,12 @@ static enum result test_default_send_mss(const char **why)
 {
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *default_conn;
-	struct iip_tcp_conn *advertised_conn;
-	struct pb *p;
-	const uint16_t default_port_be = __iip_htons(21001);
-	const uint16_t advertised_port_be = __iip_htons(21002);
-	const uint16_t tcp_option_len = IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0;
+	struct ii_tcp_conn *default_conn;
+	struct ii_tcp_conn *advertised_conn;
+	struct ii_pb *p;
+	const uint16_t default_port_be = ii_htons(21001);
+	const uint16_t advertised_port_be = ii_htons(21002);
+	const uint16_t tcp_option_len = II_CONF_TCP_OPT_TS_OK ? 12 : 0;
 	const uint16_t expected_first_payload = 536 - tcp_option_len;
 	void *payload;
 	uint16_t lengths[2] = { 0, 0 };
@@ -4181,16 +3973,20 @@ static enum result test_default_send_mss(const char **why)
 		return RESULT_FAIL;
 
 	/* Verify that the default affects real segmentation, including options. */
-	default_conn->state = __IIP_TCP_STATE_ESTABLISHED;
+	default_conn->state = II_TCP_STATE_ESTABLISHED;
 	payload = iip_ops_pkt_alloc(&f.state);
 	memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, 600);
 	iip_ops_pkt_set_len(payload, 600, &f.state);
-	__iip_tcp_push(f.ws, default_conn, payload, 0, 1, 0, 0, 0,
+	test_api_push(f.ws, default_conn, payload, 0, 1, 0, 0, 0,
 			NULL, 0, &f.state);
-	for (p = default_conn->head[1][0]; p; p = p->next[0]) {
-		uint16_t len = PB_TCP_PAYLOAD_LEN(p->pkt);
-		if (count < 2)
-			lengths[count] = len;
+	free_output(&f.state);
+	p = test_ring_end(f.ws, &default_conn->tx_ring, 1);
+	if (ii_tcp_xmit_queued_data_one(f.ws, test_conn_id(f.ws, default_conn),
+			(uint32_t)(p - f.ws->pbs.array), 0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
+		return RESULT_FAIL;
+	for (unsigned int i = 0; i < f.state.out_cnt; i++) {
+		uint16_t len = PB_TCP_PAYLOAD_LEN(f.state.out[i]);
+		if (count < 2) lengths[count] = len;
 		count++;
 		total = (uint16_t)(total + len);
 	}
@@ -4204,7 +4000,7 @@ static int effective_send_mss_scenario(uint16_t send_mss,
 		uint16_t path_mtu, uint16_t expected_first_payload)
 {
 	struct fixture f;
-	struct pb *p;
+	struct ii_pb *p;
 	void *payload;
 	uint32_t expected_seq;
 	uint16_t total_payload = expected_first_payload + 100;
@@ -4214,25 +4010,29 @@ static int effective_send_mss_scenario(uint16_t send_mss,
 
 	if (!fixture_init(&f))
 		return 0;
-	f.conn.mss = send_mss;
-	f.conn.path_mtu = path_mtu;
-	expected_seq = __iip_ntohl(f.conn.seq_be);
+	f.conn->mss = send_mss;
+	f.conn->path_mtu = path_mtu;
+	expected_seq = f.conn->seq;
 	payload = iip_ops_pkt_alloc(&f.state);
 	memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, total_payload);
 	iip_ops_pkt_set_len(payload, total_payload, &f.state);
-	__iip_tcp_push(f.ws, &f.conn, payload, 0, 1, 0, 0, 0,
+	test_api_push(f.ws, f.conn, payload, 0, 1, 0, 0, 0,
 			NULL, 0, &f.state);
 
-	for (p = f.conn.head[1][0]; p; p = p->next[0]) {
-		uint16_t payload_len = PB_TCP_PAYLOAD_LEN(p->pkt);
+	p = test_ring_end(f.ws, &f.conn->tx_ring, 0);
+	if (ii_tcp_xmit_queued_data_one(f.ws, test_conn_id(f.ws, f.conn),
+			(uint32_t)(p - f.ws->pbs.array), 0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
+		return 0;
+	for (unsigned int i = 0; i < f.state.out_cnt; i++) {
+		uint16_t payload_len = PB_TCP_PAYLOAD_LEN(f.state.out[i]);
 		if (count < 2)
 			lengths[count] = payload_len;
-		if (__iip_ntohs(PB_IP4(p->pkt)->len_be) > path_mtu ||
-				__iip_ntohl(PB_TCP(p->pkt)->seq_be) != expected_seq ||
-				!ip4_checksum_valid(p->pkt) || !checksum_valid(p->pkt)) {
+		if (ii_ntohs(PB_IP4(f.state.out[i])->len_be) > path_mtu ||
+				ii_ntohl(PB_TCP(f.state.out[i])->seq_be) != expected_seq ||
+				!ip4_checksum_valid(f.state.out[i]) || !checksum_valid(f.state.out[i])) {
 			fprintf(stderr, "effective MSS: send_mss=%u path_mtu=%u ip_len=%u payload=%u\n",
 					send_mss, path_mtu,
-					__iip_ntohs(PB_IP4(p->pkt)->len_be), payload_len);
+					ii_ntohs(PB_IP4(f.state.out[i])->len_be), payload_len);
 			return 0;
 		}
 		expected_seq += payload_len;
@@ -4253,7 +4053,7 @@ static int effective_send_mss_scenario(uint16_t send_mss,
 
 static enum result test_effective_send_mss(const char **why)
 {
-	const uint16_t tcp_option_len = IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0;
+	const uint16_t tcp_option_len = II_CONF_TCP_OPT_TS_OK ? 12 : 0;
 	(void)why;
 	/* Send-MSS is the limiting value. */
 	if (!effective_send_mss_scenario(300, 1500,
@@ -4276,8 +4076,8 @@ static int syn_received_passive_origin_scenario(void)
 {
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *passive;
-	const uint16_t peer_port_be = __iip_htons(21000);
+	struct ii_tcp_conn *passive;
+	const uint16_t peer_port_be = ii_htons(21000);
 	uint32_t rst_seq;
 	if (!fixture_init(&f))
 		return 0;
@@ -4287,14 +4087,14 @@ static int syn_received_passive_origin_scenario(void)
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	passive = fixture_find_peer_port(&f, peer_port_be);
-	if (!passive || passive == &f.conn ||
-			passive->state != __IIP_TCP_STATE_SYN_RECVD ||
-			(passive->flags & __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN) ||
+	if (!passive || passive == f.conn ||
+			passive->state != II_TCP_STATE_SYN_RECVD ||
+			(passive->flags & II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN) ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 					TEST_CALLBACK_ACCEPT) != 1 ||
 			!output_has_syn_ack(&f.state))
 		return 0;
-	rst_seq = __iip_ntohl(passive->ack_seq_be);
+	rst_seq = ii_ntohl(ii_htonl(passive->ack_seq));
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 
@@ -4325,28 +4125,28 @@ static int syn_received_active_origin_scenario(void)
 	uint32_t rst_seq;
 	if (!fixture_init(&f))
 		return 0;
-	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
+	f.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
 	test_event_log_clear(&f.state);
 
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.state != __IIP_TCP_STATE_SYN_RECVD ||
-			!(f.conn.flags & __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN) ||
-			!test_event_has_state_transition(&f.state, &f.conn,
-					__IIP_TCP_STATE_SYN_SENT,
-					__IIP_TCP_STATE_SYN_RECVD))
+	if (f.conn->state != II_TCP_STATE_SYN_RECVD ||
+			!(f.conn->flags & II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN) ||
+			!test_event_has_state_transition(&f.state, f.conn,
+					II_TCP_STATE_SYN_SENT,
+					II_TCP_STATE_SYN_RECVD))
 		return 0;
-	rst_seq = __iip_ntohl(f.conn.ack_seq_be);
+	rst_seq = f.conn->ack_seq;
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 
 	fixture_incoming_spec(&f, &spec, rst_seq, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return test_event_has_state_transition(&f.state, &f.conn,
-			__IIP_TCP_STATE_SYN_RECVD, __IIP_TCP_STATE_CLOSED) &&
+	return test_event_has_state_transition(&f.state, f.conn,
+			II_TCP_STATE_SYN_RECVD, II_TCP_STATE_CLOSED) &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1;
 }
@@ -4355,18 +4155,18 @@ static int pre_established_syn_rst_scenario(void)
 {
 	struct fixture closed, listen, syn_sent_no_ack, syn_sent_ack;
 	struct tcp_packet_spec spec;
-	const uint16_t listen_peer_port_be = __iip_htons(21001);
+	const uint16_t listen_peer_port_be = ii_htons(21001);
 
 	/* CLOSED and LISTEN ignore an incoming RST, even when SYN is also set. */
 	if (!fixture_init(&closed))
 		return 0;
-	closed.conn.state = __IIP_TCP_STATE_CLOSED;
+	closed.conn->state = II_TCP_STATE_CLOSED;
 	fixture_incoming_spec(&closed, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST;
 	fixture_deliver(&closed, build_tcp_packet(&spec, &closed.state));
-	TEST_CONDITION(closed.conn.state == __IIP_TCP_STATE_CLOSED,
+	TEST_CONDITION(closed.conn->state == II_TCP_STATE_CLOSED,
 			"CLOSED + SYN|RST changed state: expected=CLOSED actual=%u",
-			closed.conn.state);
+			closed.conn->state);
 	TEST_CONDITION(closed.state.out_cnt == 0,
 			"CLOSED + SYN|RST generated %u response packet(s); expected none",
 			closed.state.out_cnt);
@@ -4375,8 +4175,8 @@ static int pre_established_syn_rst_scenario(void)
 			"CLOSED + SYN|RST invoked the accept callback");
 
 	if (!fixture_init(&listen) ||
-			!test_tcp_listen(&listen.state, listen.conn.local_ip4_be,
-				listen.conn.local_port_be, listen.conn.peer_ip4_be,
+			!test_tcp_listen(&listen.state, ii_htonl(listen.conn->src_ip[0]),
+				ii_htons(listen.conn->src_port), ii_htonl(listen.conn->dst_ip[0]),
 				listen_peer_port_be, NULL))
 		return 0;
 	fixture_incoming_spec(&listen, &spec, 0, NULL, 0);
@@ -4392,7 +4192,7 @@ static int pre_established_syn_rst_scenario(void)
 	TEST_CONDITION(fixture_find_peer_port(&listen,
 				listen_peer_port_be) == NULL,
 			"LISTEN + SYN|RST created a child connection for peer port %u",
-			__iip_ntohs(listen_peer_port_be));
+			ii_ntohs(listen_peer_port_be));
 
 	/*
 	 * In SYN-SENT, RST is effective only when its ACK is acceptable.
@@ -4400,17 +4200,17 @@ static int pre_established_syn_rst_scenario(void)
 	 */
 	if (!fixture_init(&syn_sent_no_ack))
 		return 0;
-	syn_sent_no_ack.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&syn_sent_no_ack.state, &syn_sent_no_ack.conn,
-			syn_sent_no_ack.conn.state);
+	syn_sent_no_ack.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&syn_sent_no_ack.state, syn_sent_no_ack.conn,
+			syn_sent_no_ack.conn->state);
 	test_event_log_clear(&syn_sent_no_ack.state);
 	fixture_incoming_spec(&syn_sent_no_ack, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST;
 	fixture_deliver(&syn_sent_no_ack,
 			build_tcp_packet(&spec, &syn_sent_no_ack.state));
-	TEST_CONDITION(syn_sent_no_ack.conn.state == __IIP_TCP_STATE_SYN_SENT,
+	TEST_CONDITION(syn_sent_no_ack.conn->state == II_TCP_STATE_SYN_SENT,
 			"SYN-SENT + SYN|RST without ACK changed state: expected=SYN-SENT actual=%u",
-			syn_sent_no_ack.conn.state);
+			syn_sent_no_ack.conn->state);
 	TEST_CONDITION(syn_sent_no_ack.state.out_cnt == 0,
 			"SYN-SENT + SYN|RST without ACK generated %u response packet(s)",
 			syn_sent_no_ack.state.out_cnt);
@@ -4420,17 +4220,17 @@ static int pre_established_syn_rst_scenario(void)
 
 	if (!fixture_init(&syn_sent_ack))
 		return 0;
-	syn_sent_ack.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&syn_sent_ack.state, &syn_sent_ack.conn,
-			syn_sent_ack.conn.state);
+	syn_sent_ack.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&syn_sent_ack.state, syn_sent_ack.conn,
+			syn_sent_ack.conn->state);
 	test_event_log_clear(&syn_sent_ack.state);
 	fixture_incoming_spec(&syn_sent_ack, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_RST | TEST_TCP_ACK;
 	fixture_deliver(&syn_sent_ack,
 			build_tcp_packet(&spec, &syn_sent_ack.state));
 	TEST_CONDITION(test_event_has_state_transition(&syn_sent_ack.state,
-				&syn_sent_ack.conn, __IIP_TCP_STATE_SYN_SENT,
-				__IIP_TCP_STATE_CLOSED),
+				syn_sent_ack.conn, II_TCP_STATE_SYN_SENT,
+				II_TCP_STATE_CLOSED),
 			"SYN-SENT + SYN|RST with acceptable ACK did not transition to CLOSED");
 	TEST_CONDITION(test_event_count(&syn_sent_ack.state,
 				TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED) == 1,
@@ -4473,13 +4273,13 @@ static enum result test_passive_open_isolation(const char **why)
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	listener_a = test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			__iip_htons(10000), 0, 0, (void *)(uintptr_t)1);
+	listener_a = test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			ii_htons(10000), 0, 0, (void *)(uintptr_t)1);
 	if (!listener_a)
 		return RESULT_FAIL;
 	listener_a_before = *listener_a;
-	listener_b = test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			__iip_htons(10001), 0, 0, (void *)(uintptr_t)2);
+	listener_b = test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			ii_htons(10001), 0, 0, (void *)(uintptr_t)2);
 	if (!listener_b || listener_b == listener_a ||
 			memcmp(listener_a, &listener_a_before,
 				sizeof(*listener_a)) != 0) {
@@ -4490,12 +4290,12 @@ static enum result test_passive_open_isolation(const char **why)
 	/* Exhaust the application listener table.  The failing passive OPEN
 	 * must leave every previously created record untouched. */
 	for (i = 2; i < TEST_LISTENER_MAX; i++)
-		if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
-				__iip_htons((uint16_t)(10000 + i)), 0, 0,
+		if (!test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+				ii_htons((uint16_t)(10000 + i)), 0, 0,
 				(void *)(uintptr_t)(i + 1)))
 			return RESULT_FAIL;
-	if (test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			__iip_htons(11000), 0, 0, NULL) ||
+	if (test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			ii_htons(11000), 0, 0, NULL) ||
 			f.state.listener_count != TEST_LISTENER_MAX ||
 			memcmp(listener_a, &listener_a_before,
 				sizeof(*listener_a)) != 0) {
@@ -4507,7 +4307,7 @@ static enum result test_passive_open_isolation(const char **why)
 	 * both A and B remain independent, usable listener records. */
 	test_event_log_clear(&f.state);
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
-	spec.src_port_be = __iip_htons(21001);
+	spec.src_port_be = ii_htons(21001);
 	spec.dst_port_be = listener_a->local_port_be;
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
@@ -4524,7 +4324,7 @@ static enum result test_passive_open_isolation(const char **why)
 	test_event_log_clear(&f.state);
 
 	fixture_incoming_spec(&f, &spec, 200, NULL, 0);
-	spec.src_port_be = __iip_htons(21002);
+	spec.src_port_be = ii_htons(21002);
 	spec.dst_port_be = listener_b->local_port_be;
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
@@ -4544,12 +4344,12 @@ static enum result test_passive_open_isolation(const char **why)
 static enum result test_tcp_fast_open_passive_data(const char **why)
 {
 	static const uint8_t payload[] = { 0x31, 0x32, 0x33, 0x34 };
-	const uint16_t cookie_peer_port_be = __iip_htons(21033);
-	const uint16_t peer_port_be = __iip_htons(21034);
+	const uint16_t cookie_peer_port_be = ii_htons(21033);
+	const uint16_t peer_port_be = ii_htons(21034);
 	const uint32_t syn_seq = 100;
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *child;
+	struct ii_tcp_conn *child;
 	void *syn_ack, *cookie_option;
 	uint8_t cookie[16];
 	uint8_t cookie_len;
@@ -4558,8 +4358,8 @@ static enum result test_tcp_fast_open_passive_data(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	f.state.accept_arbitrary_payload = 1;
-	if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			f.conn.local_port_be, 0, 0, NULL)) {
+	if (!test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			ii_htons(f.conn->src_port), 0, 0, NULL)) {
 		*why = "could not create the passive OPEN";
 		return RESULT_FAIL;
 	}
@@ -4595,13 +4395,13 @@ static enum result test_tcp_fast_open_passive_data(const char **why)
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	child = fixture_find_peer_port(&f, peer_port_be);
 	syn_ack = output_nth_ethertype(&f.state, 0x0800, 0);
-	if (!child || child == &f.conn || !syn_ack ||
+	if (!child || child == f.conn || !syn_ack ||
 			!PB_TCP_HDR_HAS_SYN(syn_ack) ||
 			!PB_TCP_HDR_HAS_ACK(syn_ack)) {
 		*why = "SYN data did not create a child and SYN+ACK";
 		return RESULT_FAIL;
 	}
-	syn_ack_seq = __iip_ntohl(PB_TCP(syn_ack)->seq_be);
+	syn_ack_seq = ii_ntohl(PB_TCP(syn_ack)->seq_be);
 	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_ACCEPTED) != 1 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -4635,7 +4435,7 @@ static enum result test_tcp_fast_open_passive_data(const char **why)
 	spec.ack_seq = syn_ack_seq + 1;
 	spec.tcp_flags = TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (child->state != __IIP_TCP_STATE_ESTABLISHED ||
+	if (child->state != II_TCP_STATE_ESTABLISHED ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_ACCEPTED) != 1 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -4660,11 +4460,11 @@ static int test_fastopen_rejected_syn_data_case(
 {
 	static const uint8_t payload[] = { 0x41, 0x42, 0x43, 0x44 };
 	const uint16_t peer_port_be =
-			__iip_htons((uint16_t)(21100 + option));
+			ii_htons((uint16_t)(21100 + option));
 	const uint32_t syn_seq = 300;
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *child;
+	struct ii_tcp_conn *child;
 	void *syn_ack;
 	uint8_t cookie[16];
 	uint8_t cookie_len;
@@ -4672,8 +4472,8 @@ static int test_fastopen_rejected_syn_data_case(
 	if (!fixture_init(&f))
 		return 0;
 	f.state.accept_arbitrary_payload = 1;
-	if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			f.conn.local_port_be, 0, 0, NULL)) {
+	if (!test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			ii_htons(f.conn->src_port), 0, 0, NULL)) {
 		*why = "could not create the passive OPEN";
 		return 0;
 	}
@@ -4700,13 +4500,13 @@ static int test_fastopen_rejected_syn_data_case(
 
 	child = fixture_find_peer_port(&f, peer_port_be);
 	syn_ack = output_nth_ethertype(&f.state, 0x0800, 0);
-	if (!child || child == &f.conn || !syn_ack ||
+	if (!child || child == f.conn || !syn_ack ||
 			!PB_TCP_HDR_HAS_SYN(syn_ack) ||
 			!PB_TCP_HDR_HAS_ACK(syn_ack)) {
 		*why = "rejected SYN data did not produce a child and SYN+ACK";
 		return 0;
 	}
-	if (__iip_ntohl(PB_TCP(syn_ack)->ack_seq_be) != syn_seq + 1 ||
+	if (ii_ntohl(PB_TCP(syn_ack)->ack_seq_be) != syn_seq + 1 ||
 			child->seq_next_expected != syn_seq + 1) {
 		*why = "rejected SYN data was consumed or acknowledged";
 		return 0;
@@ -4749,15 +4549,15 @@ static enum result test_tcp_fast_open_rejects_duplicate_option(
 static enum result test_tcp_fast_open_cookie_generation_disabled(
 		const char **why)
 {
-	const uint16_t peer_port_be = __iip_htons(21110);
+	const uint16_t peer_port_be = ii_htons(21110);
 	struct fixture f;
 	struct tcp_packet_spec spec;
 	void *syn_ack;
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	if (!test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			f.conn.local_port_be, 0, 0, NULL)) {
+	if (!test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			ii_htons(f.conn->src_port), 0, 0, NULL)) {
 		*why = "could not create the passive OPEN";
 		return RESULT_FAIL;
 	}
@@ -4795,25 +4595,26 @@ static void *fastopen_test_payload(struct test_state *state,
 	return pkt;
 }
 
-static struct iip_tcp_conn *fixture_find_local_port(struct fixture *f,
+static struct ii_tcp_conn *fixture_find_local_port(struct fixture *f,
 		uint16_t local_port_be)
 {
-	struct iip_tcp_conn *conn;
-	for (conn = f->ws->tcp.conns[0]; conn; conn = conn->next[0])
-		if (conn->local_port_be == local_port_be)
+	for (uint32_t i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
+		struct ii_tcp_conn *conn = &f->ws->tcp_conns.array[i];
+		if (conn->state != II_TCP_STATE_CLOSED && ii_htons(conn->src_port) == local_port_be)
 			return conn;
+	}
 	return NULL;
 }
 
 static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 {
 	static const uint8_t payload[] = { 0x61, 0x62, 0x63, 0x64 };
-	const uint16_t cookie_port_be = __iip_htons(21200);
-	const uint16_t data_port_be = __iip_htons(21201);
-	const uint16_t peer_port_be = __iip_htons(22000);
+	const uint16_t cookie_port_be = ii_htons(21200);
+	const uint16_t data_port_be = ii_htons(21201);
+	const uint16_t peer_port_be = ii_htons(22000);
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *conn;
+	struct ii_tcp_conn *conn;
 	void *syn, *syn_ack, *syn_data, *payload_pkt;
 	uint8_t cookie[16], cookie_len, *option;
 	uint32_t client_isn;
@@ -4823,8 +4624,8 @@ static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 	memset(&_fastopen_saved_cookie, 0, sizeof(_fastopen_saved_cookie));
 
 	/* Obtain and save a cookie delivered in a SYN+ACK. */
-	if (iip_tcp_connect(f.ws, f.local_mac, f.conn.local_ip4_be,
-			cookie_port_be, f.peer_mac, f.conn.peer_ip4_be,
+	if (test_api_connect(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
+			cookie_port_be, f.peer_mac, ii_htonl(f.conn->dst_ip[0]),
 			peer_port_be, &f.state)) {
 		*why = "ordinary active OPEN for cookie acquisition failed";
 		return RESULT_FAIL;
@@ -4835,14 +4636,14 @@ static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 		*why = "cookie acquisition did not emit a SYN";
 		return RESULT_FAIL;
 	}
-	client_isn = __iip_ntohl(PB_TCP(syn)->seq_be);
-	test_tcp_fastopen_request(f.conn.local_ip4_be, f.conn.peer_ip4_be,
+	client_isn = ii_ntohl(PB_TCP(syn)->seq_be);
+	test_tcp_fastopen_request(ii_htonl(f.conn->src_ip[0]), ii_htonl(f.conn->dst_ip[0]),
 			cookie, &cookie_len);
 	tcp_packet_spec_init(&spec);
 	memcpy(spec.src_mac, f.peer_mac, sizeof(spec.src_mac));
 	memcpy(spec.dst_mac, f.local_mac, sizeof(spec.dst_mac));
-	spec.src_ip_be = f.conn.peer_ip4_be;
-	spec.dst_ip_be = f.conn.local_ip4_be;
+	spec.src_ip_be = ii_htonl(f.conn->dst_ip[0]);
+	spec.dst_ip_be = ii_htonl(f.conn->src_ip[0]);
 	spec.src_port_be = peer_port_be;
 	spec.dst_port_be = cookie_port_be;
 	spec.seq = 500;
@@ -4852,10 +4653,10 @@ static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 	syn_ack = build_tcp_packet(&spec, &f.state);
 	fixture_deliver(&f, syn_ack);
 	conn = fixture_find_local_port(&f, cookie_port_be);
-	if (!conn || conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+	if (!conn || conn->state != II_TCP_STATE_ESTABLISHED ||
 			_fastopen_saved_cookie.len != cookie_len ||
-			_fastopen_saved_cookie.peer_ip4_be != f.conn.peer_ip4_be ||
-			_fastopen_saved_cookie.local_ip4_be != f.conn.local_ip4_be ||
+			_fastopen_saved_cookie.peer_ip4_be != ii_htonl(f.conn->dst_ip[0]) ||
+			_fastopen_saved_cookie.local_ip4_be != ii_htonl(f.conn->src_ip[0]) ||
 			memcmp(_fastopen_saved_cookie.buf, cookie, cookie_len)) {
 		*why = "SYN+ACK Fast Open cookie was not saved by the application";
 		return RESULT_FAIL;
@@ -4864,9 +4665,9 @@ static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 
 	/* Reuse the saved cookie and verify active SYN data is acknowledged. */
 	payload_pkt = fastopen_test_payload(&f.state, payload, sizeof(payload));
-	if (!payload_pkt || __iip_tcp_fast_open(f.ws, f.local_mac,
-			f.conn.local_ip4_be, data_port_be, f.peer_mac,
-			f.conn.peer_ip4_be, peer_port_be, payload_pkt,
+	if (!payload_pkt || test_api_fast_open(f.ws, f.local_mac,
+			ii_htonl(f.conn->src_ip[0]), data_port_be, f.peer_mac,
+			ii_htonl(f.conn->dst_ip[0]), peer_port_be, payload_pkt,
 			_fastopen_saved_cookie.buf, _fastopen_saved_cookie.len,
 			&f.state)) {
 		*why = "active Fast Open with the saved cookie failed";
@@ -4884,14 +4685,14 @@ static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 		*why = "active Fast Open SYN did not contain valid cookie and data";
 		return RESULT_FAIL;
 	}
-	client_isn = __iip_ntohl(PB_TCP(syn_data)->seq_be);
+	client_isn = ii_ntohl(PB_TCP(syn_data)->seq_be);
 	free_output(&f.state);
 
 	tcp_packet_spec_init(&spec);
 	memcpy(spec.src_mac, f.peer_mac, sizeof(spec.src_mac));
 	memcpy(spec.dst_mac, f.local_mac, sizeof(spec.dst_mac));
-	spec.src_ip_be = f.conn.peer_ip4_be;
-	spec.dst_ip_be = f.conn.local_ip4_be;
+	spec.src_ip_be = ii_htonl(f.conn->dst_ip[0]);
+	spec.dst_ip_be = ii_htonl(f.conn->src_ip[0]);
 	spec.src_port_be = peer_port_be;
 	spec.dst_port_be = data_port_be;
 	spec.seq = 600;
@@ -4899,7 +4700,7 @@ static enum result test_tcp_fast_open_active_cookie_and_data(const char **why)
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	conn = fixture_find_local_port(&f, data_port_be);
-	if (!conn || conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+	if (!conn || conn->state != II_TCP_STATE_ESTABLISHED ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CONNECTED) < 2) {
 		*why = "acknowledged active Fast Open did not establish the connection";
@@ -4913,23 +4714,23 @@ static enum result test_tcp_fast_open_active_rejection_fallback(
 		const char **why)
 {
 	static const uint8_t payload[] = { 0x71, 0x72, 0x73, 0x74 };
-	const uint16_t local_port_be = __iip_htons(21202);
-	const uint16_t peer_port_be = __iip_htons(22000);
+	const uint16_t local_port_be = ii_htons(21202);
+	const uint16_t peer_port_be = ii_htons(22000);
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *conn;
+	struct ii_tcp_conn *conn;
 	void *payload_pkt, *syn_data, *fallback;
 	uint8_t cookie[16], cookie_len;
 	uint32_t client_isn;
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	test_tcp_fastopen_request(f.conn.local_ip4_be, f.conn.peer_ip4_be,
+	test_tcp_fastopen_request(ii_htonl(f.conn->src_ip[0]), ii_htonl(f.conn->dst_ip[0]),
 			cookie, &cookie_len);
 	payload_pkt = fastopen_test_payload(&f.state, payload, sizeof(payload));
-	if (!payload_pkt || __iip_tcp_fast_open(f.ws, f.local_mac,
-			f.conn.local_ip4_be, local_port_be, f.peer_mac,
-			f.conn.peer_ip4_be, peer_port_be, payload_pkt, cookie,
+	if (!payload_pkt || test_api_fast_open(f.ws, f.local_mac,
+			ii_htonl(f.conn->src_ip[0]), local_port_be, f.peer_mac,
+			ii_htonl(f.conn->dst_ip[0]), peer_port_be, payload_pkt, cookie,
 			cookie_len, &f.state)) {
 		*why = "active Fast Open setup for rejection failed";
 		return RESULT_FAIL;
@@ -4940,15 +4741,15 @@ static enum result test_tcp_fast_open_active_rejection_fallback(
 		*why = "active Fast Open did not emit SYN data";
 		return RESULT_FAIL;
 	}
-	client_isn = __iip_ntohl(PB_TCP(syn_data)->seq_be);
+	client_isn = ii_ntohl(PB_TCP(syn_data)->seq_be);
 	free_output(&f.state);
 
 	/* ACK only the SYN, forcing the data to be retransmitted without SYN. */
 	tcp_packet_spec_init(&spec);
 	memcpy(spec.src_mac, f.peer_mac, sizeof(spec.src_mac));
 	memcpy(spec.dst_mac, f.local_mac, sizeof(spec.dst_mac));
-	spec.src_ip_be = f.conn.peer_ip4_be;
-	spec.dst_ip_be = f.conn.local_ip4_be;
+	spec.src_ip_be = ii_htonl(f.conn->dst_ip[0]);
+	spec.dst_ip_be = ii_htonl(f.conn->src_ip[0]);
 	spec.src_port_be = peer_port_be;
 	spec.dst_port_be = local_port_be;
 	spec.seq = 700;
@@ -4961,9 +4762,9 @@ static enum result test_tcp_fast_open_active_rejection_fallback(
 		fallback = output_nth_ethertype(&f.state, 0x0800, 0);
 	}
 	conn = fixture_find_local_port(&f, local_port_be);
-	if (!conn || conn->state != __IIP_TCP_STATE_ESTABLISHED ||
+	if (!conn || conn->state != II_TCP_STATE_ESTABLISHED ||
 			!fallback || PB_TCP_HDR_HAS_SYN(fallback) ||
-			__iip_ntohl(PB_TCP(fallback)->seq_be) != client_isn + 1 ||
+			ii_ntohl(PB_TCP(fallback)->seq_be) != client_isn + 1 ||
 			PB_TCP_PAYLOAD_LEN(fallback) != sizeof(payload) ||
 			memcmp(PB_TCP_PAYLOAD(fallback), payload, sizeof(payload)) ||
 			!ip4_checksum_valid(fallback) || !checksum_valid(fallback)) {
@@ -4980,22 +4781,22 @@ static enum result test_multiple_listens_same_port(const char **why)
 	struct tcp_packet_spec spec;
 	struct test_listener *listener_a, *listener_b;
 	struct test_listener listener_a_before;
-	struct iip_tcp_conn *child_a, *child_b;
+	struct ii_tcp_conn *child_a, *child_b;
 	const struct test_event *accept_event;
-	const uint16_t local_port_be = __iip_htons(10000);
-	const uint16_t peer_a_port_be = __iip_htons(22001);
-	const uint16_t peer_b_port_be = __iip_htons(22002);
+	const uint16_t local_port_be = ii_htons(10000);
+	const uint16_t peer_a_port_be = ii_htons(22001);
+	const uint16_t peer_b_port_be = ii_htons(22002);
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 
 	/* A connection using the same local port is already in SYN-SENT. */
-	f.conn.state = __IIP_TCP_STATE_SYN_SENT;
-	test_event_tcp_state_set(&f.state, &f.conn, f.conn.state);
-	listener_a = test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			local_port_be, f.conn.peer_ip4_be, peer_a_port_be,
+	f.conn->state = II_TCP_STATE_SYN_SENT;
+	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
+	listener_a = test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			local_port_be, ii_htonl(f.conn->dst_ip[0]), peer_a_port_be,
 			(void *)(uintptr_t)1);
-	if (!listener_a || f.conn.state != __IIP_TCP_STATE_SYN_SENT) {
+	if (!listener_a || f.conn->state != II_TCP_STATE_SYN_SENT) {
 		*why = "a connection in SYN-SENT prevented a passive OPEN on the same port";
 		return RESULT_FAIL;
 	}
@@ -5010,9 +4811,9 @@ static enum result test_multiple_listens_same_port(const char **why)
 	child_a = fixture_find_peer_port(&f, peer_a_port_be);
 	accept_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_ACCEPT, 0);
-	if (!child_a || child_a == &f.conn ||
-			child_a->state != __IIP_TCP_STATE_SYN_RECVD ||
-			f.conn.state != __IIP_TCP_STATE_SYN_SENT ||
+	if (!child_a || child_a == f.conn ||
+			child_a->state != II_TCP_STATE_SYN_RECVD ||
+			f.conn->state != II_TCP_STATE_SYN_SENT ||
 			!accept_event || accept_event->value[0] != 1 ||
 			!output_has_syn_ack(&f.state)) {
 		*why = "the first LISTEN did not coexist with the SYN-SENT connection";
@@ -5023,13 +4824,13 @@ static enum result test_multiple_listens_same_port(const char **why)
 
 	/* A second passive OPEN on the same local port must coexist with the
 	 * first listener and its child connection in SYN-RECEIVED. */
-	listener_b = test_tcp_listen(&f.state, f.conn.local_ip4_be,
-			local_port_be, f.conn.peer_ip4_be, peer_b_port_be,
+	listener_b = test_tcp_listen(&f.state, ii_htonl(f.conn->src_ip[0]),
+			local_port_be, ii_htonl(f.conn->dst_ip[0]), peer_b_port_be,
 			(void *)(uintptr_t)2);
 	if (!listener_b || listener_b == listener_a ||
 			memcmp(listener_a, &listener_a_before,
 				sizeof(*listener_a)) != 0 ||
-			child_a->state != __IIP_TCP_STATE_SYN_RECVD) {
+			child_a->state != II_TCP_STATE_SYN_RECVD) {
 		*why = "a SYN-RECEIVED connection prevented another LISTEN on the same port";
 		return RESULT_FAIL;
 	}
@@ -5042,10 +4843,10 @@ static enum result test_multiple_listens_same_port(const char **why)
 	child_b = fixture_find_peer_port(&f, peer_b_port_be);
 	accept_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_ACCEPT, 0);
-	if (!child_b || child_b == child_a || child_b == &f.conn ||
-			child_b->state != __IIP_TCP_STATE_SYN_RECVD ||
-			child_a->state != __IIP_TCP_STATE_SYN_RECVD ||
-			f.conn.state != __IIP_TCP_STATE_SYN_SENT ||
+	if (!child_b || child_b == child_a || child_b == f.conn ||
+			child_b->state != II_TCP_STATE_SYN_RECVD ||
+			child_a->state != II_TCP_STATE_SYN_RECVD ||
+			f.conn->state != II_TCP_STATE_SYN_SENT ||
 			!accept_event || accept_event->value[0] != 2 ||
 			!output_has_syn_ack(&f.state) ||
 			memcmp(listener_a, &listener_a_before,
@@ -5061,20 +4862,20 @@ static enum result test_optional_local_address(const char **why)
 {
 	struct fixture specified, wildcard, active_specified, active_unspecified;
 	struct tcp_packet_spec spec;
-	struct iip_tcp_conn *child;
+	struct ii_tcp_conn *child;
 	void *input[1];
-	const uint32_t alternate_local_ip4_be = __iip_htonl(0xc0000263U);
-	const uint16_t listen_port_be = __iip_htons(10000);
-	const uint16_t active_port_be = __iip_htons(11000);
-	const uint16_t peer_port_be = __iip_htons(80);
+	const uint32_t alternate_local_ip4_be = ii_htonl(0xc0000263U);
+	const uint16_t listen_port_be = ii_htons(10000);
+	const uint16_t active_port_be = ii_htons(11000);
+	const uint16_t peer_port_be = ii_htons(80);
 
 	/* A specified passive local address only matches SYNs for that address. */
 	if (!fixture_init(&specified) ||
-			!test_tcp_listen(&specified.state, specified.conn.local_ip4_be,
+			!test_tcp_listen(&specified.state, ii_htonl(specified.conn->src_ip[0]),
 				listen_port_be, 0, 0, NULL))
 		return RESULT_FAIL;
 	fixture_incoming_spec(&specified, &spec, 100, NULL, 0);
-	spec.src_port_be = __iip_htons(23001);
+	spec.src_port_be = ii_htons(23001);
 	spec.dst_ip_be = alternate_local_ip4_be;
 	spec.dst_port_be = listen_port_be;
 	spec.tcp_flags = TEST_TCP_SYN;
@@ -5087,15 +4888,15 @@ static enum result test_optional_local_address(const char **why)
 
 	test_event_log_clear(&specified.state);
 	fixture_incoming_spec(&specified, &spec, 200, NULL, 0);
-	spec.src_port_be = __iip_htons(23001);
+	spec.src_port_be = ii_htons(23001);
 	spec.dst_port_be = listen_port_be;
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&specified, build_tcp_packet(&spec, &specified.state));
 	child = fixture_find_peer_port(&specified, spec.src_port_be);
-	if (!child || child->local_ip4_be != specified.conn.local_ip4_be ||
+	if (!child || ii_htonl(child->src_ip[0]) != ii_htonl(specified.conn->src_ip[0]) ||
 			!output_has_syn_ack(&specified.state) ||
 			PB_IP4(specified.state.out[0])->src_be !=
-				specified.conn.local_ip4_be) {
+				ii_htonl(specified.conn->src_ip[0])) {
 		*why = "a specified passive local address was not honored";
 		return RESULT_FAIL;
 	}
@@ -5107,7 +4908,7 @@ static enum result test_optional_local_address(const char **why)
 			!test_tcp_listen(&wildcard.state, 0, listen_port_be, 0, 0, NULL))
 		return RESULT_FAIL;
 	fixture_incoming_spec(&wildcard, &spec, 300, NULL, 0);
-	spec.src_port_be = __iip_htons(23002);
+	spec.src_port_be = ii_htons(23002);
 	spec.dst_ip_be = alternate_local_ip4_be;
 	spec.dst_port_be = listen_port_be;
 	spec.tcp_flags = TEST_TCP_SYN;
@@ -5115,7 +4916,7 @@ static enum result test_optional_local_address(const char **why)
 	deliver(wildcard.ws, wildcard.local_mac, alternate_local_ip4_be,
 			input, 1, &wildcard.state);
 	child = fixture_find_peer_port(&wildcard, spec.src_port_be);
-	if (!child || child->local_ip4_be != alternate_local_ip4_be ||
+	if (!child || ii_htonl(child->src_ip[0]) != alternate_local_ip4_be ||
 			!output_has_syn_ack(&wildcard.state) ||
 			PB_IP4(wildcard.state.out[0])->src_be != alternate_local_ip4_be) {
 		*why = "an unspecified passive local address did not bind to the SYN destination";
@@ -5128,9 +4929,9 @@ static enum result test_optional_local_address(const char **why)
 	if (!fixture_init(&active_specified) ||
 			test_tcp_active_open(active_specified.ws,
 				active_specified.local_mac,
-				&active_specified.conn.local_ip4_be, active_port_be,
+				&(uint32_t){ ii_htonl(active_specified.conn->src_ip[0]) }, active_port_be,
 				active_specified.peer_mac,
-				active_specified.conn.peer_ip4_be, peer_port_be,
+				ii_htonl(active_specified.conn->dst_ip[0]), peer_port_be,
 				&active_specified.state) == 0xffff)
 		return RESULT_FAIL;
 	fixture_run_timers(&active_specified);
@@ -5138,7 +4939,7 @@ static enum result test_optional_local_address(const char **why)
 			active_specified.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(active_specified.state.out[0]) ||
 			PB_IP4(active_specified.state.out[0])->src_be !=
-				active_specified.conn.local_ip4_be) {
+				ii_htonl(active_specified.conn->src_ip[0])) {
 		*why = "a specified active local address was not used for the SYN";
 		return RESULT_FAIL;
 	}
@@ -5153,13 +4954,13 @@ static enum result test_optional_local_address(const char **why)
 	if (test_tcp_active_open(active_unspecified.ws,
 			active_unspecified.local_mac, NULL, active_port_be,
 			active_unspecified.peer_mac,
-			active_unspecified.conn.peer_ip4_be, peer_port_be,
+			ii_htonl(active_unspecified.conn->dst_ip[0]), peer_port_be,
 			&active_unspecified.state) == 0xffff)
 		return RESULT_FAIL;
 	fixture_run_timers(&active_unspecified);
 	if (active_unspecified.state.source_address_query_count != 1 ||
 			active_unspecified.state.source_address_query_peer_ip4_be !=
-				active_unspecified.conn.peer_ip4_be ||
+				ii_htonl(active_unspecified.conn->dst_ip[0]) ||
 			active_unspecified.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(active_unspecified.state.out[0]) ||
 			PB_IP4(active_unspecified.state.out[0])->src_be !=
@@ -5174,10 +4975,10 @@ static enum result test_optional_local_address(const char **why)
 static enum result test_source_address_query(const char **why)
 {
 	struct fixture selected, unavailable;
-	struct iip_tcp_conn *conn;
-	const uint32_t selected_ip4_be = __iip_htonl(0xc0000263U);
-	const uint16_t local_port_be = __iip_htons(12000);
-	const uint16_t peer_port_be = __iip_htons(80);
+	struct ii_tcp_conn *conn;
+	const uint32_t selected_ip4_be = ii_htonl(0xc0000263U);
+	const uint16_t local_port_be = ii_htons(12000);
+	const uint16_t peer_port_be = ii_htons(80);
 
 	/* Without an application-supplied local address, active OPEN asks the
 	 * IP-side selector using the connection's destination address. */
@@ -5186,16 +4987,16 @@ static enum result test_source_address_query(const char **why)
 	selected.state.source_address_available = 1;
 	selected.state.selected_source_ip4_be = selected_ip4_be;
 	if (test_tcp_active_open(selected.ws, selected.local_mac, NULL,
-			local_port_be, selected.peer_mac, selected.conn.peer_ip4_be,
+			local_port_be, selected.peer_mac, ii_htonl(selected.conn->dst_ip[0]),
 			peer_port_be, &selected.state) == 0xffff)
 		return RESULT_FAIL;
 	conn = fixture_find_peer_port(&selected, peer_port_be);
 	fixture_run_timers(&selected);
 	if (selected.state.source_address_query_count != 1 ||
 			selected.state.source_address_query_peer_ip4_be !=
-				selected.conn.peer_ip4_be ||
-			!conn || conn == &selected.conn ||
-			conn->local_ip4_be != selected_ip4_be ||
+				ii_htonl(selected.conn->dst_ip[0]) ||
+			!conn || conn == selected.conn ||
+			ii_htonl(conn->src_ip[0]) != selected_ip4_be ||
 			selected.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(selected.state.out[0]) ||
 			PB_IP4(selected.state.out[0])->src_be != selected_ip4_be) {
@@ -5209,11 +5010,11 @@ static enum result test_source_address_query(const char **why)
 		return RESULT_FAIL;
 	if (test_tcp_active_open(unavailable.ws, unavailable.local_mac, NULL,
 			local_port_be, unavailable.peer_mac,
-			unavailable.conn.peer_ip4_be, peer_port_be,
+			ii_htonl(unavailable.conn->dst_ip[0]), peer_port_be,
 			&unavailable.state) != 0xffff ||
 			unavailable.state.source_address_query_count != 1 ||
 			unavailable.state.source_address_query_peer_ip4_be !=
-				unavailable.conn.peer_ip4_be ||
+				ii_htonl(unavailable.conn->dst_ip[0]) ||
 			fixture_find_peer_port(&unavailable, peer_port_be) != NULL ||
 			unavailable.state.out_cnt != 0) {
 		*why = "active OPEN continued after source-address selection failed";
@@ -5226,11 +5027,11 @@ static enum result test_source_address_query(const char **why)
 static enum result test_connection_local_address_fallback(const char **why)
 {
 	struct fixture f;
-	struct iip_tcp_conn *conn;
-	const uint32_t configured_ip4_be = __iip_htonl(0xc000027bU);
-	const uint32_t selector_ip4_be = __iip_htonl(0xc000027cU);
-	const uint16_t local_port_be = __iip_htons(13000);
-	const uint16_t peer_port_be = __iip_htons(81);
+	struct ii_tcp_conn *conn;
+	const uint32_t configured_ip4_be = ii_htonl(0xc000027bU);
+	const uint32_t selector_ip4_be = ii_htonl(0xc000027cU);
+	const uint16_t local_port_be = ii_htons(13000);
+	const uint16_t peer_port_be = ii_htons(81);
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
@@ -5239,15 +5040,15 @@ static enum result test_connection_local_address_fallback(const char **why)
 	f.state.source_address_available = 1;
 	f.state.selected_source_ip4_be = selector_ip4_be;
 	if (test_tcp_active_open(f.ws, f.local_mac, &configured_ip4_be,
-			local_port_be, f.peer_mac, f.conn.peer_ip4_be,
+			local_port_be, f.peer_mac, ii_htonl(f.conn->dst_ip[0]),
 			peer_port_be, &f.state) == 0xffff)
 		return RESULT_FAIL;
 	conn = fixture_find_peer_port(&f, peer_port_be);
 	fixture_run_timers(&f);
 	if (f.state.source_address_query_count != 0 ||
-			!conn || conn == &f.conn ||
-			conn->local_ip4_be != configured_ip4_be ||
-			conn->local_port_be != local_port_be ||
+			!conn || conn == f.conn ||
+			ii_htonl(conn->src_ip[0]) != configured_ip4_be ||
+			ii_htons(conn->src_port) != local_port_be ||
 			f.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(f.state.out[0]) ||
 			PB_IP4(f.state.out[0])->src_be != configured_ip4_be ||
@@ -5270,8 +5071,8 @@ static enum result test_abort_notification(const char **why)
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_RST | TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return test_event_has_state_transition(&f.state, &f.conn,
-			__IIP_TCP_STATE_ESTABLISHED, __IIP_TCP_STATE_CLOSED) &&
+	return test_event_has_state_transition(&f.state, f.conn,
+			II_TCP_STATE_ESTABLISHED, II_TCP_STATE_CLOSED) &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 1
 		? RESULT_PASS : RESULT_FAIL;
@@ -5283,16 +5084,16 @@ static int time_wait_scenario(void)
 	if (!fixture_init(&f))
 		return 0;
 	fake_clock_set_ns(&f.state, 1000000000ULL);
-	f.conn.state = __IIP_TCP_STATE_TIME_WAIT;
-	f.conn.time_wait_ts_ms = 1000;
+	f.conn->state = II_TCP_STATE_TIME_WAIT;
+	f.conn->time_wait_ts_ms = 1000;
 	fixture_run_timers(&f);
 	fake_clock_advance_ms(&f.state, IIP_CONF_TCP_MSL_SEC * 2000ULL);
 	fixture_run_timers(&f);
-	if (f.conn.state != __IIP_TCP_STATE_TIME_WAIT)
+	if (f.conn->state != II_TCP_STATE_TIME_WAIT)
 		return 0;
 	fake_clock_advance_ms(&f.state, 1000);
 	fixture_run_timers(&f);
-	return f.conn.state == 0;
+	return f.conn->state == 0;
 }
 
 static enum result test_time_wait_2msl(const char **why)
@@ -5333,7 +5134,7 @@ static int fixture_has_keepalive_probe(struct fixture *f,
 	return PB_TCP_HDR_HAS_ACK(pkt) && !PB_TCP_HDR_HAS_SYN(pkt) &&
 		!PB_TCP_HDR_HAS_FIN(pkt) && !PB_TCP_HDR_HAS_RST(pkt) &&
 		PB_TCP_PAYLOAD_LEN(pkt) == 0 &&
-		__iip_ntohl(PB_TCP(pkt)->seq_be) == expected_seq;
+		ii_ntohl(PB_TCP(pkt)->seq_be) == expected_seq;
 }
 
 static enum result test_keepalive_per_connection(const char **why)
@@ -5344,8 +5145,8 @@ static enum result test_keepalive_per_connection(const char **why)
 		return RESULT_FAIL;
 	fake_clock_set_ns(&enabled.state, 1000000000ULL);
 	fake_clock_set_ns(&disabled.state, 1000000000ULL);
-	expected_seq = __iip_ntohl(enabled.conn.seq_be) - 1U;
-	IIP_EX_TCP_SET_KEEPALIVE(enabled.ws, &enabled.conn, 1000U,
+	expected_seq = enabled.conn->seq - 1U;
+	test_set_keepalive(enabled.ws, enabled.conn, 1000U,
 			&enabled.state);
 	fake_clock_advance_ms(&enabled.state, 1001);
 	fake_clock_advance_ms(&disabled.state, 1001);
@@ -5357,7 +5158,7 @@ static enum result test_keepalive_per_connection(const char **why)
 		return RESULT_FAIL;
 	}
 	free_output(&enabled.state);
-	IIP_EX_TCP_SET_KEEPALIVE(enabled.ws, &enabled.conn, 0,
+	test_set_keepalive(enabled.ws, enabled.conn, 0,
 			&enabled.state);
 	fake_clock_advance_ms(&enabled.state, 2000);
 	fixture_run_timers(&enabled);
@@ -5376,7 +5177,7 @@ static enum result test_keepalive_idle_condition(const char **why)
 	if (!fixture_init(&outstanding) || !fixture_init(&active))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&outstanding);
-	IIP_EX_TCP_SET_KEEPALIVE(outstanding.ws, &outstanding.conn, 1000U,
+	test_set_keepalive(outstanding.ws, outstanding.conn, 1000U,
 			&outstanding.state);
 	if (!fixture_send_data(&outstanding, 1))
 		return RESULT_FAIL;
@@ -5389,8 +5190,8 @@ static enum result test_keepalive_idle_condition(const char **why)
 	}
 
 	fake_clock_set_ns(&active.state, 1000000000ULL);
-	expected_seq = __iip_ntohl(active.conn.seq_be) - 1U;
-	IIP_EX_TCP_SET_KEEPALIVE(active.ws, &active.conn, 1000U,
+	expected_seq = active.conn->seq - 1U;
+	test_set_keepalive(active.ws, active.conn, 1000U,
 			&active.state);
 	fake_clock_advance_ms(&active.state, 600);
 	fixture_incoming_spec(&active, &spec, 0, NULL, 0);
@@ -5418,15 +5219,15 @@ static enum result test_keepalive_interval_setting(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fake_clock_set_ns(&f.state, 1000000000ULL);
-	expected_seq = __iip_ntohl(f.conn.seq_be) - 1U;
-	IIP_EX_TCP_SET_KEEPALIVE(f.ws, &f.conn, 3000U, &f.state);
+	expected_seq = f.conn->seq - 1U;
+	test_set_keepalive(f.ws, f.conn, 3000U, &f.state);
 	fake_clock_advance_ms(&f.state, 1001);
 	fixture_run_timers(&f);
 	if (f.state.out_cnt != 0) {
 		*why = "keep-alive was sent before the configured interval";
 		return RESULT_FAIL;
 	}
-	IIP_EX_TCP_SET_KEEPALIVE(f.ws, &f.conn, 1000U, &f.state);
+	test_set_keepalive(f.ws, f.conn, 1000U, &f.state);
 	fake_clock_advance_ms(&f.state, 1001);
 	fixture_run_timers(&f);
 	if (!fixture_has_keepalive_probe(&f, expected_seq)) {
@@ -5442,14 +5243,14 @@ static enum result test_keepalive_default_interval(const char **why)
 	uint32_t expected_seq, interval;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	interval = f.conn.keepalive_interval_ms;
+	interval = f.conn->keepalive_interval_ms;
 	if (interval < 2U * 60U * 60U * 1000U) {
 		*why = "default keep-alive interval is less than two hours";
 		return RESULT_FAIL;
 	}
 	fake_clock_set_ns(&f.state, 1000000000ULL);
-	expected_seq = __iip_ntohl(f.conn.seq_be) - 1U;
-	IIP_EX_TCP_SET_KEEPALIVE(f.ws, &f.conn, interval, &f.state);
+	expected_seq = f.conn->seq - 1U;
+	test_set_keepalive(f.ws, f.conn, interval, &f.state);
 	fake_clock_advance_ms(&f.state, interval);
 	fixture_run_timers(&f);
 	if (f.state.out_cnt != 0) {
@@ -5473,9 +5274,9 @@ static enum result test_keepalive_probe_loss(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fake_clock_set_ns(&f.state, 1000000000ULL);
-	expected_seq = __iip_ntohl(f.conn.seq_be) - 1U;
-	IIP_EX_TCP_SET_KEEPALIVE(f.ws, &f.conn, 1000U, &f.state);
-	for (i = 0; i < f.conn.retrans_r2 + 2U; i++) {
+	expected_seq = f.conn->seq - 1U;
+	test_set_keepalive(f.ws, f.conn, 1000U, &f.state);
+	for (i = 0; i < f.conn->retrans_r2 + 2U; i++) {
 		fake_clock_advance_ms(&f.state, 1001);
 		fixture_run_timers(&f);
 		if (!fixture_has_keepalive_probe(&f, expected_seq)) {
@@ -5484,9 +5285,9 @@ static enum result test_keepalive_probe_loss(const char **why)
 		}
 		free_output(&f.state);
 	}
-	if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
-			f.conn.retrans_cnt != 0 || f.conn.head[2][0] ||
-			f.conn.head[3][0]) {
+	if (f.conn->state != II_TCP_STATE_ESTABLISHED ||
+			f.conn->retrans_cnt != 0 || test_ring_end(f.ws, &f.conn->sent_ring, 0) ||
+			test_ring_end(f.ws, &f.conn->sent_ring, 0)) {
 		*why = "unanswered keep-alive probes affected connection liveness";
 		return RESULT_FAIL;
 	}
@@ -5510,8 +5311,8 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 3) {
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 3) {
 		*why = "the received urgent pointer was not retained";
 		return RESULT_FAIL;
 	}
@@ -5522,7 +5323,7 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 4;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.urgent_ptr != 8) {
+	if (f.conn->urgent_ptr != 8) {
 		*why = "an advancing urgent pointer was not retained";
 		return RESULT_FAIL;
 	}
@@ -5534,7 +5335,7 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.urgent_ptr != 8 ||
+	if (f.conn->urgent_ptr != 8 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 0) {
 		*why = "a stale urgent pointer moved the boundary backward";
@@ -5544,15 +5345,15 @@ static enum result test_urgent_pointer_support(const char **why)
 	/* Pointer arithmetic and ordering must work across 32-bit wraparound. */
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.seq_next_expected = UINT32_MAX - 2;
-	f.conn.ack_seq_be = __iip_htonl(f.conn.seq_next_expected);
+	f.conn->seq_next_expected = UINT32_MAX - 2;
+	f.conn->ack_seq = f.conn->seq_next_expected;
 	fixture_incoming_spec(&f, &spec, UINT32_MAX - 2, first_payload,
 			sizeof(first_payload));
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 4;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 1) {
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 1) {
 		*why = "urgent pointer arithmetic failed across sequence wraparound";
 		return RESULT_FAIL;
 	}
@@ -5583,8 +5384,8 @@ static enum result test_arbitrary_urgent_sequence(const char **why)
 		spec.tcp_flags |= TEST_TCP_URG;
 		spec.urgent_pointer = UINT16_MAX;
 		fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-		if (!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-				f.conn.urgent_ptr != UINT16_MAX +
+		if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+				f.conn->urgent_ptr != UINT16_MAX +
 					i * sizeof(payloads[0]) ||
 				test_event_count(&f.state, TEST_EVENT_CALLBACK,
 					TEST_CALLBACK_TCP_URGENT) != i + 1) {
@@ -5594,7 +5395,7 @@ static enum result test_arbitrary_urgent_sequence(const char **why)
 	}
 
 	if (f.state.next_payload != sizeof(payloads) ||
-			f.conn.seq_next_expected != sizeof(payloads)) {
+			f.conn->seq_next_expected != sizeof(payloads)) {
 		*why = "data in a long urgent sequence was not delivered in order";
 		return RESULT_FAIL;
 	}
@@ -5611,7 +5412,7 @@ static enum result test_urgent_queue_query(const char **why)
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	if (test_tcp_urgent_query(&f.conn, &queued) || queued != 0) {
+	if (test_tcp_urgent_query(f.conn, &queued) || queued != 0) {
 		*why = "a new connection reported queued urgent data";
 		return RESULT_FAIL;
 	}
@@ -5622,7 +5423,7 @@ static enum result test_urgent_queue_query(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 5;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_tcp_urgent_query(&f.conn, &queued) || queued != 5) {
+	if (!test_tcp_urgent_query(f.conn, &queued) || queued != 5) {
 		*why = "the announced urgent sequence was not queryable";
 		return RESULT_FAIL;
 	}
@@ -5631,14 +5432,14 @@ static enum result test_urgent_queue_query(const char **why)
 	fixture_incoming_spec(&f, &spec, 0, first_payload,
 			sizeof(first_payload));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_tcp_urgent_query(&f.conn, &queued) || queued != 3) {
+	if (!test_tcp_urgent_query(f.conn, &queued) || queued != 3) {
 		*why = "the urgent queue amount did not follow received data";
 		return RESULT_FAIL;
 	}
 	fixture_incoming_spec(&f, &spec, 2, second_payload,
 			sizeof(second_payload));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (test_tcp_urgent_query(&f.conn, &queued) || queued != 0) {
+	if (test_tcp_urgent_query(f.conn, &queued) || queued != 0) {
 		*why = "urgent data remained reported after reaching its boundary";
 		return RESULT_FAIL;
 	}
@@ -5646,13 +5447,13 @@ static enum result test_urgent_queue_query(const char **why)
 	/* Query arithmetic must preserve the amount across sequence wrap. */
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.seq_next_expected = UINT32_MAX - 1;
-	f.conn.ack_seq_be = __iip_htonl(f.conn.seq_next_expected);
+	f.conn->seq_next_expected = UINT32_MAX - 1;
+	f.conn->ack_seq = f.conn->seq_next_expected;
 	fixture_incoming_spec(&f, &spec, UINT32_MAX - 1, NULL, 0);
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_tcp_urgent_query(&f.conn, &queued) || queued != 3) {
+	if (!test_tcp_urgent_query(f.conn, &queued) || queued != 3) {
 		*why = "urgent queue query failed across sequence wraparound";
 		return RESULT_FAIL;
 	}
@@ -5669,14 +5470,14 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	/* SEG.UP=3 means that SEQ+3, not SEQ+2, is first non-urgent. */
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.seq_next_expected = 100;
-	f.conn.ack_seq_be = __iip_htonl(100);
+	f.conn->seq_next_expected = 100;
+	f.conn->ack_seq = 100;
 	fixture_incoming_spec(&f, &spec, 100, payload, sizeof(payload));
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 103) {
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 103) {
 		*why = "URG pointer was interpreted as the last urgent octet";
 		return RESULT_FAIL;
 	}
@@ -5684,14 +5485,14 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	/* A pointer equal to data length identifies the octet after the segment. */
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.seq_next_expected = 200;
-	f.conn.ack_seq_be = __iip_htonl((uint32_t)200);
+	f.conn->seq_next_expected = 200;
+	f.conn->ack_seq = (uint32_t)200;
 	fixture_incoming_spec(&f, &spec, 200, payload, sizeof(payload));
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = sizeof(payload);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 205) {
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 205) {
 		*why = "the first non-urgent octet after a segment was misidentified";
 		return RESULT_FAIL;
 	}
@@ -5699,14 +5500,14 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	/* The same first-non-urgent convention applies across sequence wrap. */
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.seq_next_expected = UINT32_MAX - 1;
-	f.conn.ack_seq_be = __iip_htonl(f.conn.seq_next_expected);
+	f.conn->seq_next_expected = UINT32_MAX - 1;
+	f.conn->ack_seq = f.conn->seq_next_expected;
 	fixture_incoming_spec(&f, &spec, UINT32_MAX - 1, payload, 2);
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 2;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 0) {
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 0) {
 		*why = "first non-urgent octet was misidentified across wraparound";
 		return RESULT_FAIL;
 	}
@@ -5719,11 +5520,11 @@ static int fixture_close_receive_window(struct fixture *f)
 	void *pkt;
 	void *opaque = &f->state;
 
-	f->conn.rx_buf_cnt.used = f->conn.rx_buf_cnt.limit;
+	f->conn->buf.used = f->conn->buf.capacity;
 	pkt = fixture_packet(f, 0, 0, 0);
 	if (!pkt)
 		return 0;
-	if (__iip_ntohs(PB_TCP(pkt)->win_be) != 0) {
+	if (ii_ntohs(PB_TCP(pkt)->win_be) != 0) {
 		iip_ops_pkt_free(pkt, opaque);
 		return 0;
 	}
@@ -5745,9 +5546,9 @@ static enum result test_rst_urg_with_zero_window(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 5;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
-			!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 5 ||
+	if (f.conn->state != II_TCP_STATE_ESTABLISHED ||
+			!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 5 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 1) {
 		*why = "URG was not processed while the receive window was zero";
@@ -5761,9 +5562,9 @@ static enum result test_rst_urg_with_zero_window(const char **why)
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_RST | TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_event_has_state_transition(&f.state, &f.conn,
-				__IIP_TCP_STATE_ESTABLISHED,
-				__IIP_TCP_STATE_CLOSED) ||
+	if (!test_event_has_state_transition(&f.state, f.conn,
+				II_TCP_STATE_ESTABLISHED,
+				II_TCP_STATE_CLOSED) ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) != 1) {
 		*why = "RST was not processed while the receive window was zero";
@@ -5790,13 +5591,13 @@ static enum result test_async_urgent_notification(const char **why)
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_TCP_URGENT, 0);
-	if (!event || event->object != &f.conn || !event->value[0] ||
+	if (!event || event->object != f.conn || !event->value[0] ||
 			!event->value[1] || event->value[2] != 0 ||
 			event->value[3] != 3 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 1 ||
-			!(f.conn.flags & __IIP_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn.urgent_ptr != 3) {
+			!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
+			f.conn->urgent_ptr != 3) {
 		*why = "URG arrival was not reported to the application";
 		return RESULT_FAIL;
 	}
@@ -5823,7 +5624,7 @@ static enum result test_async_urgent_notification(const char **why)
 	event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_TCP_URGENT, 0);
 	if (!event || event->value[2] != 4 || event->value[3] != 2 ||
-			f.conn.urgent_ptr != 6 ||
+			f.conn->urgent_ptr != 6 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 1) {
 		*why = "an advancing urgent pointer was not reported";
@@ -5833,8 +5634,8 @@ static enum result test_async_urgent_notification(const char **why)
 	/* Sequence wraparound must not suppress a genuinely advancing pointer. */
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	f.conn.seq_next_expected = UINT32_MAX - 2;
-	f.conn.ack_seq_be = __iip_htonl(f.conn.seq_next_expected);
+	f.conn->seq_next_expected = UINT32_MAX - 2;
+	f.conn->ack_seq = f.conn->seq_next_expected;
 	test_event_log_clear(&f.state);
 	fixture_incoming_spec(&f, &spec, UINT32_MAX - 2, payload,
 			sizeof(payload));
@@ -5842,7 +5643,7 @@ static enum result test_async_urgent_notification(const char **why)
 	spec.urgent_pointer = 4;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
-			TEST_CALLBACK_TCP_URGENT) != 1 || f.conn.urgent_ptr != 1) {
+			TEST_CALLBACK_TCP_URGENT) != 1 || f.conn->urgent_ptr != 1) {
 		*why = "urgent notification failed across sequence wraparound";
 		return RESULT_FAIL;
 	}
@@ -5874,10 +5675,10 @@ static enum result test_invalid_open_destination(const char **why)
 		if (!fixture_init(&f))
 			return RESULT_FAIL;
 		test_event_log_clear(&f.state);
-		iip_tcp_connect(f.ws, f.local_mac, f.conn.local_ip4_be,
-				__iip_htons(11000 + i), f.peer_mac,
-				__iip_htonl(invalid_destinations[i]),
-				__iip_htons(22000), &f.state);
+		test_api_connect(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
+				ii_htons(11000 + i), f.peer_mac,
+				ii_htonl(invalid_destinations[i]),
+				ii_htons(22000), &f.state);
 		if (test_event_count(&f.state, TEST_EVENT_STATE_TRANSITION, 0) != 0)
 			return RESULT_FAIL;
 	}
@@ -5897,7 +5698,7 @@ static enum result test_unknown_ip_option(const char **why)
 	memcpy(spec.ip_options, unknown_ip_option, sizeof(unknown_ip_option));
 	spec.ip_options_len = sizeof(unknown_ip_option);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.state.payload_chunk_count == 1 && f.conn.seq_next_expected == 1
+	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 1
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -5906,7 +5707,7 @@ static uint16_t test_make_source_route_option(uint8_t option[40],
 		uint8_t address_count)
 {
 	uint16_t len = 3U + address_count * 4U;
-	uint16_t padded_len = __iip_round_up(len, 4);
+	uint16_t padded_len = ROUND_UP(len, 4);
 	assert((kind == 131 || kind == 137) && address_count &&
 			padded_len <= 40);
 	memset(option, 0, padded_len);
@@ -5923,18 +5724,18 @@ static int test_tcp_checksum_valid_for_destination(void *pkt,
 	struct iip_l4_ip4_pseudo_hdr pseudo;
 	uint8_t *buffer[2];
 	uint16_t len[2];
-	uint16_t supplied = __iip_ntohs(PB_TCP(pkt)->csum_be);
+	uint16_t supplied = ii_ntohs(PB_TCP(pkt)->csum_be);
 	pseudo.ip4_src_be = PB_IP4(pkt)->src_be;
 	pseudo.ip4_dst_be = destination_be;
 	pseudo.pad = 0;
 	pseudo.proto = 6;
-	len[1] = __iip_ntohs(PB_IP4(pkt)->len_be) -
+	len[1] = ii_ntohs(PB_IP4(pkt)->len_be) -
 		(PB_IP4(pkt)->vl & 0x0f) * 4;
-	pseudo.len_be = __iip_htons(len[1]);
+	pseudo.len_be = ii_htons(len[1]);
 	buffer[0] = (uint8_t *)&pseudo;
 	buffer[1] = (uint8_t *)PB_TCP(pkt);
 	len[0] = sizeof(pseudo);
-	return supplied == __iip_netcsum16(buffer, len, 2, supplied);
+	return supplied == test_netcsum16(buffer, len, 2, supplied);
 }
 
 static int test_packet_has_source_route(void *pkt, uint32_t wire_dst_be,
@@ -5953,31 +5754,31 @@ static int test_packet_has_source_route(void *pkt, uint32_t wire_dst_be,
 static enum result test_application_source_route(const char **why)
 {
 	struct fixture f;
-	struct iip_tcp_conn *conn;
+	struct ii_tcp_conn *conn;
 	uint8_t option[40];
 	uint16_t option_len;
-	uint16_t local_port_be = __iip_htons(14000);
-	uint16_t peer_port_be = __iip_htons(25001);
-	uint32_t wire_dst_be = __iip_htonl(0xcb007101U);
+	uint16_t local_port_be = ii_htons(14000);
+	uint16_t peer_port_be = ii_htons(25001);
+	uint32_t wire_dst_be = ii_htonl(0xcb007101U);
 	uint32_t address_be[1];
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	address_be[0] = f.conn.peer_ip4_be;
+	address_be[0] = ii_htonl(f.conn->dst_ip[0]);
 	option_len = test_make_source_route_option(option, 131, 4,
 			address_be, 1);
-	if (!test_source_route_add(&f.state, 1, f.conn.local_ip4_be,
-			local_port_be, f.conn.peer_ip4_be, peer_port_be,
+	if (!test_source_route_add(&f.state, 1, ii_htonl(f.conn->src_ip[0]),
+			local_port_be, ii_htonl(f.conn->dst_ip[0]), peer_port_be,
 			wire_dst_be, option, option_len) ||
 			test_tcp_active_open(f.ws, f.local_mac,
-			&f.conn.local_ip4_be, local_port_be, f.peer_mac,
-			f.conn.peer_ip4_be, peer_port_be, &f.state) == 0xffff)
+			&(uint32_t){ ii_htonl(f.conn->src_ip[0]) }, local_port_be, f.peer_mac,
+			ii_htonl(f.conn->dst_ip[0]), peer_port_be, &f.state) == 0xffff)
 		return RESULT_FAIL;
 	conn = fixture_find_peer_port(&f, peer_port_be);
 	fixture_run_timers(&f);
 	if (!conn || f.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(f.state.out[0]) ||
 			!test_packet_has_source_route(f.state.out[0], wire_dst_be,
-				f.conn.peer_ip4_be, option, option_len)) {
+				ii_htonl(f.conn->dst_ip[0]), option, option_len)) {
 		*why = "active OPEN did not apply the application source route";
 		return RESULT_FAIL;
 	}
@@ -5987,27 +5788,27 @@ static enum result test_application_source_route(const char **why)
 static enum result test_application_route_precedence(const char **why)
 {
 	struct fixture f;
-	struct iip_tcp_conn *conn;
+	struct ii_tcp_conn *conn;
 	struct tcp_packet_spec spec;
 	uint8_t application_option[40], received_option[40];
 	uint16_t application_option_len, received_option_len;
-	uint16_t local_port_be = __iip_htons(14001);
-	uint16_t peer_port_be = __iip_htons(25002);
-	uint32_t application_hop_be = __iip_htonl(0xcb007101U);
-	uint32_t received_hop_be = __iip_htonl(0xcb007102U);
+	uint16_t local_port_be = ii_htons(14001);
+	uint16_t peer_port_be = ii_htons(25002);
+	uint32_t application_hop_be = ii_htonl(0xcb007101U);
+	uint32_t received_hop_be = ii_htonl(0xcb007102U);
 	uint32_t address_be[1];
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	address_be[0] = f.conn.peer_ip4_be;
+	address_be[0] = ii_htonl(f.conn->dst_ip[0]);
 	application_option_len = test_make_source_route_option(
 			application_option, 131, 4, address_be, 1);
-	if (!test_source_route_add(&f.state, 1, f.conn.local_ip4_be,
-			local_port_be, f.conn.peer_ip4_be, peer_port_be,
+	if (!test_source_route_add(&f.state, 1, ii_htonl(f.conn->src_ip[0]),
+			local_port_be, ii_htonl(f.conn->dst_ip[0]), peer_port_be,
 			application_hop_be, application_option,
 			application_option_len) ||
 			test_tcp_active_open(f.ws, f.local_mac,
-			&f.conn.local_ip4_be, local_port_be, f.peer_mac,
-			f.conn.peer_ip4_be, peer_port_be, &f.state) == 0xffff)
+			&(uint32_t){ ii_htonl(f.conn->src_ip[0]) }, local_port_be, f.peer_mac,
+			ii_htonl(f.conn->dst_ip[0]), peer_port_be, &f.state) == 0xffff)
 		return RESULT_FAIL;
 	conn = fixture_find_peer_port(&f, peer_port_be);
 	fixture_run_timers(&f);
@@ -6017,7 +5818,7 @@ static enum result test_application_route_precedence(const char **why)
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 	spec.src_port_be = peer_port_be;
 	spec.dst_port_be = local_port_be;
-	spec.ack_seq = __iip_ntohl(conn->seq_be);
+	spec.ack_seq = conn->seq;
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
 	address_be[0] = received_hop_be;
 	received_option_len = test_make_source_route_option(received_option,
@@ -6027,7 +5828,7 @@ static enum result test_application_route_precedence(const char **why)
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	if (f.state.out_cnt != 1 || PB_TCP_HDR_HAS_SYN(f.state.out[0]) ||
 			!test_packet_has_source_route(f.state.out[0],
-				application_hop_be, f.conn.peer_ip4_be,
+				application_hop_be, ii_htonl(f.conn->dst_ip[0]),
 				application_option, application_option_len)) {
 		*why = "a received source route overrode the application route";
 		return RESULT_FAIL;
@@ -6038,12 +5839,12 @@ static enum result test_application_route_precedence(const char **why)
 static enum result test_passive_return_route(const char **why)
 {
 	struct fixture f;
-	struct iip_tcp_conn *child;
+	struct ii_tcp_conn *child;
 	struct tcp_packet_spec spec;
 	uint8_t received_option[40], expected_option[40];
 	uint16_t received_option_len, expected_option_len;
-	uint16_t peer_port_be = __iip_htons(25003);
-	uint32_t recorded_hop_be = __iip_htonl(0xcb007103U);
+	uint16_t peer_port_be = ii_htons(25003);
+	uint32_t recorded_hop_be = ii_htonl(0xcb007103U);
 	uint32_t address_be[1];
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
@@ -6057,14 +5858,14 @@ static enum result test_passive_return_route(const char **why)
 	spec.ip_options_len = received_option_len;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	child = fixture_find_peer_port(&f, peer_port_be);
-	address_be[0] = f.conn.peer_ip4_be;
+	address_be[0] = ii_htonl(f.conn->dst_ip[0]);
 	expected_option_len = test_make_source_route_option(expected_option,
 			131, 4, address_be, 1);
 	if (!child || f.state.out_cnt != 1 ||
 			!PB_TCP_HDR_HAS_SYN(f.state.out[0]) ||
 			!PB_TCP_HDR_HAS_ACK(f.state.out[0]) ||
 			!test_packet_has_source_route(f.state.out[0],
-				recorded_hop_be, f.conn.peer_ip4_be,
+				recorded_hop_be, ii_htonl(f.conn->dst_ip[0]),
 				expected_option, expected_option_len)) {
 		*why = "SYN-ACK did not use the received return route";
 		return RESULT_FAIL;
@@ -6072,15 +5873,15 @@ static enum result test_passive_return_route(const char **why)
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 101, NULL, 0);
 	spec.src_port_be = peer_port_be;
-	spec.ack_seq = __iip_ntohl(child->seq_be);
+	spec.ack_seq = child->seq;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	free_output(&f.state);
-	__iip_tcp_push(f.ws, child, NULL, 0, 1, 0, 0, 0, NULL,
+	test_api_push(f.ws, child, NULL, 0, 1, 0, 0, 0, NULL,
 			0, &f.state);
 	fixture_run_timers(&f);
 	if (!child->opaque || f.state.out_cnt != 1 ||
 			!test_packet_has_source_route(f.state.out[0],
-				recorded_hop_be, f.conn.peer_ip4_be,
+				recorded_hop_be, ii_htonl(f.conn->dst_ip[0]),
 				expected_option, expected_option_len)) {
 		*why = "the return route was not retained in tcp_opaque";
 		return RESULT_FAIL;
@@ -6092,24 +5893,24 @@ static enum result test_icmp_processing(const char **why)
 {
 	struct fixture f;
 	void *pkt;
-	uint16_t next_hop_mtu_be = __iip_htons(1200);
+	uint16_t next_hop_mtu_be = ii_htons(1200);
 	uint32_t seq_before, ack_before, expected_before;
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	seq_before = f.conn.seq_be;
-	ack_before = f.conn.ack_seq_be;
-	expected_before = f.conn.seq_next_expected;
+	seq_before = ii_htonl(f.conn->seq);
+	ack_before = ii_htonl(f.conn->ack_seq);
+	expected_before = f.conn->seq_next_expected;
 	test_event_log_clear(&f.state);
 	pkt = fixture_icmp_error_packet(&f, 3, 4);
 	memcpy(&PB_ICMP(pkt)->rest[2], &next_hop_mtu_be,
 			sizeof(next_hop_mtu_be));
 	update_icmp_checksum(pkt);
 	fixture_deliver(&f, pkt);
-	return f.conn.state == __IIP_TCP_STATE_ESTABLISHED &&
-		f.conn.seq_be == seq_before && f.conn.ack_seq_be == ack_before &&
-		f.conn.seq_next_expected == expected_before &&
-		f.conn.path_mtu == 1200 && f.state.out_cnt == 0 &&
+	return f.conn->state == II_TCP_STATE_ESTABLISHED &&
+		ii_htonl(f.conn->seq) == seq_before && ii_htonl(f.conn->ack_seq) == ack_before &&
+		f.conn->seq_next_expected == expected_before &&
+		f.conn->path_mtu == 1200 && f.state.out_cnt == 0 &&
 		test_event_count(&f.state, TEST_EVENT_STATE_TRANSITION, 0) == 0 &&
 		test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_CLOSED) == 0
@@ -6125,18 +5926,18 @@ static enum result test_source_quench_discard(const char **why)
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	state_before = f.conn.state;
-	seq_before = f.conn.seq_be;
-	ack_before = f.conn.ack_seq_be;
-	expected_before = f.conn.seq_next_expected;
-	path_mtu_before = f.conn.path_mtu;
+	state_before = f.conn->state;
+	seq_before = ii_htonl(f.conn->seq);
+	ack_before = ii_htonl(f.conn->ack_seq);
+	expected_before = f.conn->seq_next_expected;
+	path_mtu_before = f.conn->path_mtu;
 	payload_before = f.state.payload_chunk_count;
 	test_event_log_clear(&f.state);
 	fixture_deliver(&f, fixture_icmp_error_packet(&f, 4, 0));
-	return f.conn.state == state_before && f.conn.seq_be == seq_before &&
-		f.conn.ack_seq_be == ack_before &&
-		f.conn.seq_next_expected == expected_before &&
-		f.conn.path_mtu == path_mtu_before &&
+	return f.conn->state == state_before && ii_htonl(f.conn->seq) == seq_before &&
+		ii_htonl(f.conn->ack_seq) == ack_before &&
+		f.conn->seq_next_expected == expected_before &&
+		f.conn->path_mtu == path_mtu_before &&
 		f.state.payload_chunk_count == payload_before && f.state.out_cnt == 0 &&
 		test_event_count(&f.state, TEST_EVENT_TX_PACKET, 0) == 0 &&
 		test_event_count(&f.state, TEST_EVENT_STATE_TRANSITION, 0) == 0 &&
@@ -6163,16 +5964,16 @@ static enum result test_soft_icmp_does_not_abort(const char **why)
 		uint32_t seq_before, ack_before, expected_before;
 		if (!fixture_init(&f))
 			return RESULT_FAIL;
-		seq_before = f.conn.seq_be;
-		ack_before = f.conn.ack_seq_be;
-		expected_before = f.conn.seq_next_expected;
+		seq_before = ii_htonl(f.conn->seq);
+		ack_before = ii_htonl(f.conn->ack_seq);
+		expected_before = f.conn->seq_next_expected;
 		test_event_log_clear(&f.state);
 		fixture_deliver(&f, fixture_icmp_error_packet(&f,
 				soft_errors[i].type, soft_errors[i].code));
-		if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
-				f.conn.seq_be != seq_before ||
-				f.conn.ack_seq_be != ack_before ||
-				f.conn.seq_next_expected != expected_before ||
+		if (f.conn->state != II_TCP_STATE_ESTABLISHED ||
+				ii_htonl(f.conn->seq) != seq_before ||
+				ii_htonl(f.conn->ack_seq) != ack_before ||
+				f.conn->seq_next_expected != expected_before ||
 				f.state.out_cnt != 0 ||
 				test_event_count(&f.state, TEST_EVENT_TX_PACKET, 0) != 0 ||
 				test_event_count(&f.state,
@@ -6207,13 +6008,13 @@ static enum result test_tcp_icmp_error_notification(const char **why)
 				errors[i].type, errors[i].code));
 		event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_ICMP_ERROR, 0);
-		if (!event || event->object != &f.conn ||
+		if (!event || event->object != f.conn ||
 				event->value[0] != errors[i].type ||
 				event->value[1] != errors[i].code ||
 				!event->value[2] || !event->value[3] ||
 				test_event_count(&f.state, TEST_EVENT_CALLBACK,
 					TEST_CALLBACK_TCP_ICMP_ERROR) != 1 ||
-				f.conn.state != __IIP_TCP_STATE_ESTABLISHED)
+				f.conn->state != II_TCP_STATE_ESTABLISHED)
 			return RESULT_FAIL;
 	}
 
@@ -6240,7 +6041,7 @@ static enum result test_tcp_icmp_error_notification(const char **why)
 		test_event_log_clear(&f.state);
 		pkt = fixture_icmp_error_packet(&f, 11, 0);
 		quoted_ip4 = (struct iip_ip4_hdr *)PB_ICMP_DATA(pkt);
-		quoted_ip4->off_be = __iip_htons(1);
+		quoted_ip4->off_be = ii_htons(1);
 		update_icmp_checksum(pkt);
 		fixture_deliver(&f, pkt);
 		if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -6251,7 +6052,7 @@ static enum result test_tcp_icmp_error_notification(const char **why)
 		test_event_log_clear(&f.state);
 		pkt = fixture_icmp_error_packet(&f, 11, 0);
 		quoted_ip4 = (struct iip_ip4_hdr *)PB_ICMP_DATA(pkt);
-		quoted_ip4->off_be = __iip_htons(0x2000);
+		quoted_ip4->off_be = ii_htons(0x2000);
 		update_icmp_checksum(pkt);
 		fixture_deliver(&f, pkt);
 		if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -6264,7 +6065,7 @@ static enum result test_tcp_icmp_error_notification(const char **why)
 		quoted_ip4 = (struct iip_ip4_hdr *)PB_ICMP_DATA(pkt);
 		quoted_tcp = (struct iip_tcp_hdr *)((uint8_t *)quoted_ip4 +
 				(quoted_ip4->vl & 0x0f) * 4);
-		quoted_tcp->dst_be ^= __iip_htons(1);
+		quoted_tcp->dst_be ^= ii_htons(1);
 		update_icmp_checksum(pkt);
 		fixture_deliver(&f, pkt);
 		if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
@@ -6293,7 +6094,7 @@ static enum result test_window_shrink_robustness(const char **why)
 {
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct pb *unacked;
+	struct ii_pb *unacked;
 	void *retransmission;
 	uint32_t initial_rto, snd_una;
 	uint16_t expected_packet_len;
@@ -6302,13 +6103,13 @@ static enum result test_window_shrink_robustness(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
-	snd_una = f.conn.acked_seq;
+	snd_una = f.conn->acked_seq;
 	if (!fixture_send_data(&f, 2))
 		return RESULT_FAIL;
-	unacked = f.conn.head[2][0];
-	if (!unacked || PB_TCP_PAYLOAD_LEN(unacked->pkt) != 2)
+	unacked = test_ring_end(f.ws, &f.conn->sent_ring, 0);
+	if (!unacked || unacked->tcp.payload_len != 2)
 		return RESULT_FAIL;
-	initial_rto = unacked->tcp.rto_ms;
+	initial_rto = f.conn->rto_ms;
 	if (!initial_rto)
 		return RESULT_FAIL;
 	free_output(&f.state);
@@ -6321,7 +6122,7 @@ static enum result test_window_shrink_robustness(const char **why)
 	spec.ack_seq = snd_una;
 	spec.window = 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn.peer_win != 1 || f.conn.head[2][0] != unacked) {
+	if (f.conn->peer_win != 1 || test_ring_end(f.ws, &f.conn->sent_ring, 0) != unacked) {
 		*why = "a shrinking window discarded the unacknowledged segment";
 		return RESULT_FAIL;
 	}
@@ -6330,7 +6131,7 @@ static enum result test_window_shrink_robustness(const char **why)
 
 	fake_clock_advance_ms(&f.state, (uint64_t)initial_rto + 1);
 	fixture_run_timers(&f);
-	if (f.conn.head[2][0] != unacked ||
+	if (test_ring_end(f.ws, &f.conn->sent_ring, 0) != unacked ||
 			test_event_count(&f.state, TEST_EVENT_RETRANSMISSION,
 				TEST_RETRANS_TIMEOUT) != 1 || f.state.out_cnt != 1) {
 		*why = "window shrink suppressed retransmission of old unacknowledged data";
@@ -6338,7 +6139,7 @@ static enum result test_window_shrink_robustness(const char **why)
 	}
 	retransmission = f.state.out[0];
 	expected_packet_len = iip_ops_l2_hdr_len(retransmission, opaque) +
-			__iip_ntohs(PB_IP4(retransmission)->len_be);
+			ii_ntohs(PB_IP4(retransmission)->len_be);
 	if (iip_ops_pkt_get_len(retransmission, opaque) != expected_packet_len) {
 		*why = "partial retransmission has an invalid packet length";
 		return RESULT_FAIL;
@@ -6373,7 +6174,7 @@ static enum result test_standard_window_probing(const char **why)
 		*why = "zero-window probe intervals backed off in the wrong direction";
 		return RESULT_FAIL;
 	}
-	if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED) {
+	if (f.conn->state != II_TCP_STATE_ESTABLISHED) {
 		*why = "window probing unexpectedly closed the connection";
 		return RESULT_FAIL;
 	}
@@ -6384,21 +6185,21 @@ static int test_fin_only_at_zero_window(const char **why)
 {
 	struct fixture f;
 	struct tcp_packet_spec spec;
-	struct pb *pending;
+	struct ii_pb *pending;
 	unsigned int i;
 	void *fin = NULL;
 
 	if (!fixture_init(&f))
 		return 0;
 	fixture_prepare_sender(&f);
-	f.conn.peer_win = 0;
-	if (iip_tcp_close(f.ws, &f.conn, &f.state) == 0xffff)
+	f.conn->peer_win = 0;
+	if (test_api_close(f.ws, f.conn, &f.state) == 0xffff)
 		return 0;
 	fixture_run_timers(&f);
-	pending = f.conn.head[1][0];
-	if (f.state.out_cnt != 0 || !pending || f.conn.head[2][0] ||
-			!PB_TCP_HDR_HAS_FIN(pending->pkt) ||
-			PB_TCP_PAYLOAD_LEN(pending->pkt) != 0 || f.conn.probe_pkt) {
+	pending = test_ring_end(f.ws, &f.conn->tx_ring, 0);
+	if (f.state.out_cnt != 0 || !pending || test_ring_end(f.ws, &f.conn->sent_ring, 0) ||
+			!(pending->tcp.flags & II_TCP_FLAG_FIN) ||
+			pending->tcp.payload_len != 0 || (f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE)) {
 		*why = "FIN-only was sent or converted into a data probe at a zero window";
 		return 0;
 	}
@@ -6407,15 +6208,15 @@ static int test_fin_only_at_zero_window(const char **why)
 	 * needed for a zero-window probe.  It must remain queued indefinitely. */
 	fake_clock_advance_sec(&f.state, 120);
 	fixture_run_timers(&f);
-	if (f.state.out_cnt != 0 || f.conn.head[1][0] != pending ||
-			f.conn.head[2][0] || f.conn.probe_pkt) {
+	if (f.state.out_cnt != 0 || test_ring_end(f.ws, &f.conn->tx_ring, 0) != pending ||
+			test_ring_end(f.ws, &f.conn->sent_ring, 0) || (f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE)) {
 		*why = "FIN-only did not remain queued while the window stayed zero";
 		return 0;
 	}
 
 	/* Reopen one sequence number without acknowledging the queued FIN. */
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	for (i = 0; i < f.state.out_cnt; i++) {
@@ -6458,13 +6259,13 @@ static enum result test_indefinite_zero_window_connection(const char **why)
 		return RESULT_FAIL;
 	/* Make accidental use of the normal retransmission failure threshold
 	 * immediately visible while simulating one day of a closed window. */
-	f.conn.retrans_r1 = 1;
-	f.conn.retrans_r2 = 1;
+	f.conn->retrans_r1 = 1;
+	f.conn->retrans_r2 = 1;
 	test_event_log_clear(&f.state);
 	for (minute = 0; minute < 24U * 60U; minute++) {
 		fake_clock_advance_sec(&f.state, 60);
 		fixture_run_timers(&f);
-		if (f.conn.state != __IIP_TCP_STATE_ESTABLISHED ||
+		if (f.conn->state != II_TCP_STATE_ESTABLISHED ||
 				test_event_count(&f.state, TEST_EVENT_CALLBACK,
 					TEST_CALLBACK_CLOSED) != 0) {
 			*why = "a prolonged zero window caused connection termination";
@@ -6487,11 +6288,11 @@ static int test_sws_override_timeout(const char **why, uint16_t effective_mss)
 		return 0;
 	fixture_prepare_sender(&f);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = effective_mss;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	free_output(&f.state);
@@ -6502,19 +6303,19 @@ static int test_sws_override_timeout(const char **why, uint16_t effective_mss)
 		return 0;
 	memset(iip_ops_pkt_get_data(payload, opaque), 0x5a, effective_mss);
 	iip_ops_pkt_set_len(payload, effective_mss, opaque);
-	if (iip_tcp_send(f.ws, &f.conn, payload, 0, opaque) == 0xffff)
+	if (test_api_send(f.ws, f.conn, payload, 0, opaque) == 0xffff)
 		return 0;
 	fixture_run_timers(&f);
-	if (f.state.out_cnt || f.conn.probe_pkt ||
-			!(f.conn.flags & __IIP_TCP_CONN_FLAGS_IN_SWS)) {
+	if (f.state.out_cnt || (f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE) ||
+			!test_ring_end(f.ws, &f.conn->tx_ring, 0)) {
 		*why = "SWS override timer did not start in the suppressed state";
 		return 0;
 	}
 
 	fake_clock_advance_ms(&f.state, 500);
 	fixture_run_timers(&f);
-	if (f.state.out_cnt || f.conn.probe_pkt ||
-			!(f.conn.flags & __IIP_TCP_CONN_FLAGS_IN_SWS)) {
+	if (f.state.out_cnt || (f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE) ||
+			!test_ring_end(f.ws, &f.conn->tx_ring, 0)) {
 		*why = "SWS override sent data before its configured timeout";
 		return 0;
 	}
@@ -6523,8 +6324,7 @@ static int test_sws_override_timeout(const char **why, uint16_t effective_mss)
 	fixture_run_timers(&f);
 	if (f.state.out_cnt != 1 ||
 			PB_TCP_PAYLOAD_LEN(f.state.out[0]) != 1 ||
-			f.conn.probe_pkt || !f.conn.head[2][0] ||
-			(f.conn.flags & __IIP_TCP_CONN_FLAGS_IN_SWS)) {
+			(f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE) || !test_ring_end(f.ws, &f.conn->sent_ring, 0)) {
 		*why = "SWS override did not send a normal one-octet segment";
 		return 0;
 	}
@@ -6548,11 +6348,11 @@ static int test_sws_push_followed_by_fin(const char **why,
 	/* Remember a window whose half is larger than data_len, then offer just
 	 * enough space for the pushed data and its following FIN. */
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = effective_mss;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = data_len + 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	free_output(&f.state);
@@ -6563,8 +6363,8 @@ static int test_sws_push_followed_by_fin(const char **why,
 		return 0;
 	memset(iip_ops_pkt_get_data(payload, opaque), 0x5a, data_len);
 	iip_ops_pkt_set_len(payload, data_len, opaque);
-	if (iip_tcp_send(f.ws, &f.conn, payload, 0, opaque) == 0xffff ||
-			iip_tcp_close(f.ws, &f.conn, opaque) == 0xffff)
+	if (test_api_send(f.ws, f.conn, payload, 0, opaque) == 0xffff ||
+			test_api_close(f.ws, f.conn, opaque) == 0xffff)
 		return 0;
 	fixture_run_timers(&f);
 	for (i = 0; i < f.state.out_cnt; i++) {
@@ -6575,7 +6375,7 @@ static int test_sws_push_followed_by_fin(const char **why,
 				PB_TCP_HDR_HAS_FIN(f.state.out[i]))
 			fin_pkt = f.state.out[i];
 	}
-	if (!data_pkt || !fin_pkt || f.conn.probe_pkt ||
+	if (!data_pkt || !fin_pkt || (f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE) ||
 			!ip4_checksum_valid(data_pkt) || !checksum_valid(data_pkt) ||
 			!ip4_checksum_valid(fin_pkt) || !checksum_valid(fin_pkt)) {
 		*why = "a FIN-only tail hid the PUSH state of queued data";
@@ -6600,8 +6400,8 @@ static enum result test_sender_sws_avoidance(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
-	effective_mss = f.conn.mss -
-		(IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12U : 0U);
+	effective_mss = f.conn->mss -
+		(II_CONF_TCP_OPT_TS_OK ? 12U : 0U);
 	if (!effective_mss)
 		return RESULT_FAIL;
 
@@ -6609,11 +6409,11 @@ static enum result test_sender_sws_avoidance(const char **why)
 	 * only one usable octet.  With no outstanding data, neither a full-sized
 	 * segment nor half the maximum window can be sent. */
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = effective_mss;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	free_output(&f.state);
@@ -6623,11 +6423,11 @@ static enum result test_sender_sws_avoidance(const char **why)
 		return RESULT_FAIL;
 	memset(iip_ops_pkt_get_data(payload, opaque), 0x5a, effective_mss);
 	iip_ops_pkt_set_len(payload, effective_mss, opaque);
-	if (iip_tcp_send(f.ws, &f.conn, payload, 0, opaque) == 0xffff)
+	if (test_api_send(f.ws, f.conn, payload, 0, opaque) == 0xffff)
 		return RESULT_FAIL;
 	fixture_run_timers(&f);
-	if (f.state.out_cnt != 0 || !f.conn.head[1][0] ||
-			f.conn.head[2][0]) {
+	if (f.state.out_cnt != 0 || !test_ring_end(f.ws, &f.conn->tx_ring, 0) ||
+			test_ring_end(f.ws, &f.conn->sent_ring, 0)) {
 		*why = "sender emitted a tiny segment for a one-octet window advance";
 		return RESULT_FAIL;
 	}
@@ -6635,7 +6435,7 @@ static enum result test_sender_sws_avoidance(const char **why)
 	/* Once a complete effective-MSS window is offered, the queued data must
 	 * no longer be held back by sender SWS avoidance. */
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.ack_seq = f.conn.acked_seq;
+	spec.ack_seq = f.conn->acked_seq;
 	spec.window = effective_mss;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	for (i = 0; i < f.state.out_cnt; i++) {
@@ -6657,17 +6457,17 @@ static enum result test_sender_sws_avoidance(const char **why)
 	if (!fixture_init(&large))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&large);
-	large_payload_len = large.conn.mss;
+	large_payload_len = large.conn->mss;
 	if (large_payload_len > 2048U - 8U * sizeof(long)) {
 		*why = "configured MSS exceeds the test packet data capacity";
 		return RESULT_FAIL;
 	}
 	fixture_incoming_spec(&large, &spec, 0, NULL, 0);
-	spec.ack_seq = large.conn.acked_seq;
+	spec.ack_seq = large.conn->acked_seq;
 	spec.window = effective_mss;
 	fixture_deliver(&large, build_tcp_packet(&spec, &large.state));
 	fixture_incoming_spec(&large, &spec, 0, NULL, 0);
-	spec.ack_seq = large.conn.acked_seq;
+	spec.ack_seq = large.conn->acked_seq;
 	spec.window = 1;
 	fixture_deliver(&large, build_tcp_packet(&spec, &large.state));
 	free_output(&large.state);
@@ -6678,12 +6478,12 @@ static enum result test_sender_sws_avoidance(const char **why)
 	memset(iip_ops_pkt_get_data(payload, large_opaque), 0x5a,
 			large_payload_len);
 	iip_ops_pkt_set_len(payload, large_payload_len, large_opaque);
-	if (iip_tcp_send(large.ws, &large.conn, payload, 0,
+	if (test_api_send(large.ws, large.conn, payload, 0,
 			large_opaque) == 0xffff)
 		return RESULT_FAIL;
 	fixture_run_timers(&large);
-	if (large.state.out_cnt != 0 || !large.conn.head[1][0] ||
-			large.conn.head[2][0] || large.conn.probe_pkt) {
+	if (large.state.out_cnt != 0 || !test_ring_end(large.ws, &large.conn->tx_ring, 0) ||
+			test_ring_end(large.ws, &large.conn->sent_ring, 0) || (large.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE)) {
 		*why = "queued data size bypassed SWS avoidance for a one-octet window";
 		return RESULT_FAIL;
 	}
@@ -6699,21 +6499,21 @@ static int test_receive_window_right_edge(const char **why)
 	struct fixture outside;
 	struct tcp_packet_spec spec;
 	const uint8_t payload[] = { 0, 1 };
-	struct pb *p;
+	struct ii_pb *p;
 
 	/* [255, 257) crosses the right edge of the receive window [0, 256).
 	 * Only the octet at sequence number 255 may remain queued. */
 	if (!fixture_init(&crossing))
 		return 0;
-	crossing.conn.sack_ok = 1;
-	crossing.conn.rx_buf_cnt.limit = 256;
-	crossing.conn.rx_buf_cnt.used = 0;
+	crossing.conn->flags |= II_TCP_CONN_FLAGS_SACK_OK;
+	crossing.conn->buf.capacity = 256;
+	crossing.conn->buf.used = 0;
 	fixture_incoming_spec(&crossing, &spec, 255, payload,
 			sizeof(payload));
 	fixture_deliver(&crossing,
 			build_tcp_packet(&spec, &crossing.state));
-	p = crossing.conn.head[4][0];
-	if (!p || PB_TCP_PAYLOAD_LEN(p->pkt) - p->tcp.inc_head -
+	p = test_ring_end(crossing.ws, &crossing.conn->pending_ring, 0);
+	if (!p || PB_TCP_PAYLOAD_LEN(p->part_pkt[0]) - p->tcp.inc_head -
 			p->tcp.dec_tail != 1 || p->tcp.dec_tail != 1) {
 		*why = "receiver did not trim an out-of-order segment at the window right edge";
 		return 0;
@@ -6723,13 +6523,13 @@ static int test_receive_window_right_edge(const char **why)
 	 * outside the receive window and must not be queued. */
 	if (!fixture_init(&outside))
 		return 0;
-	outside.conn.sack_ok = 1;
-	outside.conn.rx_buf_cnt.limit = 256;
-	outside.conn.rx_buf_cnt.used = 0;
+	outside.conn->flags |= II_TCP_CONN_FLAGS_SACK_OK;
+	outside.conn->buf.capacity = 256;
+	outside.conn->buf.used = 0;
 	fixture_incoming_spec(&outside, &spec, 256, payload, 1);
 	fixture_deliver(&outside,
 			build_tcp_packet(&spec, &outside.state));
-	if (outside.conn.head[4][0]) {
+	if (test_ring_end(outside.ws, &outside.conn->pending_ring, 0)) {
 		*why = "receiver queued a segment beginning at the window right edge";
 		return 0;
 	}
@@ -6748,7 +6548,7 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	uint32_t received_ack_seq, received_window, received_right_edge;
 	uint32_t consumed_window, configured_window, advertised_window;
 	uint32_t effective_mss;
-	uint32_t scale_slop = (1U << IIP_CONF_TCP_OPT_WS) - 1U;
+	uint32_t scale_slop = (1U << TEST_RX_WINDOW_SCALE) - 1U;
 	unsigned int i;
 
 	if (!test_receive_window_right_edge(why))
@@ -6757,16 +6557,16 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	/* The configured receive-buffer size is expressed directly in bytes. */
 	if (!fixture_init(&boundary))
 		return RESULT_FAIL;
-	configured_window = IIP_CONF_TCP_RX_BUF_SIZE;
+	configured_window = IIP_CONF_TCP_RX_BUF_CAPACITY;
 	initial_pkt = fixture_packet(&boundary, 0, 0, 0);
 	if (!initial_pkt)
 		return RESULT_FAIL;
 	advertised_window =
-		(uint32_t)__iip_ntohs(PB_TCP(initial_pkt)->win_be) <<
-		IIP_CONF_TCP_OPT_WS;
+		(uint32_t)ii_ntohs(PB_TCP(initial_pkt)->win_be) <<
+		TEST_RX_WINDOW_SCALE;
 	iip_ops_pkt_free(initial_pkt, &boundary.state);
-	if (configured_window > (0xffffU << IIP_CONF_TCP_OPT_WS))
-		configured_window = 0xffffU << IIP_CONF_TCP_OPT_WS;
+	if (configured_window > (0xffffU << TEST_RX_WINDOW_SCALE))
+		configured_window = 0xffffU << TEST_RX_WINDOW_SCALE;
 	else
 		configured_window &= ~scale_slop;
 	if (advertised_window != configured_window) {
@@ -6778,25 +6578,25 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	 * min(RCV.BUFF/2, Eff.snd.MSS) threshold. */
 	if (!fixture_init(&boundary))
 		return RESULT_FAIL;
-	boundary.conn.rx_buf_cnt.limit = 4096;
-	boundary.conn.rx_buf_cnt.used = 299;
-	boundary.conn.rx_buf_cnt.adv_cnt = 0;
-	boundary.conn.mss = 300;
-	boundary.conn.path_mtu = 1500;
-	iip_tcp_rxbuf_consumed(boundary.ws, &boundary.conn, 299,
+	boundary.conn->buf.capacity = 4096;
+	boundary.conn->buf.used = 299;
+	boundary.conn->buf.adv_cnt = 0;
+	boundary.conn->mss = 300;
+	boundary.conn->path_mtu = 1500;
+	test_api_consumed(boundary.ws, boundary.conn, 299,
 			&boundary.state);
-	if (boundary.conn.rx_buf_cnt.used != 299 ||
-			boundary.conn.rx_buf_cnt.adv_cnt != 299) {
+	if (boundary.conn->buf.used != 299 ||
+			boundary.conn->buf.adv_cnt != 299) {
 		*why = "receiver advertised a window update below the SWS threshold";
 		return RESULT_FAIL;
 	}
 	/* Simulate receiving and then consuming the final octet needed to reach
 	 * the exact 300-octet threshold. */
-	boundary.conn.rx_buf_cnt.used++;
-	iip_tcp_rxbuf_consumed(boundary.ws, &boundary.conn, 1,
+	boundary.conn->buf.used++;
+	test_api_consumed(boundary.ws, boundary.conn, 1,
 			&boundary.state);
-	if (boundary.conn.rx_buf_cnt.used ||
-			boundary.conn.rx_buf_cnt.adv_cnt) {
+	if (boundary.conn->buf.used ||
+			boundary.conn->buf.adv_cnt) {
 		*why = "receiver did not update the window at the exact SWS threshold";
 		return RESULT_FAIL;
 	}
@@ -6805,20 +6605,20 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	 * options.  With PMTU 330 and timestamps, this is 278 octets. */
 	effective_mss = 330U - sizeof(struct iip_ip4_hdr) -
 		sizeof(struct iip_tcp_hdr) -
-		(IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12U : 0U);
+		(II_CONF_TCP_OPT_TS_OK ? 12U : 0U);
 	if (effective_mss > 300U -
-			(IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12U : 0U))
+			(II_CONF_TCP_OPT_TS_OK ? 12U : 0U))
 		effective_mss = 300U -
-			(IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12U : 0U);
-	boundary.conn.rx_buf_cnt.limit = 4096;
-	boundary.conn.rx_buf_cnt.used = effective_mss;
-	boundary.conn.rx_buf_cnt.adv_cnt = 0;
-	boundary.conn.mss = 300;
-	boundary.conn.path_mtu = 330;
-	iip_tcp_rxbuf_consumed(boundary.ws, &boundary.conn, effective_mss,
+			(II_CONF_TCP_OPT_TS_OK ? 12U : 0U);
+	boundary.conn->buf.capacity = 4096;
+	boundary.conn->buf.used = effective_mss;
+	boundary.conn->buf.adv_cnt = 0;
+	boundary.conn->mss = 300;
+	boundary.conn->path_mtu = 330;
+	test_api_consumed(boundary.ws, boundary.conn, effective_mss,
 			&boundary.state);
-	if (boundary.conn.rx_buf_cnt.used ||
-			boundary.conn.rx_buf_cnt.adv_cnt) {
+	if (boundary.conn->buf.used ||
+			boundary.conn->buf.adv_cnt) {
 		*why = "receiver SWS threshold did not account for TCP options";
 		return RESULT_FAIL;
 	}
@@ -6827,11 +6627,11 @@ static enum result test_receiver_sws_avoidance(const char **why)
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
 	f.state.defer_payload_consumption = 1;
-	initial_ack = __iip_ntohl(f.conn.ack_seq_be);
-	initial_window = (uint32_t)__iip_ntohs(__iip_compute_tcp_win_be(
-			f.conn.rx_buf_cnt.limit - f.conn.rx_buf_cnt.used,
-			IIP_CONF_TCP_OPT_WS)) <<
-		IIP_CONF_TCP_OPT_WS;
+	initial_ack = f.conn->ack_seq;
+	initial_window = (uint32_t)ii_ntohs(test_compute_tcp_window(
+			f.conn->buf.capacity - f.conn->buf.used,
+			TEST_RX_WINDOW_SCALE)) <<
+		TEST_RX_WINDOW_SCALE;
 	initial_right_edge = initial_ack + initial_window;
 
 	fixture_incoming_spec(&f, &spec, initial_ack, payload,
@@ -6839,7 +6639,7 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	for (i = 0; i < f.state.out_cnt; i++) {
 		if (PB_TCP_HDR_HAS_ACK(f.state.out[i]) &&
-				__iip_ntohl(PB_TCP(f.state.out[i])->ack_seq_be) ==
+				ii_ntohl(PB_TCP(f.state.out[i])->ack_seq_be) ==
 				initial_ack + sizeof(payload)) {
 			received_ack = f.state.out[i];
 			break;
@@ -6849,10 +6649,10 @@ static enum result test_receiver_sws_avoidance(const char **why)
 		*why = "receiver did not emit an observable ACK for the SWS test";
 		return RESULT_FAIL;
 	}
-	received_ack_seq = __iip_ntohl(PB_TCP(received_ack)->ack_seq_be);
+	received_ack_seq = ii_ntohl(PB_TCP(received_ack)->ack_seq_be);
 	received_window =
-		(uint32_t)__iip_ntohs(PB_TCP(received_ack)->win_be) <<
-		IIP_CONF_TCP_OPT_WS;
+		(uint32_t)ii_ntohs(PB_TCP(received_ack)->win_be) <<
+		TEST_RX_WINDOW_SCALE;
 	received_right_edge = received_ack_seq + received_window;
 	if (received_right_edge + scale_slop < initial_right_edge) {
 		*why = "a short segment moved the advertised receive-window right edge left";
@@ -6865,15 +6665,15 @@ static enum result test_receiver_sws_avoidance(const char **why)
 		*why = "receiver did not retain the deferred payload length";
 		return RESULT_FAIL;
 	}
-	iip_tcp_rxbuf_consumed(f.ws, &f.conn,
+	test_api_consumed(f.ws, f.conn,
 			f.state.deferred_payload_len, opaque);
 	f.state.deferred_payload_len = 0;
 	consumed_pkt = fixture_packet(&f, 0, 0, 0);
 	if (!consumed_pkt)
 		return RESULT_FAIL;
 	consumed_window =
-		(uint32_t)__iip_ntohs(PB_TCP(consumed_pkt)->win_be) <<
-		IIP_CONF_TCP_OPT_WS;
+		(uint32_t)ii_ntohs(PB_TCP(consumed_pkt)->win_be) <<
+		TEST_RX_WINDOW_SCALE;
 	iip_ops_pkt_free(consumed_pkt, opaque);
 	if (consumed_window > received_window + scale_slop) {
 		*why = "consuming one octet caused a small receive-window update";
@@ -6890,10 +6690,10 @@ static int broadcast_multicast_scenario(void)
 	if (!fixture_init(&f))
 		return 0;
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
-	spec.dst_ip_be = __iip_htonl(0xe0000001U);
+	spec.dst_ip_be = ii_htonl(0xe0000001U);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.dst_ip_be = __iip_htonl(0xffffffffU);
+	spec.dst_ip_be = ii_htonl(0xffffffffU);
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	return f.state.payload_chunk_count == 0 && f.state.out_cnt == 0;
@@ -6925,7 +6725,7 @@ static enum result test_ack_aggregation(const char **why)
 	input[0] = build_tcp_packet(&spec, &f.state);
 	fixture_incoming_spec(&f, &spec, 1, &payload[1], 1);
 	input[1] = build_tcp_packet(&spec, &f.state);
-	assert(iip_run(f.ws, f.local_mac, f.conn.local_ip4_be,
+	assert(test_api_run(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
 			input, 2, &next_us, &f.state) == 2);
 	return f.state.payload_chunk_count == 2 && f.state.out_cnt <= 1
 		? RESULT_PASS : RESULT_FAIL;
@@ -6946,14 +6746,14 @@ static int no_indefinite_buffering_scenario(void)
 	if (!fixture_init(&f))
 		return 0;
 	fake_clock_set_ns(&f.state, 1000000000ULL);
-	f.conn.peer_win = 65535;
-	f.conn.acked_seq = __iip_ntohl(f.conn.seq_be);
-	f.conn.ack_seq_sent = __iip_ntohl(f.conn.ack_seq_be);
+	f.conn->peer_win = 65535;
+	f.conn->acked_seq = f.conn->seq;
+	f.conn->ack_seq_sent = f.conn->ack_seq;
 	payload = iip_ops_pkt_alloc(&f.state);
 	((uint8_t *)iip_ops_pkt_get_data(payload, &f.state))[0] = 0x5a;
 	iip_ops_pkt_set_len(payload, 1, &f.state);
-	iip_tcp_send(f.ws, &f.conn, payload, 0, &f.state);
-	assert(iip_run(f.ws, f.local_mac, f.conn.local_ip4_be,
+	test_api_send(f.ws, f.conn, payload, 0, &f.state);
+	assert(test_api_run(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
 			NULL, 0, &next_us, &f.state) == 0);
 	for (i = 0; i < f.state.out_cnt; i++) {
 		if (PB_TCP_PAYLOAD_LEN(f.state.out[i]) == 1 &&
@@ -6989,8 +6789,8 @@ static int invalid_source_syn_scenario(void)
 		if (!fixture_init(&f))
 			return 0;
 		fixture_incoming_spec(&f, &spec, 100, NULL, 0);
-		spec.src_ip_be = __iip_htonl(invalid_sources[i]);
-		spec.src_port_be = __iip_htons(30000 + i);
+		spec.src_ip_be = ii_htonl(invalid_sources[i]);
+		spec.src_port_be = ii_htons(30000 + i);
 		spec.tcp_flags = TEST_TCP_SYN;
 		fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 		if (f.state.out_cnt != 0)
@@ -7002,8 +6802,8 @@ static int invalid_source_syn_scenario(void)
 		if (!fixture_init(&f))
 			return 0;
 		fixture_incoming_spec(&f, &spec, 100, NULL, 0);
-		spec.src_ip_be = __iip_htonl(0x01000001U); /* valid boundary above 0/8 */
-		spec.src_port_be = __iip_htons(31000);
+		spec.src_ip_be = ii_htonl(0x01000001U); /* valid boundary above 0/8 */
+		spec.src_port_be = ii_htons(31000);
 		spec.tcp_flags = TEST_TCP_SYN;
 		fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 		if (f.state.out_cnt == 0)
@@ -7036,14 +6836,14 @@ static enum result test_unaligned_options(const char **why)
 	tcp_packet_add_nop(&spec);
 	tcp_packet_add_option(&spec, 8, timestamp, sizeof(timestamp));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn.state == __IIP_TCP_STATE_ESTABLISHED
+	return f.conn->state == II_TCP_STATE_ESTABLISHED
 		? RESULT_PASS : RESULT_FAIL;
 }
 
 static enum result test_window_unsigned(const char **why)
 {
 	(void)why;
-	return __iip_ntohs(__iip_compute_tcp_win_be(65535, 0)) == 65535
+	return ii_ntohs(test_compute_tcp_window(65535, 0)) == 65535
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -7072,7 +6872,7 @@ static enum result test_syn_options(const char **why)
 	mss = option_find(pkt, 2);
 	if (mss)
 		memcpy(&advertised, &mss[2], sizeof(advertised));
-	if (!mss || mss[1] != 4 || __iip_ntohs(advertised) != IIP_CONF_TCP_OPT_MSS) {
+	if (!mss || mss[1] != 4 || ii_ntohs(advertised) != IIP_CONF_TCP_INIT_MSS) {
 		iip_ops_pkt_free(pkt, &f.state);
 		return RESULT_FAIL;
 	}
@@ -7107,7 +6907,7 @@ static enum result test_ttl(const char **why)
 	(void)why;
 	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 0)))
 		return RESULT_FAIL;
-	ok = PB_IP4(pkt)->ttl == IIP_CONF_IP4_TTL;
+	ok = PB_IP4(pkt)->ttl == TEST_IP4_TTL;
 	iip_ops_pkt_free(pkt, &f.state);
 	return ok ? RESULT_PASS : RESULT_FAIL;
 }
@@ -7134,12 +6934,12 @@ static enum result test_diffserv(const char **why)
 
 	/* An application-selected value is applied to data and retransmission. */
 	fixture_prepare_sender(&f);
-	IIP_EX_TCP_SET_DIFFSERV(f.ws, &f.conn, diffserv, &f.state);
+	test_set_diffserv(f.ws, f.conn, diffserv, &f.state);
 	if (!fixture_send_data(&f, 1) || f.state.out_cnt != 1 ||
 			PB_IP4(f.state.out[0])->tos != diffserv ||
 			!ip4_checksum_valid(f.state.out[0]))
 		return RESULT_FAIL;
-	initial_rto = f.conn.head[2][0]->tcp.rto_ms;
+	initial_rto = f.conn->rto_ms;
 	free_output(&f.state);
 	test_event_log_clear(&f.state);
 	fake_clock_advance_ms(&f.state, (uint64_t)initial_rto + 1);
@@ -7244,14 +7044,14 @@ static enum result test_ip4_tx_basic_header(const char **why)
 
 	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 1)))
 		return RESULT_FAIL;
-	total_len = __iip_ntohs(PB_IP4(pkt)->len_be);
+	total_len = ii_ntohs(PB_IP4(pkt)->len_be);
 	if ((PB_IP4(pkt)->vl >> 4) != 4 ||
 			(PB_IP4(pkt)->vl & 0x0f) < 5 ||
 			total_len != iip_ops_pkt_get_len(pkt, opaque) -
 				iip_ops_l2_hdr_len(pkt, opaque) ||
 			PB_IP4(pkt)->proto != 6 ||
-			PB_IP4(pkt)->src_be != f.conn.local_ip4_be ||
-			PB_IP4(pkt)->dst_be != f.conn.peer_ip4_be ||
+			PB_IP4(pkt)->src_be != ii_htonl(f.conn->src_ip[0]) ||
+			PB_IP4(pkt)->dst_be != ii_htonl(f.conn->dst_ip[0]) ||
 			!ip4_checksum_valid(pkt)) {
 		*why = "generated IPv4 header fields are inconsistent";
 		iip_ops_pkt_free(pkt, opaque);
@@ -7270,7 +7070,7 @@ static enum result test_ip4_tx_atomic_datagram(const char **why)
 
 	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 0)))
 		return RESULT_FAIL;
-	fragment = __iip_ntohs(PB_IP4(pkt)->off_be);
+	fragment = ii_ntohs(PB_IP4(pkt)->off_be);
 	iip_ops_pkt_free(pkt, opaque);
 	if ((fragment & 0x4000) == 0 || (fragment & 0x3fff) != 0) {
 		*why = "generated datagram is not atomic (DF=1, MF=0, offset=0)";
@@ -7336,7 +7136,7 @@ static enum result test_ip4_rx_total_length_below_ihl(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) - 1);
+	PB_IP4(pkt)->len_be = ii_htons(sizeof(struct iip_ip4_hdr) - 1);
 	update_ip4_checksum(pkt);
 	fixture_deliver(&f, pkt);
 	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
@@ -7353,7 +7153,7 @@ static enum result test_ip4_rx_truncated_total_length(const char **why)
 		return RESULT_FAIL;
 	build_fixture_input(&f, &spec, &pkt);
 	PB_IP4(pkt)->len_be =
-		__iip_htons(__iip_ntohs(PB_IP4(pkt)->len_be) + 1);
+		ii_htons(ii_ntohs(PB_IP4(pkt)->len_be) + 1);
 	update_ip4_checksum(pkt);
 	fixture_deliver(&f, pkt);
 	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
@@ -7369,7 +7169,7 @@ static enum result test_ip4_rx_header_checksum(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->csum_be ^= __iip_htons(1);
+	PB_IP4(pkt)->csum_be ^= ii_htons(1);
 	fixture_deliver(&f, pkt);
 	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
 }
@@ -7384,7 +7184,7 @@ static enum result test_ip4_rx_reserved_flag(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->off_be = __iip_htons(0x8000);
+	PB_IP4(pkt)->off_be = ii_htons(0x8000);
 	update_ip4_checksum(pkt);
 	fixture_deliver(&f, pkt);
 	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
@@ -7400,7 +7200,7 @@ static enum result test_ip4_rx_other_destination(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->dst_be = __iip_htonl(0xc0000263U);
+	PB_IP4(pkt)->dst_be = ii_htonl(0xc0000263U);
 	update_ip4_checksum(pkt);
 	update_tcp_checksum(pkt);
 	fixture_deliver(&f, pkt);
@@ -7423,7 +7223,7 @@ static enum result test_ip4_rx_l2_padding(const char **why)
 			0xa5, 8);
 	iip_ops_pkt_set_len(pkt, original_len + 8, &f.state);
 	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 1 && f.conn.seq_next_expected == 1
+	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 1
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -7478,7 +7278,7 @@ static enum result test_ip4_rx_576_octets(const char **why)
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 	pkt = build_tcp_packet(&spec, &f.state);
 	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 1 && f.conn.seq_next_expected == 536
+	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 536
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -7511,7 +7311,7 @@ static enum result test_ip4_fragment_reassembly(const char **why)
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 	datagram = build_tcp_packet(&spec, &f.state);
 	ip_header_len = (PB_IP4(datagram)->vl & 0x0f) * 4;
-	ip_payload_len = __iip_ntohs(PB_IP4(datagram)->len_be) -
+	ip_payload_len = ii_ntohs(PB_IP4(datagram)->len_be) -
 		ip_header_len;
 	assert(ip_payload_len > 24);
 
@@ -7520,12 +7320,12 @@ static enum result test_ip4_fragment_reassembly(const char **why)
 			ip_payload_len - 24, 0);
 	fragments[1] = fixture_ip4_fragment(&f, datagram, 0, 24, 1);
 	iip_ops_pkt_free(datagram, &f.state);
-	deliver(f.ws, f.local_mac, f.conn.local_ip4_be, fragments,
+	deliver(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]), fragments,
 			ARRAY_LENGTH(fragments), &f.state);
 	return f.state.payload_chunk_count == ARRAY_LENGTH(fragments) &&
-		f.conn.seq_next_expected == sizeof(payload) &&
+		f.conn->seq_next_expected == sizeof(payload) &&
 		f.state.next_payload == sizeof(payload) &&
-		f.ws->queue.ip4_rx_fragment[0] == NULL
+		!test_fragments_pending(f.ws)
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -7562,20 +7362,20 @@ static int test_ip4_in_order_fragment_reassembly_scenario(void)
 	fragments[1] = fixture_ip4_fragment(&f, datagram, 24,
 			ip_payload_len - 24, 0);
 	iip_ops_pkt_free(datagram, &f.state);
-	deliver(f.ws, f.local_mac, f.conn.local_ip4_be, fragments,
+	deliver(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]), fragments,
 			ARRAY_LENGTH(fragments), &f.state);
 
 	TEST_ACCUMULATE(ok,
 			f.state.payload_chunk_count == ARRAY_LENGTH(fragments),
 			"expected %zu reassembled payload chunks, got %u",
 			ARRAY_LENGTH(fragments), f.state.payload_chunk_count);
-	TEST_ACCUMULATE(ok, f.conn.seq_next_expected == sizeof(payload),
+	TEST_ACCUMULATE(ok, f.conn->seq_next_expected == sizeof(payload),
 			"expected TCP next sequence %zu after reassembly, got %u",
-			sizeof(payload), f.conn.seq_next_expected);
+			sizeof(payload), f.conn->seq_next_expected);
 	TEST_ACCUMULATE(ok, f.state.next_payload == sizeof(payload),
 			"expected %zu payload bytes after reassembly, got %u",
 			sizeof(payload), f.state.next_payload);
-	TEST_ACCUMULATE(ok, f.ws->queue.ip4_rx_fragment[0] == NULL,
+	TEST_ACCUMULATE(ok, !test_fragments_pending(f.ws),
 			"fragment queue still contains incomplete reassembly contexts");
 	return ok;
 }
@@ -7622,12 +7422,12 @@ static enum result test_ip4_reassembly_timeout(const char **why)
 	fragment = fixture_ip4_fragment(&f, datagram, 0, 24, 1);
 	iip_ops_pkt_free(datagram, &f.state);
 	fixture_deliver(&f, fragment);
-	if (!f.ws->queue.ip4_rx_fragment[0])
+	if (!test_fragments_pending(f.ws))
 		return RESULT_FAIL;
 
 	fake_clock_advance_sec(&f.state, 61);
 	fixture_run_timers(&f);
-	return f.ws->queue.ip4_rx_fragment[0] == NULL
+	return !test_fragments_pending(f.ws)
 		? RESULT_PASS : RESULT_FAIL;
 }
 
@@ -7670,8 +7470,8 @@ static enum result test_ip4_malformed_option_error(const char **why)
 	reply = output_nth_ethertype(&f.state, 0x0800, 0);
 	reply_ip4 = PB_IP4(reply);
 	if (reply_ip4->proto != 1 ||
-			reply_ip4->src_be != f.conn.local_ip4_be ||
-			reply_ip4->dst_be != f.conn.peer_ip4_be) {
+			reply_ip4->src_be != ii_htonl(f.conn->src_ip[0]) ||
+			reply_ip4->dst_be != ii_htonl(f.conn->dst_ip[0])) {
 		*why = "ICMP Parameter Problem has an invalid IPv4 envelope";
 		return RESULT_FAIL;
 	}
@@ -7690,7 +7490,7 @@ static enum result test_ip4_malformed_option_error(const char **why)
 		return RESULT_FAIL;
 	}
 	reply_ip_header_len = (uint16_t)(reply_ip4->vl & 0x0f) << 2;
-	reply_total_len = __iip_ntohs(reply_ip4->len_be);
+	reply_total_len = ii_ntohs(reply_ip4->len_be);
 	if (reply_total_len < reply_ip_header_len + sizeof(*icmp)) {
 		*why = "ICMP Parameter Problem is truncated before its quotation";
 		return RESULT_FAIL;
@@ -7899,7 +7699,7 @@ static int rfc9293_test_main(void)
 	fflush(stdout);
 	for (i = 0; i < ARRAY_LENGTH(requirement_tests); i++) {
 		const char *why = NULL;
-		enum result result = requirement_tests[i].run(&why);
+		enum result result = run_isolated_test(requirement_tests[i].run, &why);
 
 		report_requirement_result(i, result, why, &summary);
 	}
@@ -7923,7 +7723,7 @@ static int ip4_requirement_test_main(void)
 		const struct ip4_requirement_test *test =
 			&ip4_requirement_tests[i];
 		const char *why = NULL;
-		enum result result = test->run(&why);
+		enum result result = run_isolated_test(test->run, &why);
 
 		if (result == RESULT_PASS) {
 			printf("ok %u - %s %s\n", i + 1, test->id,
@@ -7985,10 +7785,10 @@ static void packet_builder_self_test(void)
 	tcp_packet_spec_init(&spec);
 	memcpy(spec.src_mac, (uint8_t[]){ 0x02, 1, 2, 3, 4, 5 }, 6);
 	memcpy(spec.dst_mac, (uint8_t[]){ 0x04, 6, 7, 8, 9, 10 }, 6);
-	spec.src_ip_be = __iip_htonl(0xc0000201U);
-	spec.dst_ip_be = __iip_htonl(0xc6336402U);
-	spec.src_port_be = __iip_htons(12345);
-	spec.dst_port_be = __iip_htons(80);
+	spec.src_ip_be = ii_htonl(0xc0000201U);
+	spec.dst_ip_be = ii_htonl(0xc6336402U);
+	spec.src_port_be = ii_htons(12345);
+	spec.dst_port_be = ii_htons(80);
 	spec.seq = 100;
 	spec.ack_seq = 200;
 	spec.tcp_flags = TEST_TCP_ACK | TEST_TCP_PSH;
@@ -8002,7 +7802,7 @@ static void packet_builder_self_test(void)
 
 	pkt = build_tcp_packet(&spec, opaque);
 	assert(iip_ops_pkt_get_len(pkt, opaque) ==
-			14 + __iip_ntohs(PB_IP4(pkt)->len_be));
+			14 + ii_ntohs(PB_IP4(pkt)->len_be));
 	assert((PB_IP4(pkt)->vl & 0x0f) == 6);
 	assert(PB_TCP_HDR_LEN(pkt) == 7);
 	assert(PB_TCP_PAYLOAD_LEN(pkt) == sizeof(payload));
@@ -8026,11 +7826,12 @@ static void packet_builder_self_test(void)
 static void event_log_self_test(void)
 {
 	struct test_state state = { 0 };
-	struct iip_tcp_conn conn = { 0 };
+	struct ii_tcp_conn object = { 0 };
+	struct ii_tcp_conn *conn = &object;
 
 	fake_clock_set_ns(&state, 1000000000ULL);
-	conn.state = __IIP_TCP_STATE_ESTABLISHED;
-	test_event_tcp_state_set(&state, &conn, conn.state);
+	conn->state = II_TCP_STATE_ESTABLISHED;
+	test_event_tcp_state_set(&state, conn, conn->state);
 	test_event_timer(&state, TEST_TIMER_FAST, 1000);
 	test_event_append(&state, TEST_EVENT_CALLBACK, TEST_CALLBACK_CONNECTED,
 			&conn, 0, 0, 0, 0);
@@ -8048,7 +7849,7 @@ static int udp_checksum_valid(void *pkt)
 	struct iip_l4_ip4_pseudo_hdr pseudo;
 	uint8_t *b[2];
 	uint16_t l[2];
-	uint16_t supplied = __iip_ntohs(PB_UDP(pkt)->csum_be);
+	uint16_t supplied = ii_ntohs(PB_UDP(pkt)->csum_be);
 
 	pseudo.ip4_src_be = PB_IP4(pkt)->src_be;
 	pseudo.ip4_dst_be = PB_IP4(pkt)->dst_be;
@@ -8059,7 +7860,7 @@ static int udp_checksum_valid(void *pkt)
 	b[1] = (uint8_t *)PB_UDP(pkt);
 	l[0] = sizeof(pseudo);
 	l[1] = PB_UDP_TOTAL_LEN(pkt);
-	return supplied == __iip_netcsum16(b, l, 2, supplied);
+	return supplied == test_netcsum16(b, l, 2, supplied);
 }
 
 static void *fixture_udp_packet(struct fixture *f, const uint8_t *payload,
@@ -8074,9 +7875,12 @@ static void *fixture_udp_packet(struct fixture *f, const uint8_t *payload,
 		memcpy(iip_ops_pkt_get_data(data, &f->state), payload, payload_len);
 		iip_ops_pkt_set_len(data, payload_len, &f->state);
 	}
-	assert(iip_udp_send(f->ws, f->peer_mac, f->conn.peer_ip4_be,
-			__iip_htons(20000), f->local_mac, f->conn.local_ip4_be,
-			__iip_htons(10000), data, &f->state) == 0);
+	memcpy(f->state.local_mac, f->peer_mac, 6);
+	f->state.local_ip4_be = ii_htonl(f->conn->dst_ip[0]);
+	assert(iip_udp_ipv4_ethernet_send_copy(f->ws, f->peer_mac, ii_htonl(f->conn->dst_ip[0]),
+			ii_htons(20000), f->local_mac, ii_htonl(f->conn->src_ip[0]),
+			ii_htons(10000), 0, data ? iip_ops_pkt_get_data(data, &f->state) : NULL, payload_len, &f->state) == 0);
+	iip_ops_pkt_free(data, &f->state);
 	assert(f->state.out_cnt == 1);
 	pkt = f->state.out[0];
 	f->state.out_cnt = 0;
@@ -8122,13 +7926,13 @@ static void udp_path_self_test(void)
 
 	test_event_log_clear(&f.state);
 	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
-	PB_UDP(pkt)->csum_be ^= __iip_htons(1);
+	PB_UDP(pkt)->csum_be ^= ii_htons(1);
 	fixture_deliver(&f, pkt);
 	assert_udp_delivery(&f.state, 0, 0, 0);
 
 	test_event_log_clear(&f.state);
 	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
-	PB_UDP(pkt)->len_be = __iip_htons(PB_UDP_TOTAL_LEN(pkt) - 1);
+	PB_UDP(pkt)->len_be = ii_htons(PB_UDP_TOTAL_LEN(pkt) - 1);
 	fixture_deliver(&f, pkt);
 	assert_udp_delivery(&f.state, 0, 0, 0);
 	free_output(&f.state);
@@ -8138,7 +7942,6 @@ static void udp_fragment_limit_case(unsigned int fragment_count,
 		uint8_t expect_delivery)
 {
 	struct fixture f;
-	struct pb *extra_pbs;
 	uint8_t *payload;
 	void *datagram;
 	void **fragments;
@@ -8150,15 +7953,6 @@ static void udp_fragment_limit_case(unsigned int fragment_count,
 	assert(fragment_count <= TEST_PKT_MAX);
 	assert(fragment_count <= (UINT16_MAX - sizeof(struct iip_udp_hdr)) / 8);
 	assert(fixture_init(&f));
-
-	/*
-	 * iip_run() retains every incomplete fragment, so provide enough packet
-	 * descriptors in addition to fixture_init()'s normal pool.
-	 */
-	extra_pbs = calloc(fragment_count, iip_pb_size());
-	assert(extra_pbs);
-	for (i = 0; i < fragment_count; i++)
-		iip_add_pb(f.ws, &extra_pbs[i]);
 
 	/*
 	 * Keep the first fragment large enough to contain both the UDP header and
@@ -8184,7 +7978,7 @@ static void udp_fragment_limit_case(unsigned int fragment_count,
 		payload_offset += fragment_len;
 	}
 	iip_ops_pkt_free(datagram, &f.state);
-	deliver(f.ws, f.local_mac, f.conn.local_ip4_be, fragments,
+	deliver(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]), fragments,
 			(uint16_t)fragment_count, &f.state);
 
 	assert_udp_delivery(&f.state, expect_delivery, payload_len, payload[0]);
@@ -8195,10 +7989,10 @@ static void udp_fragment_limit_case(unsigned int fragment_count,
 
 static void udp_fragment_limit_self_test(void)
 {
-	_Static_assert(IIP_CONF_IP4_MAX_FRAG + 1 <= TEST_PKT_MAX,
+	_Static_assert(II_CONF_IPV4_FRAG_CNT_MAX + 1 <= TEST_PKT_MAX,
 			"fragment limit test exceeds the test packet array");
-	udp_fragment_limit_case(IIP_CONF_IP4_MAX_FRAG, 1);
-	udp_fragment_limit_case(IIP_CONF_IP4_MAX_FRAG + 1, 0);
+	udp_fragment_limit_case(II_CONF_IPV4_FRAG_CNT_MAX, 1);
+	udp_fragment_limit_case(II_CONF_IPV4_FRAG_CNT_MAX + 1, 0);
 }
 
 static void arp_path_self_test(void)
@@ -8209,14 +8003,14 @@ static void arp_path_self_test(void)
 	uint32_t sender_ip4_be, target_ip4_be;
 
 	assert(fixture_init(&f));
-	iip_arp_request(f.ws, f.peer_mac, f.conn.peer_ip4_be,
-			f.conn.local_ip4_be, &f.state);
+	test_api_arp_request(f.ws, f.peer_mac, ii_htonl(f.conn->dst_ip[0]),
+			ii_htonl(f.conn->src_ip[0]), &f.state);
 	assert(f.state.out_cnt == 1);
 	request = f.state.out[0];
 	f.state.out_cnt = 0;
-	assert(__iip_ntohs(iip_ops_l2_ethertype_be(request, &f.state)) ==
+	assert(ii_ntohs(iip_ops_l2_ethertype_be(request, &f.state)) ==
 			0x0806);
-	assert(__iip_ntohs(PB_ARP(request)->op_be) == 1);
+	assert(ii_ntohs(PB_ARP(request)->op_be) == 1);
 	assert(!memcmp(iip_ops_l2_hdr_dst_ptr(request, &f.state),
 			(uint8_t[]){ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }, 6));
 	assert(!memcmp(PB_ARP_HW_SENDER(request), f.peer_mac, 6));
@@ -8224,14 +8018,14 @@ static void arp_path_self_test(void)
 			sizeof(sender_ip4_be));
 	memcpy(&target_ip4_be, PB_ARP_IP_TARGET(request),
 			sizeof(target_ip4_be));
-	assert(sender_ip4_be == f.conn.peer_ip4_be);
-	assert(target_ip4_be == f.conn.local_ip4_be);
+	assert(sender_ip4_be == ii_htonl(f.conn->dst_ip[0]));
+	assert(target_ip4_be == ii_htonl(f.conn->src_ip[0]));
 
 	fixture_deliver(&f, request);
 	assert(f.state.out_cnt == 1);
 	reply = f.state.out[0];
 	f.state.out_cnt = 0;
-	assert(__iip_ntohs(PB_ARP(reply)->op_be) == 2);
+	assert(ii_ntohs(PB_ARP(reply)->op_be) == 2);
 	assert(!memcmp(iip_ops_l2_hdr_dst_ptr(reply, &f.state),
 			f.peer_mac, 6));
 	assert(!memcmp(PB_ARP_HW_SENDER(reply), f.local_mac, 6));
@@ -8239,33 +8033,123 @@ static void arp_path_self_test(void)
 			sizeof(sender_ip4_be));
 	memcpy(&target_ip4_be, PB_ARP_IP_TARGET(reply),
 			sizeof(target_ip4_be));
-	assert(sender_ip4_be == f.conn.local_ip4_be);
-	assert(target_ip4_be == f.conn.peer_ip4_be);
+	assert(sender_ip4_be == ii_htonl(f.conn->src_ip[0]));
+	assert(target_ip4_be == ii_htonl(f.conn->dst_ip[0]));
 
 	{
 		void *input[1] = { reply };
-		deliver(f.ws, f.peer_mac, f.conn.peer_ip4_be, input, 1, &f.state);
+		deliver(f.ws, f.peer_mac, ii_htonl(f.conn->dst_ip[0]), input, 1, &f.state);
 	}
 	assert(test_event_count(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_ARP_REPLY) == 1);
 	event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_ARP_REPLY, 0);
 	assert(event && event->value[0] == 2 &&
-			event->value[1] == f.conn.local_ip4_be &&
-			event->value[2] == f.conn.peer_ip4_be);
+			event->value[1] == ii_htonl(f.conn->src_ip[0]) &&
+			event->value[2] == ii_htonl(f.conn->dst_ip[0]));
 	free_output(&f.state);
 }
 
 
-static void run_self_tests(void)
+static void api_pump(struct iip_workspace *a, struct test_state *sa,
+		struct iip_workspace *b, struct test_state *sb)
 {
-	fake_clock_self_test();
-	packet_builder_self_test();
-	event_log_self_test();
-	buffer_shortage_self_test();
-	udp_path_self_test();
-	udp_fragment_limit_self_test();
-	arp_path_self_test();
+	uint32_t next;
+	for (unsigned int round = 0; round < 8; round++) {
+		unsigned int n = sa->out_cnt;
+		void *input[TEST_PKT_MAX];
+		memcpy(input, sa->out, n * sizeof(*input));
+		sa->out_cnt = 0;
+		assert(test_api_run(b, sb->local_mac, sb->local_ip4_be, input,
+				(uint16_t)n, &next, sb) == n);
+		n = sb->out_cnt;
+		memcpy(input, sb->out, n * sizeof(*input));
+		sb->out_cnt = 0;
+		assert(test_api_run(a, sa->local_mac, sa->local_ip4_be, input,
+				(uint16_t)n, &next, sa) == n);
+		if (!sa->out_cnt && !sb->out_cnt) return;
+	}
+	assert(!"API smoke link did not become idle");
+}
+
+static void current_api_self_test(void)
+{
+	struct iip_workspace *a = calloc(1, sizeof(*a));
+	struct iip_workspace *b = calloc(1, sizeof(*b));
+	struct test_state sa = { 0 }, sb = { 0 };
+	uint8_t amac[6] = { 2 }, bmac[6] = { 4 };
+	uint32_t aip = ii_htonl(0xc0000201U), bip = ii_htonl(0xc6336402U);
+	assert(a && b);
+	test_workspace_init(a);
+	test_workspace_init(b);
+	sa.use_fake_clock = sb.use_fake_clock = 1;
+	sa.now_ns = sb.now_ns = 1000000000ULL;
+	sa.quiet_payload = sb.quiet_payload = 1;
+	memcpy(sa.local_mac, amac, 6);
+	memcpy(sb.local_mac, bmac, 6);
+	sa.local_ip4_be = aip;
+	sb.local_ip4_be = bip;
+	assert(test_api_connect(a, amac, aip, ii_htons(10000), bmac,
+			bip, ii_htons(20000), &sa) == 0);
+	uint32_t next;
+	assert(test_api_run(a, amac, aip, NULL, 0, &next, &sa) == 0);
+	api_pump(a, &sa, b, &sb);
+	assert(a->tcp_conns.array[0].state == II_TCP_STATE_ESTABLISHED);
+	assert(b->tcp_conns.array[0].state == II_TCP_STATE_ESTABLISHED);
+	assert(test_event_count(&sa, TEST_EVENT_CALLBACK, TEST_CALLBACK_CONNECTED) == 1);
+	assert(test_event_count(&sb, TEST_EVENT_CALLBACK, TEST_CALLBACK_ACCEPTED) == 1);
+	/* Exercise vector send and both receive callbacks through actual frames. */
+	void *pkt = iip_ops_pkt_alloc(&sa);
+	memcpy(iip_ops_pkt_get_data(pkt, &sa), (uint8_t[]){ 0, 1, 2, 3 }, 4);
+	iip_ops_pkt_set_len(pkt, 4, &sa);
+	assert(test_api_send(a, &a->tcp_conns.array[0], pkt, 0, &sa) == 0);
+	assert(test_api_run(a, amac, aip, NULL, 0, &next, &sa) == 0);
+	api_pump(a, &sa, b, &sb);
+	assert(sb.payload_byte_count == 4 && sb.next_payload == 4);
+	assert(a->tcp_conns.array[0].acked_seq == a->tcp_conns.array[0].seq);
+	pkt = iip_ops_pkt_alloc(&sb);
+	memcpy(iip_ops_pkt_get_data(pkt, &sb), (uint8_t[]){ 0, 1, 2, 3 }, 4);
+	iip_ops_pkt_set_len(pkt, 4, &sb);
+	assert(test_api_send(b, &b->tcp_conns.array[0], pkt, 0, &sb) == 0);
+	assert(test_api_run(b, bmac, bip, NULL, 0, &next, &sb) == 0);
+	api_pump(a, &sa, b, &sb);
+	assert(sa.payload_byte_count == 4 && sa.next_payload == 4);
+	/* CLOSE-WAIT callback closes the passive endpoint via its connection ID. */
+	sb.close_wait.auto_close = 1;
+	assert(test_api_close(a, &a->tcp_conns.array[0], &sa) == 0);
+	assert(test_api_run(a, amac, aip, NULL, 0, &next, &sa) == 0);
+	api_pump(a, &sa, b, &sb);
+	assert(sb.close_wait.count == 1);
+	assert(a->tcp_conns.array[0].state == II_TCP_STATE_TIME_WAIT);
+	assert(b->tcp_conns.array[0].state == II_TCP_STATE_CLOSED);
+	free_output(&sa);
+	free_output(&sb);
+	free(a);
+	free(b);
+}
+
+static int run_self_tests(void)
+{
+	static const struct { const char *name; void (*run)(void); } tests[] = {
+		{ "fake clock", fake_clock_self_test },
+		{ "packet builder", packet_builder_self_test },
+		{ "event log", event_log_self_test },
+		{ "buffer shortage", buffer_shortage_self_test },
+		{ "UDP paths", udp_path_self_test },
+		{ "UDP fragment limit", udp_fragment_limit_self_test },
+		{ "ARP paths", arp_path_self_test },
+		{ "current API connect/data/close", current_api_self_test },
+	};
+	int failed = 0;
+	for (unsigned int i = 0; i < ARRAY_LENGTH(tests); i++) {
+		fflush(NULL);
+		pid_t child = fork();
+		assert(child >= 0);
+		if (!child) { alarm(10); tests[i].run(); fflush(NULL); _exit(0); }
+		if (!wait_test_child(child, 11000)) { fprintf(stderr, "Self-test failed: %s\n", tests[i].name); failed++; }
+	}
+	fprintf(stderr, "Self-test summary: %zu passed, %d failed\n", ARRAY_LENGTH(tests) - failed, failed);
+	return failed != 0;
 }
 
 static int robustness_test_main(void)
@@ -8294,7 +8178,7 @@ static int robustness_test_main(void)
 	fflush(stdout);
 	for (i = 0; i < ARRAY_LENGTH(tests); i++) {
 		const char *why = NULL;
-		enum result result = tests[i].run(&why);
+		enum result result = run_isolated_test(tests[i].run, &why);
 
 		if (result == RESULT_PASS) {
 			printf("ok %u - ROBUST-%u %s\n", i + 1, i + 1,
@@ -8340,19 +8224,19 @@ static int fast_open_test_main(uint8_t strict)
 	printf("TAP version 13\n1..%zu\n", ARRAY_LENGTH(tests));
 	for (i = 0; i < ARRAY_LENGTH(tests); i++) {
 		const char *why = NULL;
-		enum result result = tests[i].run(&why);
+		enum result result = run_isolated_test(tests[i].run, &why);
 
 		if (result == RESULT_PASS) {
 			printf("ok %u - TFO-%u %s\n",
 					i + 1, i + 1, tests[i].description);
-		} else if (strict) {
+		} else if (strict || test_process_failed) {
 			printf("not ok %u - TFO-%u %s%s%s\n",
 					i + 1, i + 1, tests[i].description,
 					why ? " - " : "", why ? why : "");
 			failed++;
 		} else {
 			printf("not ok %u - TFO-%u %s"
-					" # TODO TCP Fast Open is not implemented%s%s\n",
+					" # TODO TCP Fast Open requirement is not satisfied%s%s\n",
 					i + 1, i + 1, tests[i].description,
 					why ? " - " : "", why ? why : "");
 			unsupported++;
@@ -8387,10 +8271,13 @@ static int run_test_suites(void)
 
 int main(int argc, char **argv)
 {
+	if (argc == 2 && !strcmp(argv[1], "--self-tests"))
+		return run_self_tests();
 	if (argc == 2 && !strcmp(argv[1], "--fast-open"))
 		return fast_open_test_main(1);
 	(void)argc;
 	(void)argv;
-	run_self_tests();
-	return run_test_suites();
+	int self_result = run_self_tests();
+	int suite_result = run_test_suites();
+	return self_result || suite_result;
 }
