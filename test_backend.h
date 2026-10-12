@@ -23,6 +23,7 @@ static int test_backend_ethernet_header(uint8_t *, uint8_t *, uint16_t, void *);
 static bool test_backend_ethernet_match(uint8_t *, void *);
 static bool test_backend_ipv4_match(uint8_t *, void *);
 static bool test_backend_accept(struct iip_workspace *, uint32_t, void *);
+static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *, uint32_t, void *);
 static int test_backend_callback(struct iip_workspace *, uint32_t, uint32_t, enum test_backend_callback_type, void *);
 static int test_backend_udp(struct iip_workspace *, uint32_t, void *);
 static int test_backend_arp(struct iip_workspace *, void *, void *);
@@ -42,6 +43,8 @@ static void *test_current_opaque;
 #define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = test_backend_ipv4_match((uint8_t *)iip_ops_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16, opaque); } while (0)
 #define IIP_OPS_ETHERNET_PUSH() do { iip_ops_l2_push(pkt, opaque); iip_ret_int = 0; } while (0)
 #define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = test_backend_accept(w, pb_id, opaque); } while (0)
+#undef IIP_OPS_IPV4_TCP_INPUT_FILTER
+#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { iip_ret_bool = test_backend_ipv4_tcp_input_filter(w, pb_id, opaque); } while (0)
 #define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_CONNECTED, opaque); } while (0)
 #define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_ACCEPTED, opaque); } while (0)
 #define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_PAYLOAD, opaque); } while (0)

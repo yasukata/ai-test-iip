@@ -30,6 +30,22 @@ static bool test_backend_accept(struct iip_workspace *w, uint32_t id, void *opaq
 	return iip_ops_tcp_accept(w, &w->pbs.array[id], opaque);
 }
 
+static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *w,
+		uint32_t id, void *opaque)
+{
+	const uint8_t *ip = (const uint8_t *)iip_ops_pkt_get_data(
+		w->pbs.array[id].part_pkt[0], opaque) + II_ETH_HDR_LEN;
+	uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
+	uint32_t dst = ii_ntohl(ii_extract_ipv4_dst_be(ip));
+	/* This fixture has no subnet mask, so directed broadcasts are not
+	 * inferred from the address's last octet. true means discard. */
+	bool discard = src == UINT32_MAX || dst == UINT32_MAX ||
+		(dst >> 28) == 0xe;
+	if (discard)
+		((struct test_state *)opaque)->tcp_input_filter_rejected++;
+	return discard;
+}
+
 static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 {
 	struct ii_pb *p = &w->pbs.array[id];

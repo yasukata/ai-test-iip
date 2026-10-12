@@ -410,6 +410,7 @@ struct test_state {
 	uint32_t selected_source_ip4_be;
 	uint32_t source_address_query_count;
 	uint32_t source_address_query_peer_ip4_be;
+	unsigned int tcp_input_filter_rejected;
 	struct test_source_route source_routes[TEST_SOURCE_ROUTE_MAX];
 };
 
@@ -6829,11 +6830,33 @@ static int broadcast_multicast_scenario(void)
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 	spec.dst_ip_be = ii_htonl(0xe0000001U);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	if (f.state.tcp_input_filter_rejected != 1 ||
+			f.state.payload_chunk_count || f.state.out_cnt ||
+			f.conn->seq_next_expected != 0)
+		return 0;
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.dst_ip_be = ii_htonl(0xffffffffU);
 	spec.tcp_flags = TEST_TCP_SYN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.state.payload_chunk_count == 0 && f.state.out_cnt == 0;
+	if (f.state.tcp_input_filter_rejected != 2 ||
+			f.state.payload_chunk_count || f.state.out_cnt ||
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_ACCEPTED))
+		return 0;
+	/* An always-discard filter must not pass the requirement test. */
+	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	int ok = f.state.tcp_input_filter_rejected == 2 &&
+		f.state.payload_chunk_count == 1 &&
+		f.state.payload_byte_count == 1 &&
+		f.conn->seq_next_expected == 1 && f.state.out_cnt != 0;
+	ii_tcp_conn_enter_close_phase(f.ws, test_conn_id(f.ws, f.conn));
+	if (ii_tcp_conn_close_check(f.ws, test_conn_id(f.ws, f.conn),
+			&f.state) != IIP_ERR_OK)
+		ok = 0;
+	free_output(&f.state);
+	free(f.ws);
+	return ok;
 }
 
 static enum result test_broadcast_multicast_discard(const char **why)
