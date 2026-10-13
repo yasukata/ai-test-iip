@@ -6765,9 +6765,13 @@ static int test_sws_override_timeout(const char **why, uint16_t effective_mss)
 		fake_clock_advance_ms(&f.state, 100);
 		fixture_run_timers(&f);
 	}
+	/* A normal transmission advances SND.NXT by the octet sent.  iip keeps
+	 * a partially transmitted buffer in tx_ring until all of it has been
+	 * sent, so sent_ring membership is not a usable oracle here. */
 	if (f.state.out_cnt != 1 ||
 			PB_TCP_PAYLOAD_LEN(f.state.out[0]) != 1 ||
-			(f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE) || !test_ring_end(f.ws, &f.conn->sent_ring, 0)) {
+			(f.conn->flags & II_TCP_CONN_FLAGS_SET_PROBE) ||
+			f.conn->sent_seq - f.conn->acked_seq != 1) {
 		*why = "SWS override did not send a normal one-octet segment";
 		return 0;
 	}
@@ -6843,8 +6847,16 @@ static enum result test_sender_sws_avoidance(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fixture_prepare_sender(&f);
-	effective_mss = f.conn->mss -
-		(II_CONF_TCP_OPT_TS_OK ? 12U : 0U);
+	/* Eff.snd.MSS = min(SendMSS + 20, MMS_S) - TCPhdrsize - IPoptionsize
+	 * (RFC 9293 Section 3.7.1), where MMS_S follows from the path MTU and
+	 * TCPhdrsize includes the Timestamps option carried on every segment
+	 * once it has been negotiated. */
+	effective_mss = f.conn->mss;
+	if (f.conn->path_mtu - 40U < effective_mss)
+		effective_mss = f.conn->path_mtu - 40U;
+	if (II_CONF_TCP_OPT_TS_OK &&
+			(f.conn->flags & II_TCP_CONN_FLAGS_OPT_SET_TS))
+		effective_mss -= 12U;
 	if (!effective_mss)
 		return RESULT_FAIL;
 
