@@ -58,3 +58,14 @@ static void *test_current_opaque;
 static bool test_backend_fastopen(struct iip_workspace *, uint32_t, const uint8_t *, uint8_t);
 
 #define IIP_OPS_TCP_URGENT() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_URGENT, opaque); } while (0)
+
+/* Apply the test backend's keyed tuple offset at connection initialization.
+ * The core has already initialized the send sequence fields from ISS. */
+#undef IIP_OPS_TCP_CONN_INIT
+#define IIP_OPS_TCP_CONN_INIT() do { \
+	II_TCP_CONN(conn_id).iss += iip_ops_tcp_iss_off( \
+		src_ipv4_be, dst_ipv4_be, src_port_be, dst_port_be); \
+	II_TCP_CONN(conn_id).sent_seq = \
+		II_TCP_CONN(conn_id).seq = \
+		II_TCP_CONN(conn_id).acked_seq = II_TCP_CONN(conn_id).iss; \
+} while (0)
