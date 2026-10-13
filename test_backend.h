@@ -57,7 +57,11 @@ static void *test_current_opaque;
 #define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = test_backend_fastopen(w, conn_id, tcp_opt + l + 2, tcp_opt[l + 1] - 2); } while (0)
 static bool test_backend_fastopen(struct iip_workspace *, uint32_t, const uint8_t *, uint8_t);
 
-#define IIP_OPS_TCP_URGENT() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_URGENT, opaque); } while (0)
+/* IIP_OPS_TCP_URGENT() is expanded in ii_tcp_rx_push(), where pb_id is the
+ * packet just received and push_pb_id is the in-order segment currently
+ * being processed (possibly taken from the out-of-order queue). Report the
+ * segment that carried URG so the application sees its SEG.SEQ and SEG.UP. */
+#define IIP_OPS_TCP_URGENT() do { iip_ret_int = test_backend_callback(w, conn_id, push_pb_id, TEST_BACKEND_URGENT, opaque); } while (0)
 
 /* Apply the test backend's keyed tuple offset at connection initialization.
  * The core has already initialized the send sequence fields from ISS. */
