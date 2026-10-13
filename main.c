@@ -2612,6 +2612,10 @@ static int timeout_backoff_scenario(void)
 	 * here, so the bound is two segments.  Basing ssthresh on cwnd is the
 	 * mistake the RFC explicitly warns against.
 	 */
+	if (loss && (loss->value[1] > 1 || loss->value[3] > 2))
+		fprintf(stderr, "MUST-19: after RTO cwnd %u->%u (max 1), ssthresh %u->%u (max max(FlightSize/2, 2*SMSS) = 2)\n",
+				(unsigned int)loss->value[0], (unsigned int)loss->value[1],
+				(unsigned int)loss->value[2], (unsigned int)loss->value[3]);
 	if (!loss || !first || loss->value[0] != 8 || loss->value[1] > 1 ||
 			loss->value[2] != 16 || loss->value[3] > 2 ||
 			first->value[0] != seq || first->value[1] != 1 ||
@@ -2653,13 +2657,16 @@ static int retransmission_and_congestion_scenario(void)
 static enum result test_retransmission_and_congestion(const char **why)
 {
 	pid_t child;
-	(void)why;
 	fflush(NULL);
 	child = fork();
 	assert(child >= 0);
 	if (!child)
 		_exit(retransmission_and_congestion_scenario() ? 0 : 1);
-	return wait_test_child(child, 3000) ? RESULT_PASS : RESULT_FAIL;
+	if (!wait_test_child(child, 3000)) {
+		*why = "slow start, RTO backoff, or post-RTO cwnd/ssthresh bound failed (see log)";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
 }
 
 static enum result test_r1_r2_failure_handling(const char **why)
@@ -2902,7 +2909,14 @@ static enum result test_syn_retry_at_least_three_minutes(const char **why)
 		free_output(&f.state);
 	}
 
-	(void)timeouts;
+	if (f.conn->state == 0 &&
+			f.state.now_ns - started_ns < 180ULL * 1000000000ULL) {
+		fprintf(stderr, "MUST-23: SYN attempt abandoned after %u timeouts and %llu ms\n",
+				timeouts, (unsigned long long)
+				((f.state.now_ns - started_ns) / 1000000ULL));
+		*why = "the SYN attempt was abandoned in less than 3 minutes";
+		return RESULT_FAIL;
+	}
 	return f.conn->state == 0 &&
 		f.state.now_ns - started_ns >= 180ULL * 1000000000ULL &&
 		test_event_has_state_transition(&f.state, f.conn,
@@ -5748,8 +5762,11 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 103) {
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET)) {
+		*why = "the URG flag was not processed";
+		return RESULT_FAIL;
+	}
+	if (f.conn->urgent_ptr != 103) {
 		*why = "URG pointer was interpreted as the last urgent octet";
 		return RESULT_FAIL;
 	}
@@ -6168,7 +6185,6 @@ static enum result test_icmp_processing(const char **why)
 	uint16_t next_hop_mtu_be = ii_htons(1200);
 	uint32_t seq_before, ack_before, expected_before;
 	uint16_t path_mtu_before;
-	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	seq_before = ii_htonl(f.conn->seq);
@@ -6181,6 +6197,12 @@ static enum result test_icmp_processing(const char **why)
 			sizeof(next_hop_mtu_be));
 	update_icmp_checksum(pkt);
 	fixture_deliver(&f, pkt);
+	if (f.conn->path_mtu == path_mtu_before &&
+			test_event_count(&f.state, TEST_EVENT_CALLBACK,
+				TEST_CALLBACK_TCP_ICMP_ERROR) == 0) {
+		*why = "an ICMP Fragmentation Needed error was not acted on or reported for the connection";
+		return RESULT_FAIL;
+	}
 	return f.conn->state == II_TCP_STATE_ESTABLISHED &&
 		ii_htonl(f.conn->seq) == seq_before && ii_htonl(f.conn->ack_seq) == ack_before &&
 		f.conn->seq_next_expected == expected_before &&
@@ -6291,7 +6313,13 @@ static enum result test_tcp_icmp_error_notification(const char **why)
 				errors[i].type, errors[i].code));
 		event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_ICMP_ERROR, 0);
-		if (!event || event->object != f.conn ||
+		if (!event) {
+			fprintf(stderr, "MUST-47: ICMP type %u code %u was not reported\n",
+					errors[i].type, errors[i].code);
+			*why = "an ICMP error for the connection was not reported to the application";
+			return RESULT_FAIL;
+		}
+		if (event->object != f.conn ||
 				event->value[0] != errors[i].type ||
 				event->value[1] != errors[i].code ||
 				!event->value[2] || !event->value[3] ||
@@ -6855,6 +6883,31 @@ static uint32_t test_scaled_window_field(uint32_t space, unsigned int shift)
 	return field > 0xffffU ? 0xffffU : field;
 }
 
+/*
+ * Emit one ACK so that RCV.WND is fixed on the wire before a window-edge
+ * test.  iip announces a fixed receive-window shift of 7 (the shift passed
+ * to ii_tcp_compute_win), independent of conn->ws, so the white-box fixture
+ * interprets the field with that implementation constant.
+ */
+#define TEST_IIP_RX_WINDOW_SHIFT 7U
+static int fixture_advertise_window(struct fixture *f, uint32_t expected)
+{
+	void *pkt = fixture_packet(f, 0, 0, 0);
+	uint32_t window;
+	int ok;
+
+	if (!pkt)
+		return 0;
+	window = (uint32_t)ii_ntohs(PB_TCP(pkt)->win_be) <<
+		TEST_IIP_RX_WINDOW_SHIFT;
+	ok = window == expected;
+	if (!ok)
+		fprintf(stderr, "advertised window %u, expected %u\n",
+				window, expected);
+	iip_ops_pkt_free(pkt, &f->state);
+	return ok;
+}
+
 static int test_receive_window_right_edge(const char **why)
 {
 	struct fixture crossing;
@@ -6870,6 +6923,10 @@ static int test_receive_window_right_edge(const char **why)
 	crossing.conn->flags |= II_TCP_CONN_FLAGS_SACK_OK;
 	crossing.conn->buf.capacity = 256;
 	crossing.conn->buf.used = 0;
+	if (!fixture_advertise_window(&crossing, 256)) {
+		*why = "the fixture could not advertise a 256-octet receive window";
+		return 0;
+	}
 	fixture_incoming_spec(&crossing, &spec, 255, payload,
 			sizeof(payload));
 	fixture_deliver(&crossing,
@@ -6888,6 +6945,10 @@ static int test_receive_window_right_edge(const char **why)
 	outside.conn->flags |= II_TCP_CONN_FLAGS_SACK_OK;
 	outside.conn->buf.capacity = 256;
 	outside.conn->buf.used = 0;
+	if (!fixture_advertise_window(&outside, 256)) {
+		*why = "the fixture could not advertise a 256-octet receive window";
+		return 0;
+	}
 	fixture_incoming_spec(&outside, &spec, 256, payload, 1);
 	fixture_deliver(&outside,
 			build_tcp_packet(&spec, &outside.state));
@@ -6925,23 +6986,35 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	scale_slop = (1U << shift) - 1U;
 
 	/* Receiver SWS avoidance opens the window at, not only above, the
-	 * min(RCV.BUFF/2, Eff.snd.MSS) threshold. */
+	 * min(RCV.BUFF/2, Eff.snd.MSS) threshold.  Eff.snd.MSS excludes the
+	 * TCP options actually carried (RFC 9293 Section 3.7.1); the fixture
+	 * sends Timestamps, so with MSS 300 and MTU 1500 the threshold is
+	 * 300 - 12 = 288 octets. */
 	if (!fixture_init(&boundary))
 		return RESULT_FAIL;
-	boundary.conn->buf.capacity = 4096;
-	boundary.conn->buf.used = 299;
-	boundary.conn->buf.adv_cnt = 0;
-	boundary.conn->mss = 300;
-	boundary.conn->path_mtu = 1500;
-	test_api_consumed(boundary.ws, boundary.conn, 299,
-			&boundary.state);
-	if (boundary.conn->buf.used != 299 ||
-			boundary.conn->buf.adv_cnt != 299) {
-		*why = "receiver advertised a window update below the SWS threshold";
-		return RESULT_FAIL;
+	{
+		uint32_t threshold = 300U -
+			((boundary.conn->flags & II_TCP_CONN_FLAGS_OPT_SET_TS) ?
+			 12U : 0U);
+		if (threshold > 4096U / 2U)
+			threshold = 4096U / 2U;
+		boundary.conn->buf.capacity = 4096;
+		boundary.conn->buf.used = threshold - 1U;
+		boundary.conn->buf.adv_cnt = 0;
+		boundary.conn->mss = 300;
+		boundary.conn->path_mtu = 1500;
+		test_api_consumed(boundary.ws, boundary.conn, threshold - 1U,
+				&boundary.state);
+		if (boundary.conn->buf.used != threshold - 1U ||
+				boundary.conn->buf.adv_cnt != threshold - 1U) {
+			fprintf(stderr, "receiver SWS: threshold=%u, window opened after %u octets\n",
+					threshold, threshold - 1U);
+			*why = "receiver advertised a window update below the SWS threshold";
+			return RESULT_FAIL;
+		}
 	}
 	/* Simulate receiving and then consuming the final octet needed to reach
-	 * the exact 300-octet threshold. */
+	 * the exact threshold. */
 	boundary.conn->buf.used++;
 	test_api_consumed(boundary.ws, boundary.conn, 1,
 			&boundary.state);
@@ -8353,7 +8426,7 @@ static const char *const rfc9293_requirement_sections[] = {
 	"3.8.6.1", "3.8.6.1", "3.8.6.1", "3.8.6.1",
 	"3.8.6.2.1", "3.8.6.2.2", "3.8.6.3",
 	"3.9.1", "3.9.1", "3.9.1", "3.9.1", "3.9.1", "3.9.1",
-	"3.9.2", "3.9.2", "3.9.2", "3.9.2", "3.9.2", "3.9.2",
+	"3.9.1.8", "3.9.1.9", "3.9.2", "3.9.2", "3.9.2", "3.9.2",
 	"3.9.2", "3.9.2", "3.9.2", "3.9.2", "3.9.2",
 	"3.8.6.3", "3.8.6.3", "3.8", "3.8", "3.8.5",
 	"3.9.2", "3.1", "3.7.1", "3.8.6.1", "3.7.1", "3.1", "3.1"
