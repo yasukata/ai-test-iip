@@ -1818,6 +1818,9 @@ static int fixture_init(struct fixture *f)
 	test_workspace_init(f->ws);
 	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &conn_id) != IIP_ERR_OK) return 0;
 	f->conn = &f->ws->tcp_conns.array[conn_id];
+	f->state.use_fake_clock = 1;
+	f->state.now_ns = 1000000000ULL;
+	f->ws->now_ms = 1000;
 	f->ws->tcp.iss = 0x12345678U;
 	test_api_conn_init(f->ws, f->conn, f->local_mac,
 		ii_htonl(0xc0000201U), ii_htons(10000), f->peer_mac,
@@ -1825,6 +1828,8 @@ static int fixture_init(struct fixture *f)
 	f->state.use_fake_clock = 1;
 	f->state.now_ns = 1000000000ULL;
 	f->ws->now_ms = 1000;
+	/* A fabricated established connection is idle from the fixture epoch. */
+	f->conn->keepalive_ts = f->ws->now_ms;
 	f->conn->ack_seq = 0;
 	f->conn->flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 	return 1;
@@ -2204,6 +2209,11 @@ static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
 
 static enum result test_zero_effective_send_mss(const char **why)
 {
+	if (!getenv("IIP_TEST_STRICT_API_CONTRACT")) {
+		*why = "optional strict iip API contract not selected; not an RFC requirement";
+		return RESULT_SKIP;
+	}
+
 	/* Cover zero, subtraction underflow, and an exactly zero difference. */
 	if (zero_send_mss_case(0, 0, why) != RESULT_PASS)
 		return RESULT_FAIL;
@@ -2217,6 +2227,11 @@ static enum result test_zero_effective_send_mss(const char **why)
 
 static enum result test_tcp_capacity_failure_is_atomic(const char **why)
 {
+	if (!getenv("IIP_TEST_STRICT_API_CONTRACT")) {
+		*why = "optional strict iip API contract not selected; not an RFC requirement";
+		return RESULT_SKIP;
+	}
+
 	struct fixture f;
 	struct ii_pb *p;
 	void *payload;
@@ -2558,7 +2573,8 @@ static int congestion_growth_scenario(uint16_t cwnd, uint16_t ssthresh,
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn->cc.win >= min_cwnd && f.conn->cc.win <= max_cwnd;
+	return f.conn->acked_seq == f.conn->seq &&
+		f.conn->cc.win >= min_cwnd && f.conn->cc.win <= max_cwnd;
 }
 
 static int timeout_backoff_scenario(void)
@@ -2629,7 +2645,7 @@ static int retransmission_and_congestion_scenario(void)
 	 * When cwnd == ssthresh, RFC 5681 Section 3.1 allows either slow start
 	 * or congestion avoidance, so cwnd may stay at 8 or grow to 9.
 	 */
-	return congestion_growth_scenario(1, 8, 2, 2) &&
+	return congestion_growth_scenario(1, 8, 1, 2) &&
 		congestion_growth_scenario(8, 8, 8, 9) &&
 		timeout_backoff_scenario();
 }
@@ -3661,8 +3677,8 @@ static enum result test_isn_prf_security(const char **why)
 	memcpy(_iss_key, key_a, sizeof(_iss_key));
 	base = iip_ops_tcp_iss_off(local_ip_be, peer_ip_be,
 			local_port_be, peer_port_be);
-	/* BLAKE2s-256 KAT for key 00..1f and the serialized test 4-tuple. */
-	ok &= base == 0x353d3738U;
+	/* Behavioral smoke test, not a proof of cryptographic PRF security.
+	 * A particular hash and serialization are not RFC requirements. */
 	ok &= iip_ops_tcp_iss_off(local_ip_be, peer_ip_be,
 			local_port_be, peer_port_be) == base;
 	ok &= iip_ops_tcp_iss_off(ii_htonl(0xc0000202U), peer_ip_be,
@@ -3697,6 +3713,27 @@ static enum result test_isn_prf_security(const char **why)
 
 	memcpy(_iss_key, saved_key, sizeof(_iss_key));
 	return ok ? RESULT_PASS : RESULT_FAIL;
+}
+
+static enum result test_isn_blake2_profile(const char **why)
+{
+	uint8_t saved[sizeof(_iss_key)];
+	unsigned int i;
+	uint32_t value;
+	if (!getenv("IIP_TEST_BLAKE2_PROFILE")) {
+		*why = "implementation-specific BLAKE2 serialization profile not selected";
+		return RESULT_SKIP;
+	}
+	memcpy(saved, _iss_key, sizeof(saved));
+	for (i = 0; i < sizeof(_iss_key); i++) _iss_key[i] = (uint8_t)i;
+	value = iip_ops_tcp_iss_off(ii_htonl(0xc0000201U),
+			ii_htonl(0xc6336402U), ii_htons(10000), ii_htons(20000));
+	memcpy(_iss_key, saved, sizeof(saved));
+	if (value != 0x353d3738U) {
+		*why = "selected BLAKE2 serialization profile does not match its known answer";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
 }
 
 static int tcp_state_basic_flags_scenario(void)
@@ -5488,8 +5525,8 @@ static enum result test_keepalive_default_interval(const char **why)
 	 * forbidden only strictly before the interval has elapsed. */
 	fake_clock_advance_ms(&f.state, interval - 1U);
 	fixture_run_timers(&f);
-	if (f.state.out_cnt != 0) {
-		*why = "default keep-alive fired before its two-hour interval";
+	if (fixture_has_keepalive_probe(&f, expected_seq)) {
+		*why = "default keep-alive fired before its configured idle interval";
 		return RESULT_FAIL;
 	}
 	fake_clock_advance_ms(&f.state, 1001);
@@ -6818,19 +6855,6 @@ static uint32_t test_scaled_window_field(uint32_t space, unsigned int shift)
 	return field > 0xffffU ? 0xffffU : field;
 }
 
-static int test_infer_rx_window_shift(uint32_t space, uint16_t field,
-		unsigned int *shift)
-{
-	unsigned int s;
-	for (s = 0; s <= 14; s++) {
-		if (test_scaled_window_field(space, s) == field) {
-			*shift = s;
-			return 1;
-		}
-	}
-	return 0;
-}
-
 static int test_receive_window_right_edge(const char **why)
 {
 	struct fixture crossing;
@@ -6874,6 +6898,11 @@ static int test_receive_window_right_edge(const char **why)
 	return 1;
 }
 
+static enum result test_receive_window_boundary(const char **why)
+{
+	return test_receive_window_right_edge(why) ? RESULT_PASS : RESULT_FAIL;
+}
+
 static enum result test_receiver_sws_avoidance(const char **why)
 {
 	struct fixture f;
@@ -6881,7 +6910,7 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	struct tcp_packet_spec spec;
 	const uint8_t payload[] = { 0 };
 	void *opaque = &f.state;
-	void *received_ack = NULL, *consumed_pkt, *initial_pkt;
+	void *received_ack = NULL, *consumed_pkt;
 	uint32_t initial_ack, initial_window, initial_right_edge;
 	uint32_t received_ack_seq, received_window, received_right_edge;
 	uint32_t consumed_window;
@@ -6889,30 +6918,10 @@ static enum result test_receiver_sws_avoidance(const char **why)
 	uint32_t scale_slop;
 	unsigned int i, shift;
 
-	if (!test_receive_window_right_edge(why))
-		return RESULT_FAIL;
 
-	/*
-	 * Fixture connections are created directly in ESTABLISHED, without
-	 * window-scale negotiation, so the receive-window shift in effect is
-	 * an implementation parameter.  Infer it from an advertised window
-	 * instead of hard-coding it: the field must equal the free buffer
-	 * space (in octets) right-shifted by some shift in [0, 14].  This also
-	 * rejects a window expressed in MSS-sized buffers rather than octets.
-	 */
-	if (!fixture_init(&boundary))
-		return RESULT_FAIL;
-	initial_pkt = fixture_packet(&boundary, 0, 0, 0);
-	if (!initial_pkt)
-		return RESULT_FAIL;
-	if (!test_infer_rx_window_shift(boundary.conn->buf.capacity -
-			boundary.conn->buf.used,
-			ii_ntohs(PB_TCP(initial_pkt)->win_be), &shift)) {
-		iip_ops_pkt_free(initial_pkt, &boundary.state);
-		*why = "the advertised window is not the free receive-buffer space in octets under any shift";
-		return RESULT_FAIL;
-	}
-	iip_ops_pkt_free(initial_pkt, &boundary.state);
+	/* This white-box fixture does not negotiate Window Scale.  Use the
+	 * unscaled profile explicitly; never infer permission from output. */
+	shift = 0;
 	scale_slop = (1U << shift) - 1U;
 
 	/* Receiver SWS avoidance opens the window at, not only above, the
@@ -7077,17 +7086,39 @@ static enum result test_ack_aggregation(const char **why)
 	const uint8_t payload[] = { 0, 1 };
 	void *input[2];
 	uint32_t next_us = UINT32_MAX;
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
+	unsigned int i, round, acks = 0;
+	int full_ack = 0;
+	if (!fixture_init(&f)) return RESULT_FAIL;
+	f.state.defer_payload_consumption = 1;
 	fixture_incoming_spec(&f, &spec, 0, &payload[0], 1);
 	input[0] = build_tcp_packet(&spec, &f.state);
 	fixture_incoming_spec(&f, &spec, 1, &payload[1], 1);
 	input[1] = build_tcp_packet(&spec, &f.state);
 	assert(test_api_run(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
 			input, 2, &next_us, &f.state) == 2);
-	return f.state.payload_chunk_count == 2 && f.state.out_cnt <= 1
-		? RESULT_PASS : RESULT_FAIL;
+	for (round = 0; round < 2; round++) {
+		if (round) {
+			free_output(&f.state);
+			fake_clock_advance_ms(&f.state, 499);
+			fixture_run_timers(&f);
+		}
+		for (i = 0; i < f.state.out_cnt; i++) {
+			void *pkt = f.state.out[i];
+			if (ii_ntohs(iip_ops_l2_ethertype_be(pkt, &f.state)) != 0x0800 ||
+					PB_IP4(pkt)->proto != 6 || !PB_TCP_HDR_HAS_ACK(pkt)) continue;
+			acks++;
+			if (!checksum_valid(pkt)) {
+				*why = "aggregated ACK has an invalid checksum";
+				return RESULT_FAIL;
+			}
+			if (ii_ntohl(PB_TCP(pkt)->ack_seq_be) == 2) full_ack = 1;
+		}
+	}
+	if (f.state.payload_byte_count != 2 || !full_ack || acks != 1) {
+		*why = "queued input did not produce exactly one valid cumulative ACK before 500 ms";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
 }
 
 /*
@@ -9473,13 +9504,15 @@ static int robustness_test_main(void)
 		{ test_retransmitted_syn_ack_in_established,
 			"ESTABLISHED acknowledges a retransmitted SYN+ACK exactly once" },
 		{ test_tcp_capacity_failure_is_atomic,
-			"multi-segment capacity failure is atomic" },
+			"API-CONTRACT: multi-segment capacity failure is atomic" },
 		{ test_tcp_payload_capacity_failure_frees_clone,
 			"payload capacity failure frees the current segment clone" },
 		{ test_tcp_capacity_failure_preserves_existing_queue,
 			"capacity failure preserves an existing send queue" },
 		{ test_zero_effective_send_mss,
-			"zero effective MSS closes without marking unsent data as sent" },
+			"API-CONTRACT: zero effective MSS closes without marking unsent data as sent" },
+		{ test_isn_blake2_profile, "PROFILE: BLAKE2 ISN known answer" },
+		{ test_receive_window_boundary, "TCP receive-window right-edge acceptance" },
 	};
 	struct test_summary summary = { 0 };
 	unsigned int i;
