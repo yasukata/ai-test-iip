@@ -2798,6 +2798,11 @@ static enum result test_application_configurable_r2(const char **why)
  * not assume a particular number of retransmissions: every retransmission
  * must repeat the original SYN, and the attempt must eventually be abandoned
  * with a single close notification.  The minimum duration is MUST-23.
+ *
+ * Advance the virtual clock to just past each retransmission deadline rather
+ * than in fixed small steps.  A SYN attempt may legitimately last several
+ * minutes, and fixed 100 ms steps record one timer event per step, which
+ * overflowed the event log and discarded the final close notification.
  */
 static enum result test_syn_failure_mechanism(const char **why)
 {
@@ -2828,7 +2833,12 @@ static enum result test_syn_failure_mechanism(const char **why)
 	while (f.conn->state == II_TCP_STATE_SYN_SENT &&
 			f.state.now_ns - started_ns <= 3600ULL * 1000000000ULL) {
 		unsigned int i;
-		fake_clock_advance_ms(&f.state, 100);
+		uint32_t rto_ms = f.conn->rto_ms;
+		if (!rto_ms) {
+			*why = "no retransmission timer was armed for the SYN";
+			return RESULT_FAIL;
+		}
+		fake_clock_advance_ms(&f.state, (uint64_t)rto_ms + 1);
 		fixture_run_timers(&f);
 		for (i = 0; i < f.state.out_cnt; i++) {
 			tcp_pkt = f.state.out[i];
@@ -2844,6 +2854,12 @@ static enum result test_syn_failure_mechanism(const char **why)
 			retransmissions++;
 		}
 		free_output(&f.state);
+	}
+	if (f.state.event_dropped) {
+		fprintf(stderr, "MUST-22: %u events were dropped from the event log\n",
+				f.state.event_dropped);
+		*why = "harness error: the event log overflowed, so the close notification cannot be checked";
+		return RESULT_FAIL;
 	}
 	if (!retransmissions) {
 		*why = "the SYN was never retransmitted";
