@@ -401,6 +401,15 @@ struct test_state {
 	struct test_event events[TEST_EVENT_MAX];
 	unsigned int event_count;
 	unsigned int event_dropped;
+	/* Application-side RCV.UP, maintained only from IIP_OPS_TCP_URGENT
+	 * notifications (the packet passed to the callback carries SEG.SEQ
+	 * and SEG.UP); iip exposes no other urgent-pointer interface. */
+	struct {
+		void *conn;
+		uint8_t valid;
+		uint8_t regressed;
+		uint32_t ptr;
+	} urgent;
 	struct test_conn_state tracked_conns[TEST_TRACKED_CONN_MAX];
 	unsigned int tracked_conn_count;
 	struct test_listener listeners[TEST_LISTENER_MAX];
@@ -739,6 +748,24 @@ static void test_event_ip4_negative_advice(void *opaque, void *conn)
 static void test_event_tcp_urgent(void *opaque, void *conn,
 		void *tcp_opaque, void *pkt)
 {
+	struct test_state *state = opaque;
+	if (state && pkt) {
+		/* RFC 9293 3.10.7.4: RCV.UP <- max(RCV.UP, SEG.SEQ + SEG.UP).
+		 * The application folds every notification into its own
+		 * boundary, so a stale notification cannot move it back. */
+		uint32_t up = ii_ntohl(PB_TCP(pkt)->seq_be) +
+			ii_ntohs(PB_TCP(pkt)->urg_p_be);
+		if (!state->urgent.valid || state->urgent.conn != conn) {
+			state->urgent.conn = conn;
+			state->urgent.valid = 1;
+			state->urgent.ptr = up;
+		} else if (up != state->urgent.ptr &&
+				up - state->urgent.ptr < 2147483648U) {
+			state->urgent.ptr = up;
+		} else if (up != state->urgent.ptr) {
+			state->urgent.regressed = 1;
+		}
+	}
 	test_event_append(opaque, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_TCP_URGENT, conn,
 			tcp_opaque == ((struct ii_tcp_conn *)conn)->opaque,
@@ -1807,6 +1834,13 @@ struct fixture {
 	uint8_t peer_mac[6];
 };
 
+/* The urgent boundary known to the application equals @expected. */
+static int test_urgent_boundary_is(const struct fixture *f, uint32_t expected)
+{
+	return f->state.urgent.valid && f->state.urgent.conn == f->conn &&
+		f->state.urgent.ptr == expected;
+}
+
 static int fixture_init(struct fixture *f)
 {
 	uint32_t conn_id;
@@ -1983,15 +2017,19 @@ static void *fixture_ip4_fragment(struct fixture *f, void *datagram,
 	return fragment;
 }
 
-static uint8_t test_tcp_urgent_query(void *handle, uint32_t *queued)
+static uint8_t test_tcp_urgent_query(const struct test_state *state,
+		void *handle, uint32_t *queued)
 {
 	struct ii_tcp_conn *conn = handle;
 	uint32_t remaining;
 
+	/* Urgent data still to be read = application RCV.UP - RCV.NXT. iip
+	 * hands received payload to the application immediately, so RCV.NXT
+	 * is also the application's read position. */
 	*queued = 0;
-	if (!(conn->flags & II_TCP_CONN_FLAGS_URGENT_SET))
+	if (!state->urgent.valid || state->urgent.conn != conn)
 		return 0;
-	remaining = conn->urgent_ptr - conn->seq_next_expected;
+	remaining = state->urgent.ptr - conn->seq_next_expected;
 	if (!remaining || remaining >= 2147483648U)
 		return 0;
 	*queued = remaining;
@@ -5611,8 +5649,7 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 3) {
+	if (!test_urgent_boundary_is(&f, 3)) {
 		*why = "the received urgent pointer was not retained";
 		return RESULT_FAIL;
 	}
@@ -5623,7 +5660,7 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 4;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn->urgent_ptr != 8) {
+	if (!test_urgent_boundary_is(&f, 8)) {
 		*why = "an advancing urgent pointer was not retained";
 		return RESULT_FAIL;
 	}
@@ -5635,9 +5672,10 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 1;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn->urgent_ptr != 8 ||
-			test_event_count(&f.state, TEST_EVENT_CALLBACK,
-				TEST_CALLBACK_TCP_URGENT) != 0) {
+	/* RFC 9293 3.10.7.4 permits signalling whenever RCV.UP is ahead of
+	 * the consumed data, so a notification here is not itself an error;
+	 * what matters is that the boundary does not move backward. */
+	if (!test_urgent_boundary_is(&f, 8)) {
 		*why = "a stale urgent pointer moved the boundary backward";
 		return RESULT_FAIL;
 	}
@@ -5652,9 +5690,25 @@ static enum result test_urgent_pointer_support(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 4;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 1) {
+	if (!test_urgent_boundary_is(&f, 1)) {
 		*why = "urgent pointer arithmetic failed across sequence wraparound";
+		return RESULT_FAIL;
+	}
+
+	/* An URG segment that arrives out of order is processed when the gap
+	 * is filled and the segment is taken from the out-of-order queue. */
+	if (!fixture_init(&f))
+		return RESULT_FAIL;
+	fixture_incoming_spec(&f, &spec, 4, second_payload,
+			sizeof(second_payload));
+	spec.tcp_flags |= TEST_TCP_URG;
+	spec.urgent_pointer = 2;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	fixture_incoming_spec(&f, &spec, 0, first_payload,
+			sizeof(first_payload));
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	if (f.conn->seq_next_expected != 6 || !test_urgent_boundary_is(&f, 6)) {
+		*why = "the urgent pointer of a reordered segment was not retained";
 		return RESULT_FAIL;
 	}
 
@@ -5684,9 +5738,8 @@ static enum result test_arbitrary_urgent_sequence(const char **why)
 		spec.tcp_flags |= TEST_TCP_URG;
 		spec.urgent_pointer = UINT16_MAX;
 		fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-		if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-				f.conn->urgent_ptr != UINT16_MAX +
-					i * sizeof(payloads[0]) ||
+		if (!test_urgent_boundary_is(&f, UINT16_MAX +
+					i * sizeof(payloads[0])) ||
 				test_event_count(&f.state, TEST_EVENT_CALLBACK,
 					TEST_CALLBACK_TCP_URGENT) != i + 1) {
 			*why = "a multi-segment urgent sequence was truncated";
@@ -5712,7 +5765,7 @@ static enum result test_urgent_queue_query(const char **why)
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	if (test_tcp_urgent_query(f.conn, &queued) || queued != 0) {
+	if (test_tcp_urgent_query(&f.state, f.conn, &queued) || queued != 0) {
 		*why = "a new connection reported queued urgent data";
 		return RESULT_FAIL;
 	}
@@ -5723,7 +5776,7 @@ static enum result test_urgent_queue_query(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 5;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_tcp_urgent_query(f.conn, &queued) || queued != 5) {
+	if (!test_tcp_urgent_query(&f.state, f.conn, &queued) || queued != 5) {
 		*why = "the announced urgent sequence was not queryable";
 		return RESULT_FAIL;
 	}
@@ -5732,14 +5785,14 @@ static enum result test_urgent_queue_query(const char **why)
 	fixture_incoming_spec(&f, &spec, 0, first_payload,
 			sizeof(first_payload));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_tcp_urgent_query(f.conn, &queued) || queued != 3) {
+	if (!test_tcp_urgent_query(&f.state, f.conn, &queued) || queued != 3) {
 		*why = "the urgent queue amount did not follow received data";
 		return RESULT_FAIL;
 	}
 	fixture_incoming_spec(&f, &spec, 2, second_payload,
 			sizeof(second_payload));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (test_tcp_urgent_query(f.conn, &queued) || queued != 0) {
+	if (test_tcp_urgent_query(&f.state, f.conn, &queued) || queued != 0) {
 		*why = "urgent data remained reported after reaching its boundary";
 		return RESULT_FAIL;
 	}
@@ -5753,7 +5806,7 @@ static enum result test_urgent_queue_query(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!test_tcp_urgent_query(f.conn, &queued) || queued != 3) {
+	if (!test_tcp_urgent_query(&f.state, f.conn, &queued) || queued != 3) {
 		*why = "urgent queue query failed across sequence wraparound";
 		return RESULT_FAIL;
 	}
@@ -5776,11 +5829,11 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 3;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET)) {
+	if (!f.state.urgent.valid) {
 		*why = "the URG flag was not processed";
 		return RESULT_FAIL;
 	}
-	if (f.conn->urgent_ptr != 103) {
+	if (!test_urgent_boundary_is(&f, 103)) {
 		*why = "URG pointer was interpreted as the last urgent octet";
 		return RESULT_FAIL;
 	}
@@ -5794,8 +5847,7 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = sizeof(payload);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 205) {
+	if (!test_urgent_boundary_is(&f, 205)) {
 		*why = "the first non-urgent octet after a segment was misidentified";
 		return RESULT_FAIL;
 	}
@@ -5809,8 +5861,7 @@ static enum result test_urgent_pointer_semantics(const char **why)
 	spec.tcp_flags |= TEST_TCP_URG;
 	spec.urgent_pointer = 2;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 0) {
+	if (!test_urgent_boundary_is(&f, 0)) {
 		*why = "first non-urgent octet was misidentified across wraparound";
 		return RESULT_FAIL;
 	}
@@ -5850,8 +5901,7 @@ static enum result test_rst_urg_with_zero_window(const char **why)
 	spec.urgent_pointer = 5;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	if (f.conn->state != II_TCP_STATE_ESTABLISHED ||
-			!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 5 ||
+			!test_urgent_boundary_is(&f, 5) ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 1) {
 		*why = "URG was not processed while the receive window was zero";
@@ -5899,8 +5949,7 @@ static enum result test_async_urgent_notification(const char **why)
 			event->value[3] != 3 ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 1 ||
-			!(f.conn->flags & II_TCP_CONN_FLAGS_URGENT_SET) ||
-			f.conn->urgent_ptr != 3) {
+			!test_urgent_boundary_is(&f, 3)) {
 		*why = "URG arrival was not reported to the application";
 		return RESULT_FAIL;
 	}
@@ -5927,7 +5976,7 @@ static enum result test_async_urgent_notification(const char **why)
 	event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_TCP_URGENT, 0);
 	if (!event || event->value[2] != 4 || event->value[3] != 2 ||
-			f.conn->urgent_ptr != 6 ||
+			!test_urgent_boundary_is(&f, 6) ||
 			test_event_count(&f.state, TEST_EVENT_CALLBACK,
 				TEST_CALLBACK_TCP_URGENT) != 1) {
 		*why = "an advancing urgent pointer was not reported";
@@ -5946,7 +5995,7 @@ static enum result test_async_urgent_notification(const char **why)
 	spec.urgent_pointer = 4;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
-			TEST_CALLBACK_TCP_URGENT) != 1 || f.conn->urgent_ptr != 1) {
+			TEST_CALLBACK_TCP_URGENT) != 1 || !test_urgent_boundary_is(&f, 1)) {
 		*why = "urgent notification failed across sequence wraparound";
 		return RESULT_FAIL;
 	}
