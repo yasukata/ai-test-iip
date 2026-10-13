@@ -4045,10 +4045,8 @@ static int tcp_state_transition_coverage_scenario(void)
 			"out-of-order reassembly failed: expected two 2-byte chunks and RCV.NXT=4");
 	TEST_ACCUMULATE(ok, tcp_zero_window_update_scenario(),
 			"window update failed: expected peer window 0 followed by 4096");
-	TEST_ACCUMULATE(ok, retransmission_and_congestion_scenario(),
-			"retransmission/congestion scenario failed: inspect timeout, RTO, cwnd, and ssthresh events");
-	TEST_ACCUMULATE(ok, legacy_sack_tests_passed,
-			"legacy SACK regression scenario failed");
+	/* Congestion control is reported by MUST-19 and SACK generation by
+	 * ROBUST-12; they are not repeated here. */
 	return ok;
 }
 
@@ -9564,6 +9562,19 @@ static int run_self_tests(void)
 	return failed != 0;
 }
 
+/*
+ * The SACK regression runs in legacy_test_main, before this suite, because
+ * it shares that two-endpoint setup.  Report its result as a TAP case so
+ * that an assertion in its child process is not hidden from the summary.
+ */
+static enum result test_legacy_sack_generation(const char **why)
+{
+	if (legacy_sack_tests_passed)
+		return RESULT_PASS;
+	*why = "SACK option did not match the expected blocks; RFC 2018 Section 4 requires the block containing the most recent segment first (see log)";
+	return RESULT_FAIL;
+}
+
 static int robustness_test_main(void)
 {
 	static const struct requirement_test tests[] = {
@@ -9586,6 +9597,8 @@ static int robustness_test_main(void)
 			"API-CONTRACT: zero effective MSS closes without marking unsent data as sent" },
 		{ test_isn_blake2_profile, "PROFILE: BLAKE2 ISN known answer" },
 		{ test_receive_window_boundary, "TCP receive-window right-edge acceptance" },
+		{ test_legacy_sack_generation,
+			"SACK blocks report received ranges, most recent first (RFC 2018)" },
 	};
 	struct test_summary summary = { 0 };
 	unsigned int i;
