@@ -65,28 +65,36 @@ static int test_backend_tcp_payload(struct iip_workspace *w,
 {
 	struct ii_tcp_conn *conn = &w->tcp_conns.array[id];
 	struct ii_pb *p = &w->pbs.array[pb_id];
-	uint8_t payload[UINT16_MAX];
-	uint16_t copied;
 	uint16_t len = p->tcp.payload_len - p->tcp.inc_head - p->tcp.dec_tail;
 	void *first = p->part_pkt[0];
-	uint16_t off = II_ETH_HDR_LEN + PB_IP4_HDR_LEN(first) + PB_TCP_HDR_LEN(first) * 4 + p->tcp.inc_head;
-	if (ii_pb_payload_copy(w, pb_id, off, payload, len, &copied, opaque) != IIP_ERR_OK ||
-			copied != len)
-		return -1;
-	/* Preserve the original per-fragment delivery observations. */
+	/* Offset of the first delivered octet in the reassembled IPv4 payload. */
+	uint32_t skip = PB_TCP_HDR_LEN(first) * 4 + p->tcp.inc_head;
 	uint16_t at = 0;
-	for (uint16_t i = 0; i < p->cnt; i++) {
+	/*
+	 * Each received fragment keeps its own Ethernet and IPv4 headers.  Walk
+	 * the IPv4 payload of every fragment so that headers of later fragments
+	 * and link-layer padding are never treated as TCP payload.  Record one
+	 * observation per fragment, as the original harness did.
+	 */
+	for (uint16_t i = 0; i < p->cnt && at < len; i++) {
 		void *pkt = p->part_pkt[i];
-		uint16_t part_len = PB_IP4_TOTAL_LEN(pkt) - PB_IP4_HDR_LEN(pkt);
-		uint16_t skip = i ? 0 : PB_TCP_HDR_LEN(first) * 4 + p->tcp.inc_head;
-		uint16_t n = part_len > skip ? part_len - skip : 0;
-		if (n > len - at)
+		const uint8_t *data = (const uint8_t *)iip_ops_pkt_get_data(pkt, opaque) +
+			iip_ops_l2_hdr_len(pkt, opaque) + PB_IP4_HDR_LEN(pkt);
+		uint32_t part_len = PB_IP4_TOTAL_LEN(pkt) - PB_IP4_HDR_LEN(pkt);
+		uint32_t n;
+		if (skip >= part_len) {
+			skip -= part_len;
+			continue;
+		}
+		n = part_len - skip;
+		if (n > (uint32_t)(len - at))
 			n = len - at;
-		if (n)
-			test_record_tcp_payload(opaque, conn, payload + at, n);
+		test_record_tcp_payload(opaque, conn, data + skip, (uint16_t)n);
 		at += n;
+		skip = 0;
 	}
-	assert(at == len);
+	if (at != len)
+		return -1;
 	struct test_state *state = opaque;
 	if (state->defer_payload_consumption)
 		state->deferred_payload_len += len;

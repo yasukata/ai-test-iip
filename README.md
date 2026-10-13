@@ -138,7 +138,8 @@ leak detection so it also works in test runners that execute processes under
 ### Current API migration
 
 The migration retains all 101 original `test_*` scenario functions. The test
-tables still expose 69 RFC entries, 23 IPv4 entries, eight robustness entries,
+tables still expose 69 RFC entries, 30 IPv4 entries, 6 TCP extension entries,
+eight robustness entries,
 and six TCP Fast Open entries; some entries reuse scenario functions. Existing assertions are adapted to pool IDs and rings, host-order
 connection fields, the current callback interface, and caller-maintained time.
 The API adapters and backend bindings are included by `main.c` in the same

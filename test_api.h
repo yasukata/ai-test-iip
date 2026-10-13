@@ -1,5 +1,4 @@
 /* Test-side helpers translate pool IDs to pointers for readable assertions. */
-#define TEST_RX_WINDOW_SCALE 7 /* current TCP transmit path uses scale 7 */
 #define TEST_IP4_TTL 64
 static uint16_t test_api_run(struct iip_workspace *, uint8_t *, uint32_t, void **, uint16_t, uint32_t *, void *);
 static uint16_t test_api_connect(struct iip_workspace *, uint8_t *, uint32_t, uint16_t, uint8_t *, uint32_t, uint16_t, void *);

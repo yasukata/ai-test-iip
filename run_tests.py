@@ -41,7 +41,8 @@ def main():
                         description = match[2]
                         identifier = description.split()[0]
                         group = ("RFC 9293" if identifier.startswith("MUST-") else
-                                 "IPv4" if identifier.startswith("IP4-") else
+                                 "IPv4 host" if identifier.startswith(("IP4-", "ICMP-", "UDP-")) else
+                                 "TCP extensions and resets" if identifier.startswith("TCP-") else
                                  "Robustness" if identifier.startswith("ROBUST-") else
                                  "TCP Fast Open" if identifier.startswith("TFO-") else "Tests")
                         if group != suite:
