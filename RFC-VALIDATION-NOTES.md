@@ -1,0 +1,299 @@
+# RFC Validation Notes for Future Maintainers and AI Agents
+
+## Purpose and baseline
+
+This document explains the reasoning behind the RFC-oriented test improvements
+in commit `0ba8b55`, based on upstream commit `4cfc7d2`. It is a guide to the
+implemented checks and their limitations, not a conformance certificate or a
+record of test results. Recheck the current source before extending any claim.
+
+The evaluated system is iip over IPv4 together with this repository's packet
+backend, callbacks, and API adapters. A failure may originate in the target,
+the integration, the fixture, or the assertion. Do not attribute every failure
+to iip without tracing that path.
+
+All cases currently have partial coverage. Successful execution must not be
+reported as complete RFC conformance. The runner deliberately reports
+`conformance: NOT_ESTABLISHED`.
+
+## Where to find the implementation
+
+| File | Role |
+| --- | --- |
+| [requirements.json](requirements.json) | Case IDs, functions, requirement IDs, RFC references, strength, applicability, responsibility, observation criteria, and gaps |
+| [main.c](main.c) | Existing scenarios, packet builders, virtual clock, event recording, and isolated execution |
+| [conformance_tests.h](conformance_tests.h) | Additional independent observations and explicit algorithm profiles |
+| [test_runner.h](test_runner.h) | Case selection, profile selection, TAP/JSON reporting, and exit policy |
+| [test_cases.h](test_cases.h) | Generated registry; do not edit manually |
+| [test_api.h](test_api.h) and [test_backend.h](test_backend.h) | Integration boundary and implementation-specific access |
+| [scripts/generate_cases.py](scripts/generate_cases.py) | Ledger validation and registry generation |
+| [scripts/check_mutations.py](scripts/check_mutations.py) | Isolated target mutations and synthetic observer counterexamples |
+| [scripts/capture_run.py](scripts/capture_run.py) | Source snapshots, environment, diagnostics, and requirement-grouped evidence |
+| [tests/test_reporting.py](tests/test_reporting.py) and [tests/runner_faults.c](tests/runner_faults.c) | Reporting contracts and observation-overflow protection |
+
+Use symbols and case IDs rather than historical line numbers. Several cases
+share a function or requirement. Aggregate and independent cases coexist for
+compatibility; their counts are not counts of distinct requirements or defects.
+
+## Rules for interpreting requirements
+
+1. Read the normative text and its applicability conditions before changing an
+   assertion. Follow the case's RFC reference, including referenced algorithms.
+   The ledger is a navigation aid, not an independently verified specification.
+2. Separate mandatory behavior, recommendations, optional capabilities, and
+   implementation contracts. A selected algorithm's exact counters are not
+   automatically universal TCP requirements.
+3. Establish valid input and observable execution before interpreting silence
+   as rejection, success, or missing functionality.
+4. Prefer emitted packets and application-visible callbacks as evidence.
+   Internal state can establish preconditions or diagnose failures, but it must
+   not manufacture an output that the target never produced.
+5. Test both prohibited behavior and permitted alternatives. An assertion that
+   rejects a permitted implementation is defective even if it passes locally.
+6. Record uncovered conditions explicitly. Finite observations do not prove
+   unbounded liveness, cryptographic security, or all-state correctness.
+
+Primary references already associated with this work include
+[RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html),
+[RFC 1122](https://www.rfc-editor.org/rfc/rfc1122.html),
+[RFC 2018](https://www.rfc-editor.org/rfc/rfc2018.html),
+[RFC 6298](https://www.rfc-editor.org/rfc/rfc6298.html),
+[RFC 5681](https://www.rfc-editor.org/rfc/rfc5681.html),
+[RFC 7323](https://www.rfc-editor.org/rfc/rfc7323.html), and
+[RFC 7413](https://www.rfc-editor.org/rfc/rfc7413.html).
+A comprehensive audit of updates and errata remains outstanding.
+
+## Fixture and observation preconditions
+
+### Timestamp negotiation and virtual time
+
+`fixture_init` creates a direct ESTABLISHED connection with Timestamp disabled.
+Ordinary inputs therefore do not accidentally omit a supposedly negotiated
+Timestamp option. Scenarios that need Timestamp explicitly enable it or test
+negotiation separately. Do not infer handshake correctness from this fixture.
+
+The workspace clock and fast, slow, and very-slow timer origins are initialized
+consistently. Otherwise the first timer call can introduce artificial elapsed
+time and distort RTT samples or expiry observations. Drive timing checks with
+the virtual clock and actual timer processing, not wall-clock sleeps.
+
+### Complete observation and isolated execution
+
+Event or tracked-connection overflow sets `harness_event_overflow` and becomes
+ERROR. A truncated observation history cannot justify PASS. Tests execute in
+child processes with a timeout, so one assertion or hang does not hide later
+cases. Infrastructure errors and signal failures are not silently converted to
+recommendation deviations.
+
+Keep assertions enabled: the harness rejects builds with `NDEBUG`.
+
+## Protocol checks and why they changed
+
+### TIME-WAIT: `MUST-13`
+
+`test_time_wait_2msl` checks that the connection remains in TIME-WAIT just before
+2MSL and accepts expiration at the boundary. It also permits the implementation's
+next timer tick to perform expiration. Do not demand that a connection remain
+open at exactly 2MSL merely because the current implementation uses a strict
+comparison. The relevant reference is RFC 9293 Section 3.6.1.
+
+### Delayed ACK and ACK ordering: `MUST-40`, `MUST-58`, `MUST-59`
+
+`test_delayed_ack_limit` observes through 499 ms rather than stopping at 490 ms.
+The tested deadline is strictly below 500 ms. The separate aggregation and
+out-of-order queue checks inspect cumulative ACK behavior and processing order;
+passing the delay check alone does not establish those properties.
+
+Preserve the distinction between RFC 9293 Section 3.8.6.3 (delayed ACK) and
+Section 3.10.7.4 (segment processing and queued data). Synthetic ACK scheduling
+validates the observer boundary, not the target's own ACK timer implementation.
+
+### Keep-alive: `MUST-24` through `MUST-29`
+
+Probe checks accept zero or one payload byte and verify packet validity.
+`test_keepalive_probe_loss` exercises a single missing response and recovery.
+Do not require termination after an arbitrary count derived from an unrelated
+retransmission parameter, or declare the connection dead from one lost probe.
+Configuration, idle conditions, and default behavior remain separate cases.
+See RFC 9293 Section 3.8.4.
+
+### Silly Window Syndrome: `MUST-38`, `MUST-39`
+
+Base checks focus on transmission and advertised receive-window behavior.
+Receiver observations use the actual initial advertised window, rather than
+assuming it equals a private buffer capacity. Exact buffer accounting and
+selected sender override-timer behavior are separated into `PROFILE-SWS-RX`
+and `PROFILE-SWS-TX`.
+
+A FIN may accompany payload; do not require a separate empty FIN without a
+specific applicable contract. Some base SWS helpers still inspect internal
+state and require further audit. The split is not a claim that every existing
+SWS predicate is now independent of implementation details.
+
+### MSS and SACK
+
+`MUST-14` does not treat failure to observe an MSS option as sufficient evidence
+of a mandatory violation; the scenario can be inconclusive. Effective send MSS
+must account for the scenario's actual headers and options. The profile using
+Timestamp explicitly enables it instead of relying on the base fixture.
+
+`expect_ack` checks valid SACK encoding and the expected first block for the
+legacy scenarios. Later blocks may appear in a different order or number; they
+must still describe recognized received ranges. Do not impose one exact list
+when the requirement permits alternatives. RFC 2018's first-block rule has
+conditions, including cumulative-ACK advancement; do not generalize this helper
+to new scenarios without revisiting those conditions.
+
+### Normal close versus abort: `MUST-12`, `TCP-ABORT-2`
+
+`test_abort_notification` compares normal FIN completion with RST abort using
+application-visible callback histories. Merely counting a CLOSED callback does
+not establish that the application can distinguish normal completion from an
+abort.
+
+`test_abort_after_fin_notification` covers the more subtle case where both
+histories already include a peer FIN. It compares the completion information
+exposed to the application. Do not synthesize an abort reason from the packet
+the test injected. If notification fields change, update the comparison to
+reflect information genuinely available to the application, not pointer identity
+or unrelated internal state.
+
+### RTT, retransmission, and congestion control
+
+`MUST-18` retains Karn-related negative coverage. `TCP-RTT-1` adds a positive,
+unambiguous first sample. It explicitly sets a 3-second SYN timer to isolate
+sampling from initial-RTO behavior, then measures 400 ms in the implementation's
+200 ms estimator units. This does not validate the default initial RTO.
+
+`PROFILE-RTT-2` checks the selected alpha=1/8, beta=1/4 estimator and subsequent
+RTO lower bound. Its seeded values, integer units, and exact expected values
+are an explicit profile, not a universal representation requirement. Timestamp
+sampling and broader rounding/boundary cases remain incomplete. Consult RFC
+6298 for sampling, update order, retransmission ambiguity, and timer rules.
+
+`PROFILE-CC-1` exercises multiple saturated flights above ssthresh, checks the
+selected Reno-style growth bound, and requires progress. A one-byte ACK or an
+upper-bound assertion alone cannot detect an estimator or congestion window
+that never grows. This profile does not validate every permitted congestion
+control algorithm; consult RFC 5681 and the chosen algorithm's specification.
+
+### Address stability and ICMP attribution
+
+`TCP-ADDR-1` follows a connection through data, retransmission, and FIN while
+changing the source-selector candidate. Observe the emitted source address
+throughout the connection, not only during initial selection.
+
+`fixture_prepare_icmp` captures a real transmitted IPv4 header and the required
+initial transport bytes for quotation. A fabricated quoted sequence number can
+miss the target's connection/error validation path and create a false failure.
+Recompute affected checksums when modifying a quotation.
+
+`TCP-ICMP-*` cases separate notification observations by ICMP type and code.
+Trace matching, callback invocation, and event storage before blaming the TCP
+implementation. Upstream commit `4cfc7d2` supplies
+`IIP_OPS_TCP_ICMP_RECEIVED_ERROR` and `test_event_tcp_icmp_error`; preserve that
+integration. A prior run without the hook is not evidence about a run with it.
+
+### Source routing: `MUST-51`, `MUST-52`
+
+These cases are inconclusive while the test-side route configuration lacks a
+native API binding. The old helper checks remain under `PROFILE-ROUTE-1/2`.
+Storing a route in harness memory does not prove it reached iip. Future coverage
+must establish the actual binding and inspect transmitted options, destination,
+and checksum before promoting the requirement to a behavioral verdict.
+
+### TFO and independent boundary cases
+
+TFO is an enabled evaluation profile by default; `--no-tfo` explicitly excludes
+it. Do not convert every TFO failure into TODO or infer unsupported capability
+from a failure after a valid capability precondition.
+
+`TFO-2A`, `TFO-2B`, and `TFO-2C` independently exercise SYN data without an option,
+a cookie request, and an invalid cookie. Selected stricter option/API behavior
+remains in an implementation profile. `ROBUST-BOUNDARY-*` similarly separates
+control, checksum, truncation, flags, MSS boundaries, and payload observations.
+Keep independent cases runnable without an earlier case initializing state.
+
+### Bounded observations of liveness: `MUST-60`
+
+`test_no_indefinite_buffering` observes progress over a finite interval. It must
+not equate a requirement against indefinite buffering with immediate output or
+an arbitrary universal deadline. An unresolved finite observation is
+inconclusive. Avoid forcing PSH simply to make an unrelated buffering check pass.
+
+## Reporting contracts to preserve
+
+PASS applies only to the executed scenario. FAIL includes mandatory and selected
+profile assertions; DEVIATION represents a SHOULD recommendation failure;
+NOT_APPLICABLE needs an applicability reason; INCONCLUSIVE represents missing
+preconditions or evidence; ERROR represents execution or observation failures.
+A crash must not become a harmless SHOULD deviation.
+
+The exit policy is 0 for no FAIL/INCONCLUSIVE/ERROR, 1 for FAIL or INCONCLUSIVE,
+2 for ERROR, and 3 for an otherwise successful `--conformance` run whose coverage
+still cannot establish conformance. The requirement ID, strength, profile,
+coverage, reason, and ledger hash must remain traceable in structured output.
+
+## Counterexamples and mutation evidence
+
+The following experiments are implemented in `scripts/check_mutations.py`.
+They describe expected outcomes, not results of a new run.
+
+| Experiment | Case | Expected observation | Kind |
+| --- | --- | --- | --- |
+| Expire TIME-WAIT exactly at 2MSL | MUST-13 | PASS | Permitted target behavior |
+| Expire TIME-WAIT early | MUST-13 | FAIL | Target defect |
+| Freeze first RTT initialization | TCP-RTT-1 | FAIL | Target defect |
+| Disable TCP checksum verification | MUST-3 | FAIL | Target defect |
+| Reject missing TS when TS is enabled | ROBUST-BOUNDARY-CONTROL | PASS with base TS-disabled fixture | Fixture compatibility control |
+| Schedule synthetic ACK at 495/499 ms | MUST-40 | PASS | Observer counterexample |
+| Schedule synthetic ACK at 500 ms | MUST-40 | FAIL | Observer counterexample |
+
+The script operates on isolated copies and checks an unmodified control before
+each variant. A compile failure is not successful defect detection. Mutation
+patches depend on target source anchors; review an anchor mismatch rather than
+weakening matching or silently skipping the experiment.
+
+Additional target mutations for SACK ordering, missing termination information,
+and invalid TFO-cookie acceptance remain to be implemented.
+
+## Workflow for subsequent changes
+
+1. Read the selected case's ledger entry, source function, and normative text.
+   Specify the exact precondition, permitted outcomes, and observable failure.
+2. Trace packet delivery and callback wiring. Establish a positive control for
+   negative tests, especially checksum, ICMP, option, and filtering cases.
+3. Modify a focused scenario; separate implementation profiles where needed.
+   Record concrete gaps rather than claiming complete coverage.
+4. Update `requirements.json`, run `make registry`, and check with
+   `make check-registry`. Never hand-edit `test_cases.h`.
+5. Run the independent case and `make check-harness`. Shared fixture changes
+   require the affected suites; packet, parser, ownership, or adapter changes
+   also warrant ASan/UBSan. Add a meaningful forbidden/permitted counterexample.
+6. Capture the source version and configuration for each run. Do not reuse
+   historical counts after a rebase, callback change, or target update.
+7. Keep target fixes distinct from corrections to the test oracle. Explain why
+   each changed outcome is now justified by the applicable requirement.
+
+Example commands:
+
+```sh
+make check-harness
+./ai-test-iip --case MUST-13 --case MUST-40 --json /tmp/selected-cases.json
+make check-mutations
+make check-asan
+make check-ubsan
+python3 scripts/capture_run.py --output artifacts/review-run -- ./ai-test-iip
+```
+
+The capture directory is overwritten when reused. Preserve source snapshots,
+configuration, diagnostics, and `requirements-report.json` together. Local
+artifacts and untracked planning documents may be absent in another checkout;
+this guide does not depend on them. GitHub workflow files are not part of the
+implementation commit described here.
+
+Before claiming broader conformance, address the remaining API bindings,
+state/sequence/time wraparound coverage, Timestamp RTT behavior, algorithm
+variants, applicability and SHOULD-deviation analysis, cryptographic assessment,
+and RFC update/errata audit. Keep `NOT_ESTABLISHED` until the evidence and scope
+justify a different claim.
