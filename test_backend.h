@@ -28,6 +28,7 @@ static int test_backend_callback(struct iip_workspace *, uint32_t, uint32_t, enu
 static int test_backend_udp(struct iip_workspace *, uint32_t, void *);
 static int test_backend_arp(struct iip_workspace *, void *, void *);
 static void test_event_ip4_negative_advice(void *, void *);
+static void test_event_tcp_icmp_error(void *, void *, uint8_t, uint8_t);
 static void *test_current_opaque;
 #define IIP_OPS_PKT_VALID() do { iip_ret_bool = pkt != NULL; } while (0)
 #define IIP_OPS_PKT_ALLOC() do { *pkt = iip_ops_pkt_alloc(opaque); iip_ret_int = *pkt ? 0 : -1; } while (0)
@@ -72,4 +73,13 @@ static bool test_backend_fastopen(struct iip_workspace *, uint32_t, const uint8_
 	II_TCP_CONN(conn_id).sent_seq = \
 		II_TCP_CONN(conn_id).seq = \
 		II_TCP_CONN(conn_id).acked_seq = II_TCP_CONN(conn_id).iss; \
+} while (0)
+
+/* IIP_OPS_TCP_ICMP_RECEIVED_ERROR() is expanded where iip has matched the
+ * datagram quoted in an ICMP error to a TCP connection.  buf points to the
+ * ICMP message (type at buf[0], code at buf[1]) and conn_id identifies the
+ * connection. */
+#define IIP_OPS_TCP_ICMP_RECEIVED_ERROR() do { \
+	test_event_tcp_icmp_error(opaque, &II_TCP_CONN(conn_id), buf[0], buf[1]); \
+	iip_ret_int = 0; \
 } while (0)

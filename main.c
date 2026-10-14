@@ -341,7 +341,8 @@ struct test_event {
 	uint64_t at_ns;
 	void *object;
 	/* TX: seq, ack, flags, payload_len; STATE: old, new;
-	 * TIMER: now_ms; CALLBACK: callback-specific arguments;
+	 * TIMER: now_ms; CALLBACK: callback-specific arguments
+	 * (TCP_ICMP_ERROR: ICMP type, ICMP code, local port, remote port);
 	 * RETRANSMISSION: seq, count, rto_ms, payload_len;
 	 * LOSS: old_cwnd, new_cwnd, old_ssthresh, new_ssthresh. */
 	uint32_t value[4];
@@ -735,6 +736,20 @@ static void test_event_loss_detected(void *opaque, void *conn,
 {
 	test_event_append(opaque, TEST_EVENT_LOSS_DETECTED, reason, conn,
 			old_cwnd, new_cwnd, old_ssthresh, new_ssthresh);
+}
+
+/*
+ * Record an ICMP error that iip delivered to a TCP connection (RFC 9293
+ * Sections 3.9.1.8 and 3.9.2.2).  The ports identify the connection that
+ * iip selected from the quoted datagram.
+ */
+static void test_event_tcp_icmp_error(void *opaque, void *conn,
+		uint8_t type, uint8_t code)
+{
+	const struct ii_tcp_conn *c = conn;
+	test_event_append(opaque, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_TCP_ICMP_ERROR, conn, type, code,
+			c->src_port, c->dst_port);
 }
 
 static void test_event_ip4_negative_advice(void *opaque, void *conn)
@@ -1750,6 +1765,7 @@ static int legacy_test_main(void)
 		(void) test_api_close;
 		(void) test_api_send;
 		(void) test_api_arp_request;
+		(void) test_event_tcp_icmp_error;
 	}
 }
 /*
