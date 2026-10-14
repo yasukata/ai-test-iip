@@ -48,12 +48,14 @@ def main():
                         if group != suite:
                             suite = group
                             print(f"\n{suite}", flush=True)
-                        status = ("TODO" if " # TODO " in description else
-                                  "SKIP" if " # SKIP " in description else
+                        status = ("DEVIATION" if " # TODO " in description else
+                                  "NOT_APPLICABLE" if " # SKIP " in description else
+                                  "INCONCLUSIVE" if " - [INCONCLUSIVE] " in description else
+                                  "ERROR" if " - [ERROR] " in description else
                                   "PASS" if match[1] == "ok" else "FAIL")
                         counts[status] += 1
                         print(f"  [{status:4}] {description}", flush=True)
-                        if status == "FAIL":
+                        if status in ("FAIL", "INCONCLUSIVE", "ERROR"):
                             failures.append(description)
                     elif "summary:" in text or text.endswith(": PASS") or text.startswith("Self-test failed:"):
                         print(f"  {text}", flush=True)
@@ -64,9 +66,11 @@ def main():
         print(f"Cannot run tests: {error}", file=sys.stderr)
         return 1
 
-    print(f"\nResult: {'PASS' if result == 0 else 'FAIL'} ({time.monotonic() - started:.1f}s)")
+    if result == 0 and any(counts[k] for k in ('FAIL', 'INCONCLUSIVE', 'ERROR')):
+        result = 1  # A contradictory process exit must not hide failed observations.
+    print(f"\nExecution: {'OK' if result == 0 else 'NONZERO'} (exit={result}, {time.monotonic() - started:.1f}s); case results do not prove complete conformance")
     if counts:
-        print("TAP cases: " + ", ".join(f"{counts[key]} {key}" for key in ("PASS", "FAIL", "SKIP", "TODO")))
+        print("TAP cases: " + ", ".join(f"{counts[key]} {key}" for key in ("PASS", "FAIL", "NOT_APPLICABLE", "DEVIATION", "INCONCLUSIVE", "ERROR")))
     if failures:
         print("\nFailed cases:")
         for description in failures:

@@ -39,7 +39,9 @@ README):
 
 ```sh
 git clone https://github.com/yasukata/iip.git iip
+git -C iip checkout 93f53b2a97208d8c24dd930ba96763e74cd2c567
 git clone https://github.com/BLAKE2/BLAKE2.git blake2-upstream
+git -C blake2-upstream checkout ed1974ea83433eba7b2d95c5dcd9ac33cb847913
 cp blake2-upstream/ref/blake2.h .
 cp blake2-upstream/ref/blake2-impl.h .
 cp blake2-upstream/ref/blake2s-ref.c .
@@ -81,78 +83,92 @@ payload transfer, and connection teardown, with:
 A successful test run exits with status `0`. The tests use `assert`, so do not
 build with `NDEBUG` defined.
 
-### TCP Fast Open capability test
-
-The iip test includes `TFO-PASSIVE-1`. It requests a TCP Fast Open cookie (option kind 34), then uses the
-returned cookie with SYN data. A supported implementation must accept and
-deliver that data once before the final handshake ACK, suppress duplicate
-delivery on SYN retransmission, and complete the handshake without repeating
-the early callbacks.
-
-The normal suite reports an unsupported implementation as TAP `TODO`. Run the
-capability test alone to require support and receive a nonzero exit status when
-it is unavailable:
+### Case selection and reporting
 
 ```sh
-./ai-test-iip --fast-open
-```
-
-### Make targets
-
-Build and run the full test suite with:
-
-```sh
-make
+make check-harness
+./ai-test-iip --list
+./ai-test-iip --case MUST-13 --case MUST-40 --json results.json
+./ai-test-iip --no-tfo
+./ai-test-iip --strict-api --blake2
 make check
-```
-
-`make check` requires Python 3 and groups results by suite with explicit
-`PASS`, `FAIL`, `SKIP`, and `TODO` labels. Failed cases are listed again at the
-end. Full output, including packet traces and assertion diagnostics, is saved
-to `test-results.log`. The command preserves the harness exit status.
-Show diagnostics inline with `make check TEST_OUTPUT_FLAGS=--verbose`.
-Running `./ai-test-iip` directly retains the original output format.
-The formatter can also run a single mode:
-
-```sh
-python3 run_tests.py -- ./ai-test-iip --self-tests
-```
-
-Run the suite with AddressSanitizer and UndefinedBehaviorSanitizer:
-
-```sh
 make check-asan
 make check-ubsan
-make check-sanitizers
+make check-mutations
+make check-conformance
 ```
 
-The sanitizer builds use separate binaries and retain frame pointers for useful
-stack traces. Their full logs are saved separately to `test-results-asan.log`
-and `test-results-ubsan.log`.
-Each scenario runs in a child process with a timeout. A sanitizer
-error stops that child; the harness records a failure and continues with later
-scenarios. The ASan target disables
-leak detection so it also works in test runners that execute processes under
-`ptrace`; it still checks invalid memory accesses.
+TFO is enabled by default. Use `--no-tfo` when it is outside the selected
+configuration. `--fast-open` selects only TFO cases. Failures are not
+unconditionally converted to TODO results.
 
-### Current API migration
+`requirements.json` records case requirements, references, profiles, observation
+criteria, and coverage gaps. Run `make registry` after editing it, then
+`make check-registry` to check synchronization with the generated C registry.
+`test_runner.h` provides TAP and JSON reporting; `conformance_tests.h` contains
+additional scenarios.
 
-The migration retains all 101 original `test_*` scenario functions. The test
-tables still expose 69 RFC entries, 30 IPv4 entries, 6 TCP extension entries,
-12 robustness entries,
-and six TCP Fast Open entries; some entries reuse scenario functions. Existing assertions are adapted to pool IDs and rings, host-order
-connection fields, the current callback interface, and caller-maintained time.
-The API adapters and backend bindings are included by `main.c` in the same
-translation unit as iip
-so internal state assertions can still inspect the implementation.
+`make check` saves formatted diagnostics to `test-results.log`.
+`make check-conformance` saves source snapshots, hashes, revisions, diffs,
+configuration, TAP, JSON, and diagnostics under `artifacts/conformance/`.
+To use a different output directory:
 
-Transmit descriptors now contain queued payload rather than serialized headers.
-Wire-format checks therefore inspect packets emitted by the native transmit path.
-Capacity-error tests inject failure during serialization after successful enqueue;
-they check transmission atomicity, cleanup, and preservation of accepted queues.
-Requirements without a corresponding current API are reported as failures.
-The normal-mode TCP Fast Open `TODO` policy is preserved; `--fast-open`
-requires those capabilities.
+```sh
+python3 scripts/capture_run.py --output artifacts/my-run -- ./ai-test-iip --no-tfo
+```
+
+Reusing an output directory overwrites its files. Generated artifacts are not
+tracked by Git. Preserve the complete evidence directory and corresponding
+sources when sharing a run.
+
+Sanitizers run in each child process. ASan leak detection is disabled.
+Abnormal termination is recorded as a failure or execution error, and subsequent
+cases continue running.
+
+### Evaluation scope
+
+The evaluated system combines iip over IPv4 with this repository's callbacks,
+packet backend, and API adapters. It does not cover IPv6 or certify iip in
+isolation. References include RFCs 9293, 1122, 791, 768, 2018, 6298, 5681, 7323,
+and 7413; per-case references appear in `requirements.json`.
+
+The `base`, `tfo`, and `regression` profiles run by default. `--strict-api`
+enables implementation-specific contracts, including buffer accounting and
+selected algorithm behavior. `--blake2` enables an algorithm-specific known
+answer check, not a proof of cryptographic security. The corresponding
+environment variables are `IIP_TEST_STRICT_API_CONTRACT=1` and
+`IIP_TEST_BLAKE2_PROFILE=1`.
+
+Packet construction, checksum verification, virtual time, and event recording
+belong to the harness. Listener behavior, source-address selection, and
+application notifications include integration callbacks. Source-route settings
+that are not connected to the native API are reported as inconclusive.
+Direct ESTABLISHED fixtures do not replace handshake negotiation tests.
+
+| Status | Meaning |
+| --- | --- |
+| PASS | The selected scenario satisfied its assertions |
+| FAIL | A mandatory or selected profile assertion failed |
+| DEVIATION | A SHOULD recommendation was not satisfied |
+| NOT_APPLICABLE | A case is inapplicable or its optional profile is disabled, with a reason |
+| INCONCLUSIVE | Required capabilities, API bindings, or observations are unavailable |
+| ERROR | Execution, recording, or reporting failed |
+
+All cases currently provide partial coverage. **A successful run does not
+establish RFC conformance.** JSON reports `conformance: NOT_ESTABLISHED`.
+Exit codes are 0 for no failures, inconclusive cases, or execution errors;
+1 for failures or inconclusive cases; 2 for execution errors; and 3 when
+`--conformance` is requested and cases pass but conformance remains unestablished.
+
+Full state and sequence/time wraparound coverage, timestamp-based RTT
+estimation, all congestion-control algorithms, native source-route bindings,
+cryptographic evaluation, and a complete RFC update/errata audit remain outside
+the established coverage. Multiple cases may cover the same requirement or
+expose the same defect; case counts are not requirement coverage percentages.
+
+Mutation experiments distinguish target defects, permitted target behavior,
+and synthetic observer counterexamples. Synthetic ACK scheduling checks the
+observer boundary; it is not a modified TCP implementation.
 
 ### Reproducible packet fuzzing
 
@@ -176,32 +192,3 @@ This AI-generated project is licensed under the [MIT License](LICENSE).
 The original implementation was generated by OpenAI Codex, and the test-suite
 enhancements in this revision were generated by M365 Copilot based on the GPT-5
 reasoning model.
-
-## Review profiles and test scope
-
-The direct ESTABLISHED fixture uses a virtual clock initialized before
-connection initialization. It is a white-box fixture, not a negotiated
-handshake. Window Scale negotiation is checked separately by TCP-WS tests;
-the SWS fixture uses an explicit unscaled oracle rather than inferring a
-shift from implementation output. Some SWS checks still exercise the iip
-buffer-accounting API and its selected threshold algorithm.
-
-MUST-9 checks tuple/key dependence and M+F integration as behavioral smoke
-tests only. It does not prove cryptographic PRF security. The exact BLAKE2
-known answer is a separate optional implementation-profile regression.
-
-Optional implementation contracts are retained, not silently passed:
-
-```sh
-IIP_TEST_STRICT_API_CONTRACT=1 make check
-IIP_TEST_BLAKE2_PROFILE=1 make check
-```
-
-Without these variables, the corresponding cases report SKIP with an
-explicit non-RFC/profile reason. Strict contracts include all-or-nothing
-multi-segment transmission failure and connection closure for zero effective
-MSS. Their failure is not by itself a TCP RFC violation.
-
-MUST-19 accepts conservative per-ACK growth within the tested bound and
-also verifies that the ACK was processed. This bound test alone does not
-prove long-term slow-start or congestion-avoidance progress.

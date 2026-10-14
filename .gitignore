@@ -7,3 +7,6 @@
 /blake2s-ref.c
 /iip/
 test-results*.log
+
+/artifacts/
+__pycache__/
