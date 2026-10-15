@@ -146,8 +146,7 @@ static enum result test_tcp_ws_negotiated_window(const char **why)
 		}
 		if (!ack) {
 			free_output(&f.state);
-			fake_clock_advance_ms(&f.state, 1);
-			fixture_run_timers(&f);
+			fixture_advance_ms(&f, 1);
 		}
 	}
 	if (!ack) {

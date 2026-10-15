@@ -9,15 +9,6 @@
  * forwarding requirements are deliberately out of scope.
  */
 
-static void build_fixture_input(struct fixture *f, struct tcp_packet_spec *spec,
-		void **pkt)
-{
-	static const uint8_t payload[] = { 0 };
-
-	fixture_incoming_spec(f, spec, 0, payload, sizeof(payload));
-	*pkt = build_tcp_packet(spec, &f->state);
-}
-
 static enum result test_ip4_tx_basic_header(const char **why)
 {
 	struct fixture f;
@@ -87,145 +78,136 @@ static enum result test_ip4_tx_atomic_datagram(const char **why)
 	return RESULT_PASS;
 }
 
+/* Each row changes one property of the same incoming TCP data packet.
+ * Checksum repair is explicit: malformed IHL and checksum cases retain the
+ * original behavior, while destination changes also repair the TCP checksum.
+ */
+enum ip4_input_field {
+    IP4_VL, IP4_FRAME_LENGTH, IP4_TOTAL_LENGTH, IP4_EXTRA_TOTAL_LENGTH,
+    IP4_CHECKSUM_XOR, IP4_FLAGS, IP4_DESTINATION, IP4_TTL
+};
+struct ip4_input_case {
+    const char *name;
+    enum ip4_input_field field;
+    uint32_t value;
+    bool repair_ip, repair_tcp;
+    unsigned expected_chunks;
+};
+enum ip4_input_id {
+    IP4_INPUT_WRONG_VERSION,
+    IP4_INPUT_SHORT_BASE_HEADER,
+    IP4_INPUT_SMALL_IHL,
+    IP4_INPUT_TOTAL_LENGTH_BELOW_IHL,
+    IP4_INPUT_TRUNCATED_TOTAL_LENGTH,
+    IP4_INPUT_HEADER_CHECKSUM,
+    IP4_INPUT_RESERVED_FLAG,
+    IP4_INPUT_OTHER_DESTINATION,
+    IP4_INPUT_TTL_ZERO,
+    IP4_INPUT_TTL_ONE,
+};
+static const struct ip4_input_case ip4_input_cases[] = {
+    [IP4_INPUT_WRONG_VERSION] = { "wrong_version", IP4_VL, (6U << 4) | 5U, 1, 0, 0 },
+    [IP4_INPUT_SHORT_BASE_HEADER] = { "short_base_header", IP4_FRAME_LENGTH, 14 + sizeof(struct iip_ip4_hdr) - 1, 0, 0, 0 },
+    [IP4_INPUT_SMALL_IHL] = { "small_ihl", IP4_VL, (4U << 4) | 4U, 0, 0, 0 },
+    [IP4_INPUT_TOTAL_LENGTH_BELOW_IHL] = { "total_length_below_ihl", IP4_TOTAL_LENGTH, sizeof(struct iip_ip4_hdr) - 1, 1, 0, 0 },
+    [IP4_INPUT_TRUNCATED_TOTAL_LENGTH] = { "truncated_total_length", IP4_EXTRA_TOTAL_LENGTH, 1, 1, 0, 0 },
+    [IP4_INPUT_HEADER_CHECKSUM] = { "header_checksum", IP4_CHECKSUM_XOR, 1, 0, 0, 0 },
+    [IP4_INPUT_RESERVED_FLAG] = { "reserved_flag", IP4_FLAGS, 0x8000, 1, 0, 0 },
+    [IP4_INPUT_OTHER_DESTINATION] = { "other_destination", IP4_DESTINATION, 0xc0000263U, 1, 1, 0 },
+    [IP4_INPUT_TTL_ZERO] = { "ttl_zero", IP4_TTL, 0, 1, 0, 1 },
+    [IP4_INPUT_TTL_ONE] = { "ttl_one", IP4_TTL, 1, 1, 0, 1 },
+};
+
+static enum result ip4_input_case_run(enum ip4_input_id index, const char **why)
+{
+    const struct ip4_input_case *c = &ip4_input_cases[index];
+    struct fixture f;
+    void *pkt;
+    TEST_REQUIRE(why, fixture_init(&f), "%s: fixture initialization failed", c->name);
+    pkt = fixture_input_packet(&f);
+    TEST_REQUIRE(why, pkt, "%s: input packet allocation failed", c->name);
+    switch (c->field) {
+    case IP4_VL: PB_IP4(pkt)->vl = c->value; break;
+    case IP4_FRAME_LENGTH: iip_ops_pkt_set_len(pkt, c->value, &f.state); break;
+    case IP4_TOTAL_LENGTH: PB_IP4(pkt)->len_be = ii_htons(c->value); break;
+    case IP4_EXTRA_TOTAL_LENGTH:
+        PB_IP4(pkt)->len_be = ii_htons(ii_ntohs(PB_IP4(pkt)->len_be) + c->value);
+        break;
+    case IP4_CHECKSUM_XOR: PB_IP4(pkt)->csum_be ^= ii_htons(c->value); break;
+    case IP4_FLAGS: PB_IP4(pkt)->off_be = ii_htons(c->value); break;
+    case IP4_DESTINATION: PB_IP4(pkt)->dst_be = ii_htonl(c->value); break;
+    case IP4_TTL: PB_IP4(pkt)->ttl = c->value; break;
+    }
+    if (c->repair_ip) update_ip4_checksum(pkt);
+    if (c->repair_tcp) update_tcp_checksum(pkt);
+    fixture_deliver(&f, pkt);
+    TEST_REQUIRE(why, f.state.payload_chunk_count == c->expected_chunks,
+        "%s: input value=0x%x, expected payload chunks=%u, actual=%u",
+        c->name, (unsigned)c->value, c->expected_chunks,
+        (unsigned)f.state.payload_chunk_count);
+    return RESULT_PASS;
+}
+
 static enum result test_ip4_rx_wrong_version(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->vl = (6U << 4) | 5U;
-	update_ip4_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_WRONG_VERSION, why);
 }
 
 static enum result test_ip4_rx_short_base_header(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	iip_ops_pkt_set_len(pkt, 14 + sizeof(struct iip_ip4_hdr) - 1,
-			&f.state);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_SHORT_BASE_HEADER, why);
 }
 
 static enum result test_ip4_rx_small_ihl(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->vl = (4U << 4) | 4U;
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_SMALL_IHL, why);
 }
 
 static enum result test_ip4_rx_total_length_below_ihl(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->len_be = ii_htons(sizeof(struct iip_ip4_hdr) - 1);
-	update_ip4_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_TOTAL_LENGTH_BELOW_IHL, why);
 }
 
 static enum result test_ip4_rx_truncated_total_length(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->len_be =
-		ii_htons(ii_ntohs(PB_IP4(pkt)->len_be) + 1);
-	update_ip4_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_TRUNCATED_TOTAL_LENGTH, why);
 }
 
 static enum result test_ip4_rx_header_checksum(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->csum_be ^= ii_htons(1);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_HEADER_CHECKSUM, why);
 }
 
 static enum result test_ip4_rx_reserved_flag(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->off_be = ii_htons(0x8000);
-	update_ip4_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+    return ip4_input_case_run(IP4_INPUT_RESERVED_FLAG, why);
 }
 
 static enum result test_ip4_rx_other_destination(const char **why)
 {
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
+    return ip4_input_case_run(IP4_INPUT_OTHER_DESTINATION, why);
+}
 
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->dst_be = ii_htonl(0xc0000263U);
-	update_ip4_checksum(pkt);
-	update_tcp_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 0 ? RESULT_PASS : RESULT_FAIL;
+static enum result test_ip4_rx_ttl_zero(const char **why)
+{
+    return ip4_input_case_run(IP4_INPUT_TTL_ZERO, why);
+}
+
+static enum result test_ip4_rx_ttl_one(const char **why)
+{
+    return ip4_input_case_run(IP4_INPUT_TTL_ONE, why);
 }
 
 static enum result test_ip4_rx_l2_padding(const char **why)
 {
 	struct fixture f;
-	struct tcp_packet_spec spec;
 	void *pkt;
 	uint16_t original_len;
 
 	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
+	pkt = fixture_input_packet(&f);
 	original_len = iip_ops_pkt_get_len(pkt, &f.state);
 	memset((uint8_t *)iip_ops_pkt_get_data(pkt, &f.state) + original_len,
 			0xa5, 8);
@@ -233,41 +215,6 @@ static enum result test_ip4_rx_l2_padding(const char **why)
 	fixture_deliver(&f, pkt);
 	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 1
 		? RESULT_PASS : RESULT_FAIL;
-}
-
-static enum result test_ip4_rx_ttl_zero(const char **why)
-{
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->ttl = 0;
-	update_ip4_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	if (f.state.payload_chunk_count != 1) {
-		*why = "locally-destined TTL zero datagram was discarded";
-		return RESULT_FAIL;
-	}
-	return RESULT_PASS;
-}
-
-static enum result test_ip4_rx_ttl_one(const char **why)
-{
-	struct fixture f;
-	struct tcp_packet_spec spec;
-	void *pkt;
-
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
-	build_fixture_input(&f, &spec, &pkt);
-	PB_IP4(pkt)->ttl = 1;
-	update_ip4_checksum(pkt);
-	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 1 ? RESULT_PASS : RESULT_FAIL;
 }
 
 static enum result test_ip4_rx_576_octets(const char **why)

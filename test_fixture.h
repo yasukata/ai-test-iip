@@ -10,6 +10,7 @@ enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP, RESULT_TODO, RESULT_INCONCL
 
 /* A stack assertion or hang is a failed test, and must not hide later tests. */
 static int test_process_failed;
+static char test_failure_detail[512];
 
 static enum result run_isolated_test(enum result (*run)(const char **), const char **why)
 {
@@ -25,9 +26,14 @@ static enum result run_isolated_test(enum result (*run)(const char **), const ch
 		close(channel[0]);
 		if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) _exit(125);
 		harness_event_overflow = 0;
+		test_failure_detail[0] = 0;
 		alarm(30);
 		const char *detail = NULL;
 		report.result = run(&detail);
+		if ((report.result == RESULT_FAIL || report.result == RESULT_TODO ||
+				report.result == RESULT_INCONCLUSIVE || report.result == RESULT_ERROR) &&
+				(!detail || !*detail) && test_failure_detail[0])
+			detail = test_failure_detail;
 		if (harness_event_overflow) { report.result = RESULT_ERROR; detail = "event log overflow; observations incomplete"; }
 		if (detail) snprintf(report.why, sizeof(report.why), "%s", detail);
 		fflush(NULL);
@@ -53,13 +59,18 @@ static enum result run_isolated_test(enum result (*run)(const char **), const ch
 	return report.result;
 }
 
-static int test_condition_failed(const char *scenario, unsigned int line,
+static int __attribute__((format(printf, 3, 4)))
+test_condition_failed(const char *scenario, unsigned int line,
 		const char *format, ...)
 {
-	va_list args;
+	va_list args, copy;
 
+	assert(format);
 	fprintf(stderr, "FAILED CONDITION [%s:%u]: ", scenario, line);
 	va_start(args, format);
+	va_copy(copy, args);
+	vsnprintf(test_failure_detail, sizeof(test_failure_detail), format, copy);
+	va_end(copy);
 	vfprintf(stderr, format, args);
 	va_end(args);
 	fputc('\n', stderr);
@@ -79,6 +90,16 @@ static int test_condition_failed(const char *scenario, unsigned int line,
 			(_ok) = 0; \
 		} \
 	} while (0)
+
+/* Result-returning assertions keep the same detail in stderr and JSON/TAP. */
+#define TEST_REQUIRE(_why, _condition, ...) \
+    do { \
+        if (!(_condition)) { \
+            test_condition_failed(__func__, __LINE__, __VA_ARGS__); \
+            *(_why) = test_failure_detail; \
+            return RESULT_FAIL; \
+        } \
+    } while (0)
 
 struct fixture {
 	struct test_state state;
@@ -104,9 +125,10 @@ static int fixture_init(struct fixture *f)
 	f->local_mac[0] = 0x02;
 	f->peer_mac[0] = 0x04;
 	f->ws = calloc(1, sizeof(*f->ws));
-	if (!f->ws) return 0;
+	if (!f->ws) return test_condition_failed(__func__, __LINE__, "workspace allocation failed");
 	test_workspace_init(f->ws);
-	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &conn_id) != IIP_ERR_OK) return 0;
+	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &conn_id) != IIP_ERR_OK)
+		return test_condition_failed(__func__, __LINE__, "connection allocation failed");
 	f->conn = &f->ws->tcp_conns.array[conn_id];
 	f->state.use_fake_clock = 1;
 	f->state.now_ns = 1000000000ULL;
@@ -348,6 +370,22 @@ static void fixture_run_timers(struct fixture *f)
 	uint32_t next_us = UINT32_MAX;
 	assert(test_api_run(f->ws, f->local_mac, ii_htonl(f->conn->src_ip[0]),
 			NULL, 0, &next_us, &f->state) == 0);
+}
+
+/* Advance simulated time and let the stack process its timers once. */
+static void fixture_advance_ms(struct fixture *f, uint64_t elapsed_ms)
+{
+    fake_clock_advance_ms(&f->state, elapsed_ms);
+    fixture_run_timers(f);
+}
+
+/* One incoming byte at sequence zero; callers decide how to modify/verify it. */
+static void *fixture_input_packet(struct fixture *f)
+{
+    static const uint8_t payload[] = { 0 };
+    struct tcp_packet_spec spec;
+    fixture_incoming_spec(f, &spec, 0, payload, sizeof(payload));
+    return build_tcp_packet(&spec, &f->state);
 }
 
 static int wait_test_child(pid_t child, unsigned int timeout_ms)

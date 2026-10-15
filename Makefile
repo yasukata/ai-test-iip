@@ -6,7 +6,8 @@ WARNINGS = -Wall -Wextra -Wpedantic
 SANITIZER_CFLAGS = -O1 -g -fno-omit-frame-pointer
 ASAN_FLAGS = -fsanitize=address
 UBSAN_FLAGS = -fsanitize=undefined
-TEST_SOURCES = test_fixture.h test_tcp.h test_ipv4.h test_tcp_extensions.h test_runner.h test_cases.h conformance_tests.h main.c test_api.c test_api.h test_backend.c test_backend.h test_wire.h iip/main.c blake2s-ref.c blake2.h blake2-impl.h
+TEST_HEADERS = $(wildcard test_*.h) conformance_tests.h
+TEST_SOURCES = $(TEST_HEADERS) main.c test_api.c test_backend.c iip/main.c blake2s-ref.c blake2.h blake2-impl.h
 
 .PHONY: all check check-asan check-ubsan check-sanitizers clean
 

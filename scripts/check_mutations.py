@@ -8,7 +8,8 @@ import subprocess
 import tempfile
 
 ROOT=Path(__file__).resolve().parent.parent
-FILES=['main.c','test_api.c','test_api.h','test_backend.c','test_backend.h','test_wire.h','blake2s-ref.c','blake2.h','blake2-impl.h','test_cases.h','test_runner.h','conformance_tests.h','test_fixture.h','test_tcp.h','test_ipv4.h','test_tcp_extensions.h','iip/main.c']
+# Include every harness module when building an isolated mutated copy.
+FILES = sorted(p.name for p in ROOT.iterdir() if p.suffix in ('.c', '.h')) + ['iip/main.c']
 
 def replace_once(text, old, new):
     assert text.count(old)==1, (old,text.count(old))
@@ -30,7 +31,7 @@ def mutate(dst, name):
     elif name.startswith('ack_'):
         # Observer counterexample: synthetic ACK scheduled by fake-clock time.
         # This is NOT counted as a mutation of the target TCP implementation.
-        delay=int(name.split('_')[1]);p=dst/'test_tcp.h';s=p.read_text()
+        delay=int(name.split('_')[1]);p=dst/'test_tcp_window.h';s=p.read_text()
         a=s.index('static enum result test_delayed_ack_limit');b=s.index('static enum result test_window_shrink_robustness',a);chunk=s[a:b]
         needle='fixture_deliver(&f, build_tcp_packet(&spec, &f.state));'
         chunk=replace_once(chunk,needle,needle+'\n    void *scheduled = fixture_packet(&f, 0, 0, 0);\n    assert(scheduled);\n    free_output(&f.state);')
@@ -71,7 +72,7 @@ def main():
             baseline,base_rc=run(dst,out,name+'-baseline',case)
             assert baseline=='PASS' and base_rc==0, (name,'baseline not passing',baseline,base_rc)
             mutate(dst,name)
-            for f in ('iip/main.c','test_tcp.h'):
+            for f in ('iip/main.c','test_tcp_window.h'):
                 if (dst/f).read_bytes() != (ROOT/f).read_bytes():
                     import difflib
                     (out/(name+'.patch')).write_text(''.join(difflib.unified_diff((ROOT/f).read_text().splitlines(True),(dst/f).read_text().splitlines(True),fromfile=f,tofile=f)))

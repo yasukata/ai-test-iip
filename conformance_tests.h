@@ -324,8 +324,7 @@ static enum result test_nagle_does_not_hold_ack(const char **why)
         if (nagle_find_ack(&f, rcv_nxt, 0)) return RESULT_PASS;
         if (elapsed >= 450) break;
         free_output(&f.state);
-        fake_clock_advance_ms(&f.state, 50);
-        fixture_run_timers(&f);
+        fixture_advance_ms(&f, 50);
     }
     *why = "received data was not acknowledged within 0.5 s while Nagle held a small segment";
     return RESULT_FAIL;
@@ -407,7 +406,7 @@ static enum result test_rtt_first_sample(const char **why)
     c->rto_ms = 3000; c->rto_expire = f.ws->now_ms + 3000;
     /* iip exposes its estimator in 200ms ticks. Sample exactly two ticks. */
     for (unsigned i = 0; i < 2; i++) {
-        fake_clock_advance_ms(&f.state, 200); fixture_run_timers(&f);
+        fixture_advance_ms(&f, 200);
     }
     if (test_event_count(&f.state, TEST_EVENT_RETRANSMISSION, 0)) {
         *why = "SYN retransmitted: first-sample precondition failed"; return RESULT_INCONCLUSIVE;
@@ -433,7 +432,7 @@ static enum result test_rtt_subsequent_sample(const char **why)
     if (!fixture_send_data(&f, 1)) return RESULT_FAIL;
     free_output(&f.state);
     for (unsigned i = 0; i < 8; i++) {
-        fake_clock_advance_ms(&f.state, 200); fixture_run_timers(&f);
+        fixture_advance_ms(&f, 200);
     }
     if (test_event_count(&f.state, TEST_EVENT_RETRANSMISSION, 0)) {
         *why = "unexpected retransmission made the RTT observation ambiguous"; return RESULT_FAIL;
@@ -511,8 +510,7 @@ static enum result test_connection_address_lifetime(const char **why)
         }
         free_output(&f.state);
         if (phase == 0) {
-            fake_clock_advance_ms(&f.state, (uint64_t)f.conn->rto_ms + 1);
-            fixture_run_timers(&f);
+            fixture_advance_ms(&f, (uint64_t)f.conn->rto_ms + 1);
         } else if (phase == 1) {
             fixture_incoming_spec(&f, &spec, 101, NULL, 0);
             fixture_deliver(&f, build_tcp_packet(&spec, &f.state));

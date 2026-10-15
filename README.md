@@ -23,7 +23,7 @@ The following project files are published in this repository:
 
 - `main.c` — harness entry point, packet builders, legacy scenarios, and self-tests
 - `test_fixture.h` — shared connection fixtures, assertions, and process isolation
-- `test_tcp.h` — TCP requirements, API regressions, and malformed-input scenarios
+- `test_tcp.h` — includes the `test_tcp_*.h` scenario modules in dependency order
 - `test_ipv4.h` — IPv4 host and ICMP scenarios
 - `test_tcp_extensions.h` — Window Scale, Timestamps, and reset scenarios
 - `test_api.c` and `test_api.h` — adapters and helpers for the current iip API
@@ -36,6 +36,20 @@ The following project files are published in this repository:
 The scenario headers are included by `main.c` in dependency order and share its
 static helpers. The harness remains a single translation unit, so the direct
 compiler command below continues to work.
+
+TCP scenarios are grouped into send/retransmission, malformed input, connection
+states, Fast Open, socket operations, keep-alive, urgent data, network-layer
+interaction, window control, and wire-format modules. Shared operations such as
+`fixture_advance_ms` and `fixture_input_packet` prepare inputs without hiding
+scenario-specific expectations. IPv4 input variations are listed in
+`ip4_input_cases`, with separate registry functions for independent execution.
+
+Use `TEST_REQUIRE(why, condition, format, ...)` in result-returning scenarios to
+report expected and actual values in diagnostics and TAP/JSON. Boolean helpers
+can use `TEST_CONDITION` or `TEST_ACCUMULATE`; their detail is used when a failed
+scenario does not supply its own reason. `make check-harness` also builds a
+separate synthetic registry to check reporting statuses and exit codes without
+depending on failures in the target implementation.
 
 The iip and BLAKE2 sources are intentionally not included. Download
 them separately from their upstream locations as described below.

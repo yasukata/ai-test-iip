@@ -3,7 +3,11 @@ struct test_case {
     enum result (*run)(const char **);
     const char *id, *description, *requirement, *source, *strength, *profile, *coverage;
 };
-#include "test_cases.h"
+/* A separate harness executable may supply deterministic reporting cases. */
+#ifndef TEST_CASE_REGISTRY
+#define TEST_CASE_REGISTRY "test_cases.h"
+#endif
+#include TEST_CASE_REGISTRY
 
 static void json_string(FILE *f, const char *s)
 {
