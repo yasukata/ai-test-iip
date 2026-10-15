@@ -1,0 +1,130 @@
+/* Shared isolated execution for protocol cases and harness self-tests. */
+#include <fcntl.h>
+
+/*
+ * RESULT_TODO is a recommendation deviation only when the ledger declares
+ * SHOULD. Other uses become INCONCLUSIVE; mandatory failures stay failures.
+ */
+enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP, RESULT_TODO, RESULT_INCONCLUSIVE, RESULT_ERROR };
+
+/* A stack assertion or hang is a failed test, and must not hide later tests. */
+static int test_process_failed;
+static char test_failure_detail[512];
+
+/* Always reap a child when a timeout or a parent-side wait error interrupts it. */
+static int kill_and_reap(pid_t child, int *status)
+{
+    kill(child, SIGKILL);
+    pid_t waited;
+    do { waited = waitpid(child, status, 0); } while (waited < 0 && errno == EINTR);
+    return waited == child;
+}
+
+static int wait_isolated_child(pid_t child, unsigned timeout_seconds,
+        int *status, int *timed_out)
+{
+    struct timespec start, now;
+    if (clock_gettime(CLOCK_MONOTONIC, &start)) {
+        kill_and_reap(child, status);
+        return 0;
+    }
+    for (;;) {
+        pid_t waited = waitpid(child, status, WNOHANG);
+        if (waited == child) return 1;
+        if (waited < 0 && errno != EINTR) {
+            kill_and_reap(child, status);
+            return 0;
+        }
+        if (clock_gettime(CLOCK_MONOTONIC, &now)) {
+            kill_and_reap(child, status);
+            return 0;
+        }
+        /* Give the child's alarm one second to finish before enforcing a
+         * deadline even if the test disabled or intercepted SIGALRM. */
+        time_t deadline = start.tv_sec + timeout_seconds + 1;
+        if (now.tv_sec > deadline || (now.tv_sec == deadline && now.tv_nsec >= start.tv_nsec)) {
+            *timed_out = 1;
+            return kill_and_reap(child, status);
+        }
+        const struct timespec pause_time = { 0, 1000000L };
+        nanosleep(&pause_time, NULL);
+    }
+}
+
+/* Both callback forms use the same report pipe and parent-side watchdog. */
+static enum result run_isolated(enum result (*run)(const char **),
+        void (*self_test)(void), const char **why, unsigned timeout_seconds)
+{
+    struct child_result { enum result result; char why[512]; } report = { RESULT_FAIL, { 0 } };
+    static char reason[512];
+    assert((run != NULL) != (self_test != NULL));
+    assert(timeout_seconds > 0);
+    test_process_failed = 0;
+    int channel[2], status;
+    fflush(NULL);
+    if (pipe(channel)) { *why = "cannot create result pipe"; return RESULT_ERROR; }
+    /* A missing report must not block if a descendant inherited the pipe. */
+    if (fcntl(channel[0], F_SETFL, O_NONBLOCK) < 0) {
+        close(channel[0]); close(channel[1]);
+        *why = "cannot configure result pipe";
+        return RESULT_ERROR;
+    }
+    pid_t child = fork();
+    if (child < 0) { close(channel[0]); close(channel[1]); *why = "cannot fork test"; return RESULT_ERROR; }
+    if (!child) {
+        close(channel[0]);
+        if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) _exit(125);
+        harness_event_overflow = 0;
+        test_failure_detail[0] = 0;
+        alarm(timeout_seconds);
+        const char *detail = NULL;
+        if (run) report.result = run(&detail);
+        else { self_test(); report.result = RESULT_PASS; }
+        if ((report.result == RESULT_FAIL || report.result == RESULT_TODO ||
+                report.result == RESULT_INCONCLUSIVE || report.result == RESULT_ERROR) &&
+                (!detail || !*detail) && test_failure_detail[0])
+            detail = test_failure_detail;
+        if (harness_event_overflow) { report.result = RESULT_ERROR; detail = "event log overflow; observations incomplete"; }
+        if (detail) snprintf(report.why, sizeof(report.why), "%s", detail);
+        fflush(NULL);
+        ssize_t n = write(channel[1], &report, sizeof(report));
+        close(channel[1]);
+        _exit(n == sizeof(report) ? EXIT_SUCCESS : EXIT_FAILURE);
+    }
+    close(channel[1]);
+    int timed_out = 0;
+    if (!wait_isolated_child(child, timeout_seconds, &status, &timed_out)) {
+        close(channel[0]);
+        *why = "cannot wait for test process";
+        return RESULT_ERROR;
+    }
+    ssize_t n;
+    do { n = read(channel[0], &report, sizeof(report)); } while (n < 0 && errno == EINTR);
+    close(channel[0]);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) || n != sizeof(report)) {
+        if (timed_out || (WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM))
+            snprintf(reason, sizeof(reason), "test process timed out after %u second%s",
+                timeout_seconds, timeout_seconds == 1 ? "" : "s");
+        else
+            snprintf(reason, sizeof(reason), "test process failed (signal=%d, exit=%d)", WIFSIGNALED(status) ? WTERMSIG(status) : 0, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        *why = reason;
+        test_process_failed = 1;
+        return WIFSIGNALED(status) ? RESULT_FAIL : RESULT_ERROR;
+    }
+    if (report.result < RESULT_PASS || report.result > RESULT_ERROR) { *why = "invalid child result"; return RESULT_ERROR; }
+    snprintf(reason, sizeof(reason), "%s", report.why);
+    *why = reason[0] ? reason : NULL;
+    return report.result;
+}
+
+static enum result run_isolated_test(enum result (*run)(const char **), const char **why)
+{
+    return run_isolated(run, NULL, why, 30);
+}
+
+static enum result run_isolated_self_test(void (*run)(void), const char **why,
+        unsigned timeout_seconds)
+{
+    return run_isolated(NULL, run, why, timeout_seconds);
+}
+

@@ -2368,11 +2368,13 @@ static int run_self_tests(void)
 	};
 	int failed = 0;
 	for (unsigned int i = 0; i < ARRAY_LENGTH(tests); i++) {
-		fflush(NULL);
-		pid_t child = fork();
-		assert(child >= 0);
-		if (!child) { alarm(10); tests[i].run(); fflush(NULL); _exit(0); }
-		if (!wait_test_child(child, 11000)) { fprintf(stderr, "Self-test failed: %s\n", tests[i].name); failed++; }
+        const char *why = NULL;
+        enum result result = run_isolated_self_test(tests[i].run, &why, 10);
+        if (result != RESULT_PASS) {
+            fprintf(stderr, "Self-test failed: %s: %s\n", tests[i].name,
+                why ? why : "see diagnostics");
+            failed++;
+        }
 	}
 	fprintf(stderr, "Self-test summary: %zu passed, %d failed\n", ARRAY_LENGTH(tests) - failed, failed);
 	return failed != 0;

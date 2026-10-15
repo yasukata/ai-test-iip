@@ -22,7 +22,8 @@ security assurance artifact.
 The following project files are published in this repository:
 
 - `main.c` — harness entry point, packet builders, legacy scenarios, and self-tests
-- `test_fixture.h` — shared connection fixtures, assertions, and process isolation
+- `test_fixture.h` — shared connection fixtures and assertions
+- `test_process.h` — isolated execution, result transport, and timeout handling
 - `test_tcp.h` — includes the `test_tcp_*.h` scenario modules in dependency order
 - `test_ipv4.h` — IPv4 host and ICMP scenarios
 - `test_tcp_extensions.h` — Window Scale, Timestamps, and reset scenarios
@@ -112,6 +113,12 @@ payload transfer, and connection teardown, with:
 ```sh
 ./ai-test-iip --self-tests
 ```
+
+Self-tests use the same isolated execution and result transport as protocol
+cases. Their timeout remains 10 seconds per test (30 seconds for protocol cases).
+A parent-side watchdog enforces the deadline with a one-second grace period even
+if a test ignores its alarm. Event-log overflow and missing child reports fail
+the self-test, and diagnostics include the failing self-test name and reason.
 
 A successful test run exits with status `0`. The tests use `assert`, so do not
 build with `NDEBUG` defined.
