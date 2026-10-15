@@ -718,7 +718,7 @@
     },
     {
       "id": "MUST-52",
-      "function": "test_source_route_api_available",
+      "function": "test_source_route_precedence",
       "description": "application route overrides received route",
       "requirement_id": "RFC9293:MUST-52",
       "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.9.2",
@@ -726,9 +726,9 @@
       "profile": "base",
       "applicability": "IPv4; selected integration; base",
       "responsibility": "iip + documented callbacks",
-      "oracle": "Assertions in test_source_route_api_available; see README.md#evaluation-scope and the coverage gaps for limitations",
+      "oracle": "Assertions in test_source_route_precedence (route bound through IIP_OPS_IPV4_OPT_SEND, with a control connection showing the received route is otherwise adopted); see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Native source-route configuration binding missing; behavioral test not executable"
+      "gaps": "Received LSRR on SYN-ACK only; precedence checked on handshake ACK and one data segment; SSRR, routes received on later segments, fragmentation and zero-copy transmission not exercised"
     },
     {
       "id": "MUST-53",

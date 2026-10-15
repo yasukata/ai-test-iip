@@ -26,8 +26,14 @@ class Reporting(unittest.TestCase):
         self.assertEqual(r.returncode,2)
         self.assertIsNone(j)
 
-    def test_unbound_api_is_not_pass(self):
-        r,j = self.run_case('--case','MUST-52')
+    def test_inconclusive_is_not_pass(self):
+        # No case is inconclusive by construction any more; pick one that is
+        # inconclusive in this build so the exit-status contract stays tested.
+        _,full = self.run_case()
+        ids = [c['id'] for c in full['cases'] if c['status']=='INCONCLUSIVE']
+        if not ids:
+            self.skipTest('no INCONCLUSIVE case in this build')
+        r,j = self.run_case('--case',ids[0])
         self.assertEqual(r.returncode,1)
         self.assertEqual(j['cases'][0]['status'],'INCONCLUSIVE')
 

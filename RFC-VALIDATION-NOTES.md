@@ -203,8 +203,11 @@ pseudo-header keeps the ultimate destination. Routes are keyed by address
 pair because the hook runs before the L4 header is copied. `MUST-51` checks
 SYN, handshake ACK and a data segment for the option, first-hop destination,
 frame length equal to the IPv4 total length, and valid IPv4/TCP checksums.
-`MUST-52` remains inconclusive; the old helper checks remain under
-`PROFILE-ROUTE-1/2`.
+`MUST-52` delivers a SYN-ACK carrying a different LSRR and requires the
+handshake ACK and data to keep the application route. A control connection
+without an application route must adopt the received route; otherwise the
+verdict is inconclusive, because precedence would not be observable. The old
+helper checks remain under `PROFILE-ROUTE-1/2`.
 
 ### TFO and independent boundary cases
 

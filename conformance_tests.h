@@ -54,11 +54,6 @@ static enum result test_tfo_invalid_cookie(const char **why)
     return test_fastopen_rejected_syn_data_case(FASTOPEN_REJECT_INVALID_COOKIE, why) ? RESULT_PASS : RESULT_FAIL;
 }
 
-static enum result test_source_route_api_available(const char **why)
-{
-    *why = "test route table has no binding to the native connect API; route configuration not exercised";
-    return RESULT_INCONCLUSIVE;
-}
 
 /* RFC 9293 MUST-51: a source route specified at active OPEN must be taken.
  * The route reaches iip through IIP_OPS_IPV4_OPT_SEND (test_backend.h).
@@ -144,6 +139,118 @@ static enum result test_source_route_active_open(const char **why)
     if (!must51_all_routed(&f, wire_dst_be, final_dst_be, option, option_len)) {
         *why = "data segment did not take the application source route"; return RESULT_FAIL;
     }
+    return RESULT_PASS;
+}
+
+/* RFC 9293 MUST-52: an application-specified source route takes precedence
+ * over a source route received in a datagram.  The SYN-ACK carries a
+ * different LSRR; the handshake ACK and later data must still use the
+ * application route.  A control connection without an application route
+ * shows that the received route is otherwise adopted, so the precedence
+ * verdict is not a vacuous "no route captured" pass. */
+static int must52_deliver_routed_synack(struct fixture *f, struct ii_tcp_conn *conn,
+        uint16_t local_port_be, uint16_t peer_port_be, uint32_t hop_be)
+{
+    struct tcp_packet_spec spec;
+    uint8_t option[40];
+    uint16_t option_len;
+    uint32_t address_be[1] = { hop_be };
+    fixture_incoming_spec(f, &spec, 100, NULL, 0);
+    spec.src_port_be = peer_port_be;
+    spec.dst_port_be = local_port_be;
+    spec.ack_seq = conn->seq;
+    spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+    /* Route fully traversed (pointer past the end), as on arrival. */
+    option_len = test_make_source_route_option(option, 131, 8, address_be, 1);
+    memcpy(spec.ip_options, option, option_len);
+    spec.ip_options_len = option_len;
+    fixture_deliver(f, build_tcp_packet(&spec, &f->state));
+    return conn->state == II_TCP_STATE_ESTABLISHED;
+}
+
+static enum result test_source_route_precedence(const char **why)
+{
+    struct fixture f, control;
+    struct ii_tcp_conn *conn;
+    uint8_t app_option[40];
+    uint16_t app_option_len;
+    const uint16_t local_port_be = ii_htons(14011);
+    const uint16_t peer_port_be = ii_htons(25011);
+    const uint32_t app_hop_be = ii_htonl(0xcb007101U);
+    const uint32_t received_hop_be = ii_htonl(0xcb007102U);
+    uint32_t final_dst_be, local_be, address_be[1];
+    unsigned int i;
+
+    /* Control: no application route; the received route must be adopted. */
+    if (!fixture_init(&control)) return RESULT_ERROR;
+    local_be = ii_htonl(control.conn->src_ip[0]);
+    final_dst_be = ii_htonl(control.conn->dst_ip[0]);
+    if (test_tcp_active_open(control.ws, control.local_mac, &local_be,
+            local_port_be, control.peer_mac, final_dst_be, peer_port_be,
+            &control.state) == 0xffff) return RESULT_ERROR;
+    fixture_run_timers(&control);
+    conn = fixture_find_peer_port(&control, peer_port_be);
+    if (!conn) return RESULT_ERROR;
+    free_output(&control.state);
+    if (!must52_deliver_routed_synack(&control, conn, local_port_be,
+            peer_port_be, received_hop_be)) {
+        *why = "control handshake failed"; return RESULT_ERROR;
+    }
+    if (!control.state.out_cnt ||
+            PB_IP4(control.state.out[0])->dst_be != received_hop_be ||
+            !test_ip4_source_route_option(control.state.out[0], &(uint16_t){ 0 })) {
+        *why = "precondition: received route is not adopted without an application route; precedence not observable";
+        return RESULT_INCONCLUSIVE;
+    }
+
+    /* Test: application route specified at active OPEN. */
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    address_be[0] = final_dst_be;
+    app_option_len = test_make_source_route_option(app_option, 131, 4,
+            address_be, 1);
+    if (!test_source_route_add(&f.state, 1, local_be, local_port_be,
+            final_dst_be, peer_port_be, app_hop_be, app_option,
+            app_option_len)) return RESULT_ERROR;
+    if (test_tcp_active_open(f.ws, f.local_mac, &local_be, local_port_be,
+            f.peer_mac, final_dst_be, peer_port_be, &f.state) == 0xffff)
+        return RESULT_ERROR;
+    fixture_run_timers(&f);
+    conn = fixture_find_peer_port(&f, peer_port_be);
+    if (!conn || !must51_all_routed(&f, app_hop_be, final_dst_be,
+            app_option, app_option_len)) {
+        *why = "precondition: SYN did not take the application route (see MUST-51)";
+        return RESULT_INCONCLUSIVE;
+    }
+    free_output(&f.state);
+    if (!must52_deliver_routed_synack(&f, conn, local_port_be, peer_port_be,
+            received_hop_be)) {
+        *why = "handshake precondition failed"; return RESULT_ERROR;
+    }
+    if (f.state.out_cnt && !must51_all_routed(&f, app_hop_be, final_dst_be,
+            app_option, app_option_len)) {
+        *why = "a received source route overrode the application route on the handshake ACK";
+        return RESULT_FAIL;
+    }
+    free_output(&f.state);
+    {
+        void *payload = iip_ops_pkt_alloc(&f.state);
+        if (!payload) return RESULT_ERROR;
+        memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, 100);
+        iip_ops_pkt_set_len(payload, 100, &f.state);
+        test_api_send(f.ws, conn, payload, 0, &f.state);
+        fixture_run_timers(&f);
+    }
+    if (!f.state.out_cnt) {
+        *why = "data segment not emitted"; return RESULT_INCONCLUSIVE;
+    }
+    if (!must51_all_routed(&f, app_hop_be, final_dst_be, app_option, app_option_len)) {
+        *why = "a received source route overrode the application route on data";
+        return RESULT_FAIL;
+    }
+    for (i = 0; i < f.state.out_cnt; i++)
+        if (PB_IP4(f.state.out[i])->dst_be == received_hop_be) {
+            *why = "segment addressed to the received route's hop"; return RESULT_FAIL;
+        }
     return RESULT_PASS;
 }
 
