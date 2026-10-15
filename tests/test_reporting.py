@@ -186,6 +186,30 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
                 self.assertIn(deviations, summary)
                 self.assertEqual(len(log.read_text().splitlines()), 4)
 
+    def test_status_words_in_free_text_do_not_change_classification(self):
+        for identifier, status, code in [("STATUS-TEXT-PASS", "PASS", 0),
+                                         ("STATUS-TEXT-FAIL", "FAIL", 1),
+                                         ("STATUS-TEXT-ERROR", "ERROR", 2),
+                                         ("STATUS-TEXT-INCONCLUSIVE", "INCONCLUSIVE", 1)]:
+            with self.subTest(case=identifier), tempfile.TemporaryDirectory() as temp:
+                result, report = self.run_case("--case", identifier)
+                self.assertEqual(result.returncode, code)
+                self.assertEqual(report["cases"][0]["status"], status)
+                wrapped = subprocess.run(
+                    [sys.executable, str(ROOT / "run_tests.py"), "--log", str(Path(temp) / "run.log"),
+                     "--", str(self.binary), "--case", identifier],
+                    capture_output=True, text=True)
+                self.assertEqual(wrapped.returncode, code, wrapped.stderr)
+                summary = next(line for line in wrapped.stdout.splitlines()
+                               if line.startswith("TAP cases:"))
+                self.assertIn(f"1 {status}", summary)
+                for tag in ("FAIL", "ERROR", "INCONCLUSIVE"):
+                    self.assertIn(f"{int(status == tag)} {tag}", summary)
+                    self.assertEqual(result.stdout.count(f" - [{tag}] "), int(status == tag))
+                if status != "PASS":
+                    self.assertEqual(report["cases"][0]["reason"],
+                                     "observed - [ERROR] and - [INCONCLUSIVE] as text")
+
     def test_conformance_exit_requires_otherwise_successful_run(self):
         for identifier, code in [("PASS", 3), ("FAIL", 1), ("ERROR", 2)]:
             with self.subTest(case=identifier):

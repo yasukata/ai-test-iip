@@ -56,6 +56,29 @@ class ConsoleRunner(unittest.TestCase):
                 self.assertIn("Invalid TAP output:", result.stderr)
                 self.assertIn("Execution: NONZERO", result.stdout)
 
+    def test_contradictory_or_malformed_result_fields_are_errors(self):
+        cases = [
+            "ok 1 - CASE passed - [ERROR] conflict",
+            "ok 1 - CASE passed - [FAIL] conflict",
+            "ok 1 - CASE passed # TODO conflict",
+            "not ok 1 - CASE failed # SKIP conflict",
+            "ok 1 - CASE skipped # SKIP",
+            "not ok 1 - CASE differs # TODO",
+            "ok 1 - CASE passed # UNKNOWN unsupported",
+            "not ok 1 - CASE failed - [UNKNOWN] unsupported",
+            "not ok 1 - CASE failed - [ERROR]",
+            "not ok 1 - CASE failed - [ERROR]one",
+            "not ok 1 - CASE failed - [ERROR] reason - [INCONCLUSIVE] conflict",
+            "not ok 1 - CASE failed - [FAIL] reason # TODO conflict",
+            "ok 1 - CASE skipped # SKIP reason # TODO conflict",
+        ]
+        for line in cases:
+            with self.subTest(line=line):
+                result = self.run_output("TAP version 13\n1..1\n" + line + "\n")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("Invalid TAP output: case 1:", result.stderr)
+                self.assertNotIn("Execution: OK", result.stdout)
+
     def test_case_status_overrides_successful_child_exit(self):
         cases = [
             ("ok 1 - CASE passing", 0),

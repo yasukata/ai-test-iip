@@ -4,6 +4,7 @@
 import argparse
 from collections import Counter
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import queue
@@ -53,6 +54,53 @@ def output_lines(process):
             reader.join()
 
 
+@dataclass(frozen=True)
+class CaseResult:
+    number: int
+    identifier: str
+    description: str
+    status: str
+
+
+def parse_case(match):
+    """Parse reserved result fields; free text is escaped by test_report.h."""
+    ok = match[1] == "ok"
+    description = match[3]
+    body, separator, directive = description.partition(" # ")
+    marker = body.partition(" - [")
+    if separator:
+        name, space, reason = directive.partition(" ")
+        if name not in ("SKIP", "TODO") or not space or not reason.strip():
+            raise ValueError("invalid or unexplained TAP directive")
+        if " # " in directive or marker[1]:
+            raise ValueError("conflicting TAP result fields")
+        if (name == "SKIP") != ok:
+            raise ValueError("TAP directive contradicts ok/not ok")
+        status = "NOT_APPLICABLE" if name == "SKIP" else "DEVIATION"
+    elif marker[1]:
+        status, closing, reason = marker[2].partition("]")
+        if status not in ("FAIL", "INCONCLUSIVE", "ERROR") or not closing:
+            raise ValueError("invalid TAP status marker")
+        if ok or not reason.startswith(" ") or not reason.strip() or " - [" in reason:
+            raise ValueError("contradictory or malformed TAP status")
+    else:
+        status = "PASS" if ok else "FAIL"
+    return CaseResult(int(match[2]), description.split()[0], description, status)
+
+
+def case_group(identifier):
+    for prefixes, group in (
+        (("MUST-",), "RFC 9293"),
+        (("IP4-", "ICMP-", "UDP-"), "IPv4 host"),
+        (("TCP-",), "TCP extensions and resets"),
+        (("ROBUST-",), "Robustness"),
+        (("TFO-",), "TCP Fast Open"),
+    ):
+        if identifier.startswith(prefixes):
+            return group
+    return "Tests"
+
+
 class TapRun:
     """Validate the nonempty, header/plan-first TAP stream emitted by our harness."""
 
@@ -81,7 +129,11 @@ class TapRun:
             self.observed += 1
             if int(match[2]) != self.observed:
                 self.errors.append(f"expected case number {self.observed}, got {match[2]}")
-            return match
+            try:
+                return parse_case(match)
+            except ValueError as error:
+                self.errors.append(f"case {match[2]}: {error}")
+                return None
         if text.startswith("Bail out!"):
             self.errors.append("TAP bailout: " + text)
         elif text in ("ok", "not ok") or text.startswith(("TAP version ", "1..", "ok ", "not ok ")):
@@ -129,27 +181,16 @@ def main():
                         log.write(line)
                         log.flush()
                         text = line.rstrip()
-                        match = tap.observe(text) if is_stdout else None
-                        if match:
-                            description = match[3]
-                            identifier = description.split()[0]
-                            group = ("RFC 9293" if identifier.startswith("MUST-") else
-                                     "IPv4 host" if identifier.startswith(("IP4-", "ICMP-", "UDP-")) else
-                                     "TCP extensions and resets" if identifier.startswith("TCP-") else
-                                     "Robustness" if identifier.startswith("ROBUST-") else
-                                     "TCP Fast Open" if identifier.startswith("TFO-") else "Tests")
+                        case = tap.observe(text) if is_stdout else None
+                        if case:
+                            group = case_group(case.identifier)
                             if group != suite:
                                 suite = group
                                 print(f"\n{suite}", flush=True)
-                            status = ("DEVIATION" if " # TODO " in description else
-                                      "NOT_APPLICABLE" if " # SKIP " in description else
-                                      "INCONCLUSIVE" if " - [INCONCLUSIVE] " in description else
-                                      "ERROR" if " - [ERROR] " in description else
-                                      "PASS" if match[1] == "ok" else "FAIL")
-                            counts[status] += 1
-                            print(f"  [{status:4}] {description}", flush=True)
-                            if status in ("FAIL", "INCONCLUSIVE", "ERROR"):
-                                failures.append(description)
+                            counts[case.status] += 1
+                            print(f"  [{case.status:4}] {case.description}", flush=True)
+                            if case.status in ("FAIL", "INCONCLUSIVE", "ERROR"):
+                                failures.append(case.description)
                         elif "summary:" in text or text.endswith(": PASS") or text.startswith("Self-test failed:"):
                             print(f"  {text}", flush=True)
                         elif args.verbose and text != "TAP version 13" and not re.fullmatch(r"1\.\.\d+", text):

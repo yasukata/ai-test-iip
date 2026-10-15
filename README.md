@@ -54,8 +54,10 @@ depending on failures in the target implementation. The runner self-checks also
 exercise option validation against malformed lengths and padding using exact-size
 buffers, so sanitizer runs can detect reads beyond the declared option area.
 TAP descriptions and reasons escape control characters, backslashes, and `#` so
-free text cannot create extra result lines or SKIP/TODO directives. JSON retains
-the original text, and console-wrapper tests check that statuses remain intact.
+free text cannot create extra result lines or SKIP/TODO directives. A `[` after
+` - ` is also escaped so descriptions and reasons cannot imitate status markers.
+JSON retains the original text, and console-wrapper tests check that statuses
+remain intact.
 
 Run `make check-harness-sanitizers` to exercise these checks with ASan and UBSan
 independently of target-stack conformance failures.
@@ -145,8 +147,10 @@ while retaining both streams in the diagnostic log.
 Its `run_tests.py` wrapper requires the harness's nonempty TAP stream, with a
 version header, a plan before the cases, and consecutive case numbers. Missing,
 truncated, or malformed results turn a zero child exit into exit code 2; existing
-nonzero child exit codes are preserved. Run `--list` and `--self-tests` directly
-rather than through this case-results wrapper.
+nonzero child exit codes are preserved. Contradictory result fields, unsupported
+status markers, and SKIP/TODO directives without a reason are reported as errors.
+Run `--list` and `--self-tests` directly rather than through this case-results
+wrapper.
 
 A failed stdout write during case reporting or `--list` returns exit code 2.
 When JSON is requested, a TAP write failure is reflected in its `exit_code`

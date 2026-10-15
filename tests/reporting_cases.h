@@ -97,6 +97,26 @@ static enum result synthetic_tap_todo(const char **why)
     return RESULT_TODO;
 }
 
+static const char status_text_reason[] = "observed - [ERROR] and - [INCONCLUSIVE] as text";
+
+static enum result synthetic_status_words(const char **why)
+{
+    *why = status_text_reason;
+    return RESULT_FAIL;
+}
+
+static enum result synthetic_status_error(const char **why)
+{
+    *why = status_text_reason;
+    return RESULT_ERROR;
+}
+
+static enum result synthetic_status_inconclusive(const char **why)
+{
+    *why = status_text_reason;
+    return RESULT_INCONCLUSIVE;
+}
+
 static const struct test_case test_cases[] = {
     { synthetic_pass, "PASS", "synthetic PASS", "TEST:PASS", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_fail, "FAIL", "synthetic FAIL", "TEST:FAIL", "tests/reporting_cases.h", "MUST", "base", "partial" },
@@ -115,4 +135,8 @@ static const struct test_case test_cases[] = {
     { synthetic_tap_fail, "TAP-FAIL", "description\n # TODO fake", "TEST:TAP-FAIL", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_tap_skip, "TAP-SKIP", "description\n # TODO fake", "TEST:TAP-SKIP", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_tap_todo, "TAP-TODO", "description\n # TODO fake", "TEST:TAP-TODO", "tests/reporting_cases.h", "SHOULD", "base", "partial" },
+    { synthetic_pass, "STATUS-TEXT-PASS", "description - [ERROR] is text", "TEST:STATUS-TEXT-PASS", "tests/reporting_cases.h", "MUST", "base", "partial" },
+    { synthetic_status_words, "STATUS-TEXT-FAIL", "description - [INCONCLUSIVE] is text", "TEST:STATUS-TEXT-FAIL", "tests/reporting_cases.h", "MUST", "base", "partial" },
+    { synthetic_status_error, "STATUS-TEXT-ERROR", "description - [INCONCLUSIVE] is text", "TEST:STATUS-TEXT-ERROR", "tests/reporting_cases.h", "MUST", "base", "partial" },
+    { synthetic_status_inconclusive, "STATUS-TEXT-INCONCLUSIVE", "description - [ERROR] is text", "TEST:STATUS-TEXT-INCONCLUSIVE", "tests/reporting_cases.h", "MUST", "base", "partial" },
 };

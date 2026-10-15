@@ -23,18 +23,22 @@ static const char *result_name(enum result r)
 }
 
 /* Escape free text so each observation occupies exactly one TAP line and
- * cannot introduce a SKIP/TODO directive. JSON retains the original text.
+ * cannot introduce a SKIP/TODO directive or a status marker. JSON retains
+ * the original text.
  */
 static void tap_text(const char *text)
 {
-    for (const unsigned char *p = (const unsigned char *)(text ? text : ""); *p; p++) {
+    const unsigned char *start = (const unsigned char *)(text ? text : "");
+    for (const unsigned char *p = start; *p; p++) {
         switch (*p) {
         case '\n': fputs("\\n", stdout); break;
         case '\r': fputs("\\r", stdout); break;
         case '\t': fputs("\\t", stdout); break;
         case '\\': fputs("\\\\", stdout); break;
         default:
-            if (*p < 32 || *p == 127 || *p == '#') printf("\\x%02x", *p);
+            if (*p < 32 || *p == 127 || *p == '#' ||
+                    (*p == '[' && p - start >= 3 && !memcmp(p - 3, " - ", 3)))
+                printf("\\x%02x", *p);
             else putchar(*p);
         }
     }
