@@ -39,7 +39,7 @@ compiler command below continues to work.
 
 TCP scenarios are grouped into send/retransmission, malformed input, connection
 states, Fast Open, socket operations, keep-alive, urgent data, network-layer
-interaction, window control, and wire-format modules. Shared operations such as
+interaction, window control, wire-format fields, and option validation modules. Shared operations such as
 `fixture_advance_ms` and `fixture_input_packet` prepare inputs without hiding
 scenario-specific expectations. IPv4 input variations are listed in
 `ip4_input_cases`, with separate registry functions for independent execution.
@@ -49,7 +49,11 @@ report expected and actual values in diagnostics and TAP/JSON. Boolean helpers
 can use `TEST_CONDITION` or `TEST_ACCUMULATE`; their detail is used when a failed
 scenario does not supply its own reason. `make check-harness` also builds a
 separate synthetic registry to check reporting statuses and exit codes without
-depending on failures in the target implementation.
+depending on failures in the target implementation. The runner self-checks also
+exercise option validation against malformed lengths and padding using exact-size
+buffers, so sanitizer runs can detect reads beyond the declared option area.
+Run `make check-harness-sanitizers` to exercise these checks with ASan and UBSan
+independently of target-stack conformance failures.
 
 The iip and BLAKE2 sources are intentionally not included. Download
 them separately from their upstream locations as described below.

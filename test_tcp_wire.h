@@ -247,15 +247,15 @@ static enum result test_unaligned_options(const char **why)
 	struct fixture f;
 	struct tcp_packet_spec spec;
 	const uint8_t timestamp[] = { 0, 0, 0, 1, 0, 0, 0, 0 };
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
+	TEST_REQUIRE(why, fixture_init(&f), "unaligned options: fixture initialization failed");
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	tcp_packet_add_nop(&spec);
 	tcp_packet_add_option(&spec, 8, timestamp, sizeof(timestamp));
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn->state == II_TCP_STATE_ESTABLISHED
-		? RESULT_PASS : RESULT_FAIL;
+	TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_ESTABLISHED,
+		"unaligned options: expected state=%u, actual=%u",
+		(unsigned)II_TCP_STATE_ESTABLISHED, (unsigned)f.conn->state);
+	return RESULT_PASS;
 }
 
 static enum result test_window_unsigned(const char **why)
@@ -391,15 +391,17 @@ static enum result test_required_options(const char **why)
 
 static enum result test_ttl(const char **why)
 {
-	struct fixture f;
-	void *pkt;
-	int ok;
-	(void)why;
-	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 0)))
-		return RESULT_FAIL;
-	ok = PB_IP4(pkt)->ttl == TEST_IP4_TTL;
-	iip_ops_pkt_free(pkt, &f.state);
-	return ok ? RESULT_PASS : RESULT_FAIL;
+    struct fixture f;
+    void *pkt;
+    unsigned actual;
+    TEST_REQUIRE(why, fixture_init(&f), "IPv4 TTL: fixture initialization failed");
+    pkt = fixture_packet(&f, 0, 0, 0);
+    TEST_REQUIRE(why, pkt, "IPv4 TTL: output packet unavailable");
+    actual = PB_IP4(pkt)->ttl;
+    iip_ops_pkt_free(pkt, &f.state);
+    TEST_REQUIRE(why, actual == TEST_IP4_TTL,
+        "IPv4 TTL: expected=%u, actual=%u", (unsigned)TEST_IP4_TTL, actual);
+    return RESULT_PASS;
 }
 
 static enum result test_diffserv(const char **why)
@@ -441,70 +443,31 @@ static enum result test_diffserv(const char **why)
 
 static enum result test_psh_last(const char **why)
 {
-	struct fixture f;
-	void *pkt;
-	int ok;
-	(void)why;
-	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 1)))
-		return RESULT_FAIL;
-	ok = PB_TCP_HDR_HAS_PSH(pkt);
-	iip_ops_pkt_free(pkt, &f.state);
-	return ok ? RESULT_PASS : RESULT_FAIL;
+    struct fixture f;
+    void *pkt;
+    unsigned actual;
+    TEST_REQUIRE(why, fixture_init(&f), "TCP final segment PSH: fixture initialization failed");
+    pkt = fixture_packet(&f, 0, 0, 1);
+    TEST_REQUIRE(why, pkt, "TCP final segment PSH: output packet unavailable");
+    actual = !!PB_TCP_HDR_HAS_PSH(pkt);
+    iip_ops_pkt_free(pkt, &f.state);
+    TEST_REQUIRE(why, actual == 1,
+        "TCP final segment PSH: expected=%u, actual=%u", (unsigned)1, actual);
+    return RESULT_PASS;
 }
 
 static enum result test_mss_syn_only(const char **why)
 {
-	struct fixture f;
-	void *pkt;
-	int ok;
-	(void)why;
-	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 0, 0, 0)))
-		return RESULT_FAIL;
-	ok = option_find(pkt, 2) == NULL;
-	iip_ops_pkt_free(pkt, &f.state);
-	return ok ? RESULT_PASS : RESULT_FAIL;
-}
-
-static enum result test_option_lengths(const char **why)
-{
-	struct fixture f;
-	void *pkt;
-	uint8_t *o;
-	uint16_t at, n;
-	(void)why;
-	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 1, 0, 0)))
-		return RESULT_FAIL;
-	o = PB_TCP_OPT(pkt); n = PB_TCP_OPTLEN(pkt);
-	for (at = 0; at < n && o[at] != 0; ) {
-		if (o[at] == 1) { at++; continue; }
-		if (at + 2 > n || o[at + 1] < 2 || at + o[at + 1] > n) {
-			iip_ops_pkt_free(pkt, &f.state);
-			return RESULT_FAIL;
-		}
-		at += o[at + 1];
-	}
-	iip_ops_pkt_free(pkt, &f.state);
-	return RESULT_PASS;
-}
-
-static enum result test_zero_padding(const char **why)
-{
-	struct fixture f;
-	void *pkt;
-	uint8_t *o;
-	uint16_t at, n;
-	(void)why;
-	if (!fixture_init(&f) || !(pkt = fixture_packet(&f, 1, 0, 0)))
-		return RESULT_FAIL;
-	o = PB_TCP_OPT(pkt); n = PB_TCP_OPTLEN(pkt);
-	for (at = 0; at < n && o[at]; )
-		at += o[at] == 1 ? 1 : o[at + 1];
-	for (; at < n; at++)
-		if (o[at] != 0) {
-			iip_ops_pkt_free(pkt, &f.state);
-			return RESULT_FAIL;
-		}
-	iip_ops_pkt_free(pkt, &f.state);
-	return RESULT_PASS;
+    struct fixture f;
+    void *pkt;
+    unsigned actual;
+    TEST_REQUIRE(why, fixture_init(&f), "TCP non-SYN MSS option present: fixture initialization failed");
+    pkt = fixture_packet(&f, 0, 0, 0);
+    TEST_REQUIRE(why, pkt, "TCP non-SYN MSS option present: output packet unavailable");
+    actual = option_find(pkt, 2) != NULL;
+    iip_ops_pkt_free(pkt, &f.state);
+    TEST_REQUIRE(why, actual == 0,
+        "TCP non-SYN MSS option present: expected=%u, actual=%u", (unsigned)0, actual);
+    return RESULT_PASS;
 }
 

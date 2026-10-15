@@ -51,6 +51,18 @@ check-harness: check-registry ai-test-iip
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=gnu11 -o /tmp/ai-test-iip-runner-faults tests/runner_faults.c
 	/tmp/ai-test-iip-runner-faults
 
+# Exercise harness validators independently of target-stack conformance failures.
+.PHONY: check-harness-asan check-harness-ubsan check-harness-sanitizers
+check-harness-asan: check-registry
+	$(CC) $(CPPFLAGS) $(SANITIZER_CFLAGS) $(WARNINGS) $(ASAN_FLAGS) -std=gnu11 -o /tmp/ai-test-iip-runner-faults-asan tests/runner_faults.c
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 /tmp/ai-test-iip-runner-faults-asan
+
+check-harness-ubsan: check-registry
+	$(CC) $(CPPFLAGS) $(SANITIZER_CFLAGS) $(WARNINGS) $(UBSAN_FLAGS) -std=gnu11 -o /tmp/ai-test-iip-runner-faults-ubsan tests/runner_faults.c
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 /tmp/ai-test-iip-runner-faults-ubsan
+
+check-harness-sanitizers: check-harness-asan check-harness-ubsan
+
 check-mutations: check-registry
 	$(PYTHON) scripts/check_mutations.py
 

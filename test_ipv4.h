@@ -204,17 +204,21 @@ static enum result test_ip4_rx_l2_padding(const char **why)
 	void *pkt;
 	uint16_t original_len;
 
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
+	TEST_REQUIRE(why, fixture_init(&f), "IPv4 l2_padding: fixture initialization failed");
 	pkt = fixture_input_packet(&f);
+	TEST_REQUIRE(why, pkt, "IPv4 L2 padding: input packet unavailable");
 	original_len = iip_ops_pkt_get_len(pkt, &f.state);
 	memset((uint8_t *)iip_ops_pkt_get_data(pkt, &f.state) + original_len,
 			0xa5, 8);
 	iip_ops_pkt_set_len(pkt, original_len + 8, &f.state);
 	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 1
-		? RESULT_PASS : RESULT_FAIL;
+	TEST_REQUIRE(why, f.state.payload_chunk_count == 1,
+		"IPv4 l2_padding: expected payload chunks=1, actual=%u",
+		(unsigned)f.state.payload_chunk_count);
+	TEST_REQUIRE(why, f.conn->seq_next_expected == 1,
+		"IPv4 l2_padding: expected next sequence=1, actual=%u",
+		(unsigned)f.conn->seq_next_expected);
+	return RESULT_PASS;
 }
 
 static enum result test_ip4_rx_576_octets(const char **why)
@@ -225,16 +229,20 @@ static enum result test_ip4_rx_576_octets(const char **why)
 	void *pkt;
 	unsigned int i;
 
-	(void)why;
 	for (i = 0; i < sizeof(payload); i++)
 		payload[i] = (uint8_t)i;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
+	TEST_REQUIRE(why, fixture_init(&f), "IPv4 576_octets: fixture initialization failed");
 	fixture_incoming_spec(&f, &spec, 0, payload, sizeof(payload));
 	pkt = build_tcp_packet(&spec, &f.state);
+	TEST_REQUIRE(why, pkt, "IPv4 576_octets: input packet unavailable");
 	fixture_deliver(&f, pkt);
-	return f.state.payload_chunk_count == 1 && f.conn->seq_next_expected == 536
-		? RESULT_PASS : RESULT_FAIL;
+	TEST_REQUIRE(why, f.state.payload_chunk_count == 1,
+		"IPv4 576_octets: expected payload chunks=1, actual=%u",
+		(unsigned)f.state.payload_chunk_count);
+	TEST_REQUIRE(why, f.conn->seq_next_expected == 536,
+		"IPv4 576_octets: expected next sequence=536, actual=%u",
+		(unsigned)f.conn->seq_next_expected);
+	return RESULT_PASS;
 }
 
 static enum result test_ip4_rx_unknown_option_requirement(const char **why)

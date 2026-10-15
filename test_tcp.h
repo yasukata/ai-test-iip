@@ -11,3 +11,4 @@
 #include "test_tcp_network.h"
 #include "test_tcp_window.h"
 #include "test_tcp_wire.h"
+#include "test_tcp_options.h"
