@@ -37,6 +37,15 @@ class Reporting(unittest.TestCase):
         self.assertEqual(r.returncode,1)
         self.assertEqual(j['cases'][0]['status'],'INCONCLUSIVE')
 
+    def test_additional_profiles_run_by_default(self):
+        r,j = self.run_case('--case','ROBUST-6','--case','ROBUST-10')
+        self.assertIsNotNone(j, r.stderr)
+        self.assertTrue(j['configuration']['strict_api'])
+        self.assertTrue(j['configuration']['blake2'])
+        self.assertEqual(len(j['cases']), 2)
+        for case in j['cases']:
+            self.assertNotEqual(case['status'], 'NOT_APPLICABLE', case)
+
     def test_disabled_profile_has_reason(self):
         r,j = self.run_case('--case','TFO-2A','--no-tfo')
         self.assertEqual(r.returncode,0)

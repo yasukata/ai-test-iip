@@ -48,10 +48,15 @@ int main(int argc, char **argv)
     const char *selection[256], *json_path = NULL;
     size_t selected = 0, count = 0, emitted = 0;
     int list = 0, tfo = 1, only_tfo = 0, conformance = 0;
-    int strict = getenv("IIP_TEST_STRICT_API_CONTRACT") && !strcmp(getenv("IIP_TEST_STRICT_API_CONTRACT"), "1");
-    int blake = getenv("IIP_TEST_BLAKE2_PROFILE") && !strcmp(getenv("IIP_TEST_BLAKE2_PROFILE"), "1");
+    int strict = 1, blake = 1;
     unsigned failed = 0, incomplete = 0, errors = 0, passed = 0, deviations = 0, skipped = 0;
     FILE *json = NULL;
+    /* Keep runner selection and in-test profile guards enabled together. */
+    if (setenv("IIP_TEST_STRICT_API_CONTRACT", "1", 1) ||
+        setenv("IIP_TEST_BLAKE2_PROFILE", "1", 1)) {
+        perror("setenv");
+        return 2;
+    }
     if (argc == 2 && !strcmp(argv[1], "--self-tests")) return run_self_tests();
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--list")) list = 1;

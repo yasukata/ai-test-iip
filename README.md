@@ -132,12 +132,13 @@ packet backend, and API adapters. It does not cover IPv6 or certify iip in
 isolation. References include RFCs 9293, 1122, 791, 768, 2018, 6298, 5681, 7323,
 and 7413; per-case references appear in `requirements.json`.
 
-The `base`, `tfo`, and `regression` profiles run by default. `--strict-api`
-enables implementation-specific contracts, including buffer accounting and
-selected algorithm behavior. `--blake2` enables an algorithm-specific known
-answer check, not a proof of cryptographic security. The corresponding
-environment variables are `IIP_TEST_STRICT_API_CONTRACT=1` and
-`IIP_TEST_BLAKE2_PROFILE=1`.
+The `base`, `tfo`, `regression`, `strict-api`, and `blake2` profiles run by
+default. Implementation-specific contracts and the BLAKE2 known answer check
+therefore run without extra options. `--strict-api` and `--blake2` remain
+accepted for compatibility. The runner sets `IIP_TEST_STRICT_API_CONTRACT=1`
+and `IIP_TEST_BLAKE2_PROFILE=1`, overriding inherited values so in-test guards
+agree with profile selection. The BLAKE2 check is not a proof of cryptographic
+security. `--no-tfo` continues to disable TFO cases.
 
 Packet construction, checksum verification, virtual time, and event recording
 belong to the harness. Listener behavior, source-address selection, and
