@@ -161,6 +161,8 @@ version header, a plan before the cases, and consecutive case numbers. Missing,
 truncated, or malformed results turn a zero child exit into exit code 2; existing
 nonzero child exit codes are preserved. Contradictory result fields, unsupported
 status markers, and SKIP/TODO directives without a reason are reported as errors.
+TAP counts and case numbers must use ASCII digits; numbers that exceed Python's
+integer conversion limit are reported as invalid TAP rather than raising a traceback.
 Run `--list` and `--self-tests` directly rather than through this case-results
 wrapper.
 

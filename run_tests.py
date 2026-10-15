@@ -151,24 +151,28 @@ class TapRun:
                 self.errors.append("duplicate or misplaced TAP header")
             self.header = True
             return None
-        plan = re.fullmatch(r"1\.\.(\d+)", text)
+        plan = re.fullmatch(r"1\.\.([0-9]+)", text)
         if plan:
             if not self.header or self.plan is not None or self.observed:
                 self.errors.append("duplicate or misplaced TAP plan")
-            self.plan = int(plan[1])
+            try:
+                self.plan = int(plan[1])
+            except ValueError:
+                self.errors.append("TAP plan exceeds the integer conversion limit")
             return None
-        match = re.fullmatch(r"(not ok|ok) (\d+) - (\S.*)", text)
+        match = re.fullmatch(r"(not ok|ok) ([0-9]+) - (\S.*)", text)
         if match:
             if not self.header or self.plan is None:
                 self.errors.append("case appeared before the TAP header and plan")
             self.observed += 1
-            if int(match[2]) != self.observed:
-                self.errors.append(f"expected case number {self.observed}, got {match[2]}")
             try:
-                return parse_case(match)
+                case = parse_case(match)
             except ValueError as error:
                 self.errors.append(f"case {match[2]}: {error}")
                 return None
+            if case.number != self.observed:
+                self.errors.append(f"expected case number {self.observed}, got {case.number}")
+            return case
         if text.startswith("Bail out!"):
             self.errors.append("TAP bailout: " + text)
         elif text in ("ok", "not ok") or text.startswith(("TAP version ", "1..", "ok ", "not ok ")):
@@ -229,7 +233,7 @@ def main():
                                 failures.append(case.description)
                         elif "summary:" in text or text.endswith(": PASS") or text.startswith("Self-test failed:"):
                             print(f"  {text}", flush=True)
-                        elif args.verbose and text != "TAP version 13" and not re.fullmatch(r"1\.\.\d+", text):
+                        elif args.verbose and text != "TAP version 13" and not re.fullmatch(r"1\.\.[0-9]+", text):
                             print(f"    {text}", flush=True)
                     result = process.wait()
     except RunInterrupted as error:

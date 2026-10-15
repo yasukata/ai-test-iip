@@ -82,6 +82,21 @@ class ConsoleRunner(unittest.TestCase):
                 self.assertIn("Invalid TAP output: case 1:", result.stderr)
                 self.assertNotIn("Execution: OK", result.stdout)
 
+    def test_invalid_numeric_fields_are_reported_without_a_traceback(self):
+        cases = {
+            "oversized plan": "1.." + "9" * 5000 + "\nok 1 - CASE passing\n",
+            "oversized case number": "1..1\nok " + "9" * 5000 + " - CASE passing\n",
+            "non-ASCII plan": "1..１\nok 1 - CASE passing\n",
+            "non-ASCII case number": "1..1\nok ١ - CASE passing\n",
+        }
+        for name, records in cases.items():
+            with self.subTest(case=name):
+                result = self.run_output("TAP version 13\n" + records)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("Invalid TAP output:", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertIn("Execution: NONZERO", result.stdout)
+
     def test_case_status_overrides_successful_child_exit(self):
         cases = [
             ("ok 1 - CASE passing", 0),
