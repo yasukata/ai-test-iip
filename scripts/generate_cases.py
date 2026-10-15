@@ -11,10 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 def generate():
     raw = (ROOT / 'requirements.json').read_bytes()
     cases = json.loads(raw)['cases']
-    source = (ROOT / 'main.c').read_text()
-    extra = ROOT / 'conformance_tests.h'
-    if extra.exists():
-        source += extra.read_text()
+    # Scan implementation headers as well as the entry point, but never the
+    # generated registry: its references cannot prove a function exists.
+    sources = [ROOT / 'main.c', ROOT / 'conformance_tests.h']
+    sources += sorted(p for p in ROOT.glob('test_*.h')
+                      if p.name != 'test_cases.h')
+    source = '\n'.join(p.read_text() for p in sources)
     ids = set()
     rows = []
     for c in cases:

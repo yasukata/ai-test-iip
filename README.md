@@ -21,13 +21,21 @@ security assurance artifact.
 
 The following project files are published in this repository:
 
-- `main.c` — test scenarios, fixtures, packet builders, and assertions
+- `main.c` — harness entry point, packet builders, legacy scenarios, and self-tests
+- `test_fixture.h` — shared connection fixtures, assertions, and process isolation
+- `test_tcp.h` — TCP requirements, API regressions, and malformed-input scenarios
+- `test_ipv4.h` — IPv4 host and ICMP scenarios
+- `test_tcp_extensions.h` — Window Scale, Timestamps, and reset scenarios
 - `test_api.c` and `test_api.h` — adapters and helpers for the current iip API
 - `test_backend.c` and `test_backend.h` — packet backend and callback bindings
 - `test_wire.h` — test-side wire-format definitions
 - `Makefile` — build and test targets
 - `README.md` — setup, build, and usage instructions
 - `LICENSE` — the MIT License
+
+The scenario headers are included by `main.c` in dependency order and share its
+static helpers. The harness remains a single translation unit, so the direct
+compiler command below continues to work.
 
 The iip and BLAKE2 sources are intentionally not included. Download
 them separately from their upstream locations as described below.
