@@ -151,6 +151,9 @@ additional scenarios.
 `make check` saves formatted diagnostics to `test-results.log`.
 The wrapper drains stdout and stderr separately, parsing TAP only from stdout
 while retaining both streams in the diagnostic log.
+The command runs in its own POSIX process group. When it exits or output logging
+fails, the wrapper stops remaining processes in that group so inherited output
+pipes cannot keep the wrapper waiting indefinitely.
 Its `run_tests.py` wrapper requires the harness's nonempty TAP stream, with a
 version header, a plan before the cases, and consecutive case numbers. Missing,
 truncated, or malformed results turn a zero child exit into exit code 2; existing

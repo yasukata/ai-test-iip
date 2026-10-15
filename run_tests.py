@@ -2,16 +2,26 @@
 """Display harness results while retaining the complete diagnostic output."""
 
 import argparse
+import os
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import re
 import queue
+import signal
 import threading
 import subprocess
 import sys
 import time
+
+
+def stop_process_group(process):
+    """Stop the command and descendants that inherited its output pipes."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 @contextmanager
@@ -36,7 +46,13 @@ def output_lines(process):
     def lines():
         finished = 0
         while finished < len(readers):
-            is_stdout, line = pending.get()
+            # EOF depends on every inherited writer, not just the command itself.
+            if process.poll() is not None:
+                stop_process_group(process)
+            try:
+                is_stdout, line = pending.get(timeout=0.1)
+            except queue.Empty:
+                continue
             if line is None:
                 finished += 1
             elif isinstance(line, Exception):
@@ -48,8 +64,7 @@ def output_lines(process):
         yield lines()
     finally:
         # A logging/printing failure must not leave the child blocked on a pipe.
-        if any(reader.is_alive() for reader in readers) and process.poll() is None:
-            process.kill()
+        stop_process_group(process)
         for reader in readers:
             reader.join()
 
@@ -175,7 +190,8 @@ def main():
     try:
         with log_path.open("w", encoding="utf-8") as log:
             with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  text=True, errors="replace", bufsize=1) as process:
+                                  text=True, errors="replace", bufsize=1,
+                                  start_new_session=True) as process:
                 with output_lines(process) as lines:
                     for is_stdout, line in lines:
                         log.write(line)

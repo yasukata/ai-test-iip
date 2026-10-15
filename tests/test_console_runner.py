@@ -1,5 +1,7 @@
 """Check wrapper behavior against deterministic child output and exit codes."""
 from pathlib import Path
+import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -120,6 +122,38 @@ class ConsoleRunner(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Cannot run tests:", result.stderr)
         self.assertNotIn("Execution: OK", result.stdout)
+
+    def test_inherited_pipes_do_not_block_completion_or_error_cleanup(self):
+        for log_failure in (False, True):
+            with self.subTest(log_failure=log_failure), tempfile.TemporaryDirectory() as temp:
+                pid_file = Path(temp) / "command.pid"
+                log = "/dev/full" if log_failure else str(Path(temp) / "output.log")
+                output = "TAP version 13\n1..1\nok 1 - CASE passing\n"
+                child = (
+                    "import os, pathlib, subprocess, sys, time; "
+                    f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); "
+                    "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+                    f"print({output!r}, end='', flush=True); "
+                    + ("time.sleep(60)" if log_failure else "sys.exit(0)")
+                )
+                try:
+                    result = subprocess.run(
+                        [sys.executable, str(ROOT / "run_tests.py"), "--log", log,
+                         "--", sys.executable, "-c", child],
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 1 if log_failure else 0, result.stderr)
+                    if log_failure:
+                        self.assertIn("Cannot run tests:", result.stderr)
+                    else:
+                        self.assertIn("TAP cases: 1 PASS", result.stdout)
+                        self.assertEqual(Path(log).read_text(), output)
+                finally:
+                    # Also clean up the deliberately stalled tree if the regression returns.
+                    if pid_file.exists():
+                        try:
+                            os.killpg(int(pid_file.read_text()), signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
 
     def test_diagnostics_do_not_count_as_cases(self):
         output = ("initialization diagnostic\nTAP version 13\n1..2\n"
