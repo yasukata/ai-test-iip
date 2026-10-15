@@ -16,6 +16,26 @@ import sys
 import time
 
 
+class RunInterrupted(Exception):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+@contextmanager
+def interruption_handlers():
+    """Unwind process cleanup on both terminal and supervisor cancellation."""
+    def interrupt(signum, frame):
+        raise RunInterrupted(signum)
+
+    previous = {signum: signal.signal(signum, interrupt)
+                for signum in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        yield
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
 def stop_process_group(process):
     """Stop the command and descendants that inherited its output pipes."""
     try:
@@ -188,7 +208,7 @@ def main():
     log_path = Path(args.log)
     print(f"Running: {' '.join(command)}", flush=True)
     try:
-        with log_path.open("w", encoding="utf-8") as log:
+        with interruption_handlers(), log_path.open("w", encoding="utf-8") as log:
             with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True, errors="replace", bufsize=1,
                                   start_new_session=True) as process:
@@ -212,6 +232,9 @@ def main():
                         elif args.verbose and text != "TAP version 13" and not re.fullmatch(r"1\.\.\d+", text):
                             print(f"    {text}", flush=True)
                     result = process.wait()
+    except RunInterrupted as error:
+        print(f"Test run interrupted by {signal.Signals(error.signum).name}", file=sys.stderr)
+        return 128 + error.signum
     except OSError as error:
         print(f"Cannot run tests: {error}", file=sys.stderr)
         return 1

@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,6 +164,54 @@ class ConsoleRunner(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("TAP cases: 2 PASS", result.stdout)
         self.assertNotIn("Invalid TAP output:", result.stderr)
+
+    def test_interruptions_stop_the_command_and_inherited_pipe_writers(self):
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            for close_output in (False, True):
+                with self.subTest(signal=signum, close_output=close_output), tempfile.TemporaryDirectory() as temp:
+                    log = Path(temp) / "output.log"
+                    pid_file = Path(temp) / "command.pid"
+                    ready_file = Path(temp) / "ready"
+                    # Ignore cancellation in the command: the wrapper must clean it up.
+                    child = (
+                        "import os, pathlib, signal, subprocess, sys, time; "
+                        "signal.signal(signal.SIGINT, signal.SIG_IGN); "
+                        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                        f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); "
+                        + ("os.close(1); os.close(2); " if close_output else "")
+                        + "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+                        + ("" if close_output else "print('ready', flush=True); ")
+                        + f"pathlib.Path({str(ready_file)!r}).touch(); "
+                        + "time.sleep(60)"
+                    )
+                    with subprocess.Popen(
+                        [sys.executable, str(ROOT / "run_tests.py"), "--log", str(log),
+                         "--", sys.executable, "-c", child],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    ) as wrapper:
+                        try:
+                            deadline = time.monotonic() + 5
+                            while not ready_file.exists():
+                                self.assertIsNone(wrapper.poll(), "wrapper exited before readiness")
+                                self.assertLess(time.monotonic(), deadline, "command did not become ready")
+                                time.sleep(0.01)
+                            wrapper.send_signal(signum)
+                            stdout, stderr = wrapper.communicate(timeout=5)
+                            self.assertEqual(wrapper.returncode, 128 + signum, stderr)
+                            self.assertIn(f"Test run interrupted by {signum.name}", stderr)
+                            self.assertNotIn("Traceback", stderr)
+                            self.assertNotIn("Execution: OK", stdout)
+                            with self.assertRaises(ProcessLookupError):
+                                os.kill(int(pid_file.read_text()), 0)
+                        finally:
+                            if pid_file.exists():
+                                try:
+                                    os.killpg(int(pid_file.read_text()), signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+                            if wrapper.poll() is None:
+                                wrapper.kill()
+                            wrapper.communicate(timeout=5)
 
 
 if __name__ == "__main__":
