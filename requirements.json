@@ -252,8 +252,50 @@
       "responsibility": "iip",
       "oracle": "Assertions in test_nagle_algorithm; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Two one-octet writes with one segment outstanding; hold and release on ACK only. Interaction with PSH, FIN, sender SWS and full-sized segments not exercised"
+      "gaps": "Two one-octet writes with one segment outstanding; hold and release on ACK only. Control segments behind held data: NAGLE-ACK-1, NAGLE-DUPACK-1, NAGLE-FIN-1. PSH, sender SWS and full-sized segments not exercised"
     },
+    {
+      "id": "NAGLE-ACK-1",
+      "function": "test_nagle_does_not_hold_ack",
+      "description": "Nagle does not hold an ACK for received data",
+      "requirement_id": "RFC9293:MUST-40",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6.3",
+      "strength": "MUST",
+      "profile": "base",
+      "applicability": "IPv4; selected integration; base",
+      "responsibility": "iip",
+      "oracle": "Assertions in test_nagle_does_not_hold_ack; NOT_APPLICABLE unless Nagle holds a small write (see SHLD-7); see README.md#evaluation-scope and the coverage gaps for limitations",
+      "coverage": "partial",
+      "gaps": "One in-order data segment from the peer while one octet is outstanding and one is held; RTO pushed out; observed in 50 ms steps up to 450 ms"
+      },
+      {
+      "id": "NAGLE-DUPACK-1",
+      "function": "test_nagle_does_not_hold_dupack",
+      "description": "Nagle does not hold a duplicate ACK",
+      "requirement_id": "RFC5681:4.2",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-4.2",
+      "strength": "SHOULD",
+      "profile": "base",
+      "applicability": "IPv4; selected integration; base",
+      "responsibility": "iip",
+      "oracle": "Assertions in test_nagle_does_not_hold_dupack; NOT_APPLICABLE unless Nagle holds a small write (see SHLD-7); see README.md#evaluation-scope and the coverage gaps for limitations",
+      "coverage": "partial",
+      "gaps": "One out-of-order segment; requires a data-less ACK for RCV.NXT in the same processing step"
+      },
+      {
+      "id": "NAGLE-FIN-1",
+      "function": "test_nagle_does_not_hold_fin",
+      "description": "Nagle does not hold the held data and FIN after close",
+      "requirement_id": "PROFILE:NAGLE-FIN-1",
+      "source": "README.md#evaluation-scope",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; selected integration; regression",
+      "responsibility": "iip",
+      "oracle": "Assertions in test_nagle_does_not_hold_fin; NOT_APPLICABLE unless Nagle holds a small write (see SHLD-7); see README.md#evaluation-scope and the coverage gaps for limitations",
+      "coverage": "partial",
+      "gaps": "No RFC requirement; close with one octet held, observed up to 200 ms with RTO pushed out"
+      },
     {
       "id": "MUST-18",
       "function": "test_karn_rtt_sampling",

@@ -254,6 +254,140 @@ static enum result test_source_route_precedence(const char **why)
     return RESULT_PASS;
 }
 
+/*
+ * Nagle must hold only new small data, never control segments queued
+ * behind it.  Each case first establishes "one octet outstanding, a second
+ * octet held by Nagle"; if the stack does not hold it, the scenario is not
+ * reachable and the case is NOT_APPLICABLE (SHLD-7 reports that).  The
+ * RTO is made long (via SRTT/RTTVAR) so that a retransmission, which also
+ * carries an ACK, cannot mask a held control segment; a retransmission
+ * during the observation makes the case INCONCLUSIVE.
+ */
+static int nagle_hold_one_octet(struct fixture *f)
+{
+    if (!fixture_init(f)) return -1;
+    fixture_prepare_sender(f);
+    f->conn->cc.win = 8;
+    f->state.accept_arbitrary_payload = 1;
+    /* iip recomputes the RTO from SRTT/RTTVAR (200 ms ticks) whenever it
+     * queues a segment; (8 + 4 * 4) * 200 ms = 4.8 s keeps RTO out of the
+     * observation window. */
+    f->conn->rtt.srtt = 8;
+    f->conn->rtt.rttvar = 4;
+    if (!fixture_send_data(f, 1) || f->state.out_cnt != 1) return -1;
+    free_output(&f->state);
+    fake_clock_advance_ms(&f->state, 10);
+    if (!fixture_send_data(f, 1) && test_ring_end(f->ws, &f->conn->tx_ring, 0) == NULL)
+        return -1;
+    if (f->state.out_cnt) return 0; /* not held */
+    test_event_log_clear(&f->state);
+    return 1;
+}
+
+/* An ACK-only segment acknowledging rcv_nxt, or any segment whose ACK field
+ * acknowledges rcv_nxt. */
+static int nagle_find_ack(struct fixture *f, uint32_t rcv_nxt, int pure_only)
+{
+    unsigned int i;
+    for (i = 0; i < f->state.out_cnt; i++) {
+        void *pkt = f->state.out[i];
+        if (!PB_TCP_HDR_HAS_ACK(pkt) || PB_TCP_HDR_HAS_RST(pkt)) continue;
+        if (ii_ntohl(PB_TCP(pkt)->ack_seq_be) != rcv_nxt) continue;
+        if (pure_only && (PB_TCP_PAYLOAD_LEN(pkt) || PB_TCP_HDR_HAS_SYN(pkt) ||
+                PB_TCP_HDR_HAS_FIN(pkt))) continue;
+        return 1;
+    }
+    return 0;
+}
+
+/* RFC 9293 MUST-40: an ACK for received data must not be delayed by 0.5 s
+ * or more -- also while Nagle holds our own small data. */
+static enum result test_nagle_does_not_hold_ack(const char **why)
+{
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    const uint8_t data[1] = { 'x' };
+    uint32_t rcv_nxt;
+    unsigned int elapsed;
+    int held = nagle_hold_one_octet(&f);
+    if (held < 0) { *why = "precondition: small writes were not emitted as expected"; return RESULT_ERROR; }
+    if (!held) { *why = "Nagle did not hold the second small write; scenario not reachable"; return RESULT_SKIP; }
+    fixture_incoming_spec(&f, &spec, f.conn->ack_seq, data, 1);
+    spec.ack_seq = f.conn->acked_seq; /* does not acknowledge our octet */
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    rcv_nxt = f.conn->ack_seq;
+    if (rcv_nxt != spec.seq + 1) { *why = "precondition: peer data not accepted"; return RESULT_ERROR; }
+    for (elapsed = 0; ; elapsed += 50) {
+        if (test_event_count(&f.state, TEST_EVENT_RETRANSMISSION, 0)) {
+            *why = "precondition: retransmission occurred before the ACK deadline"; return RESULT_INCONCLUSIVE;
+        }
+        if (nagle_find_ack(&f, rcv_nxt, 0)) return RESULT_PASS;
+        if (elapsed >= 450) break;
+        free_output(&f.state);
+        fake_clock_advance_ms(&f.state, 50);
+        fixture_run_timers(&f);
+    }
+    *why = "received data was not acknowledged within 0.5 s while Nagle held a small segment";
+    return RESULT_FAIL;
+}
+
+/* RFC 5681 Section 4.2: an out-of-order segment SHOULD trigger an immediate
+ * duplicate ACK; it only counts as one if it carries no data (Section 2). */
+static enum result test_nagle_does_not_hold_dupack(const char **why)
+{
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    const uint8_t data[1] = { 'x' };
+    uint32_t rcv_nxt;
+    int held = nagle_hold_one_octet(&f);
+    if (held < 0) { *why = "precondition: small writes were not emitted as expected"; return RESULT_ERROR; }
+    if (!held) { *why = "Nagle did not hold the second small write; scenario not reachable"; return RESULT_SKIP; }
+    rcv_nxt = f.conn->ack_seq;
+    fixture_incoming_spec(&f, &spec, rcv_nxt + 100, data, 1);
+    spec.ack_seq = f.conn->acked_seq;
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    if (f.conn->ack_seq != rcv_nxt) { *why = "precondition: out-of-order data advanced RCV.NXT"; return RESULT_ERROR; }
+    if (!nagle_find_ack(&f, rcv_nxt, 1)) {
+        *why = "no immediate data-less duplicate ACK for an out-of-order segment while Nagle held a small segment";
+        return RESULT_TODO;
+    }
+    return RESULT_PASS;
+}
+
+/* Implementation profile: closing must not leave the held octet and the FIN
+ * waiting for the outstanding ACK -- nothing can follow a FIN to coalesce. */
+static enum result test_nagle_does_not_hold_fin(const char **why)
+{
+    struct fixture f;
+    uint32_t held_seq;
+    unsigned int i, elapsed;
+    int data_seen = 0, fin_seen = 0;
+    int held = nagle_hold_one_octet(&f);
+    if (held < 0) { *why = "precondition: small writes were not emitted as expected"; return RESULT_ERROR; }
+    if (!held) { *why = "Nagle did not hold the second small write; scenario not reachable"; return RESULT_SKIP; }
+    held_seq = f.conn->acked_seq + 1;
+    (void)test_api_close(f.ws, f.conn, &f.state);
+    for (elapsed = 0; elapsed <= 200; elapsed += 50) {
+        fixture_run_timers(&f);
+        for (i = 0; i < f.state.out_cnt; i++) {
+            void *pkt = f.state.out[i];
+            uint32_t seq = ii_ntohl(PB_TCP(pkt)->seq_be);
+            uint16_t len = PB_TCP_PAYLOAD_LEN(pkt);
+            if (len && seq <= held_seq && held_seq < seq + len) data_seen = 1;
+            if (PB_TCP_HDR_HAS_FIN(pkt) && seq + len == held_seq + 1) fin_seen = 1;
+        }
+        if (test_event_count(&f.state, TEST_EVENT_RETRANSMISSION, 0)) {
+            *why = "precondition: retransmission occurred during the observation"; return RESULT_INCONCLUSIVE;
+        }
+        if (data_seen && fin_seen) return RESULT_PASS;
+        free_output(&f.state);
+        fake_clock_advance_ms(&f.state, 50);
+    }
+    *why = data_seen ? "FIN was held after close while data was outstanding"
+                     : "the held octet and FIN were not sent after close";
+    return RESULT_FAIL;
+}
+
 static enum result test_rtt_first_sample(const char **why)
 {
     struct fixture f;

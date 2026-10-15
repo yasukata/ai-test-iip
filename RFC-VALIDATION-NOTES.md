@@ -143,6 +143,17 @@ then sent; not holding it is a recommendation deviation. While Nagle is not
 implemented, a `MUST-17` PASS shows only that the control exists and that
 disabled behavior is observed, not that the control changes behavior.
 
+`NAGLE-ACK-1`, `NAGLE-DUPACK-1` and `NAGLE-FIN-1` check that Nagle holds
+only new small data. iip queues ACK, FIN and RST in the same transmit ring as
+data, so a hold that only looks at payload length also holds the control
+segment behind it. With one octet outstanding and one held: an ACK for peer
+data must leave within 0.5 s (`MUST-40`); an out-of-order segment must cause
+an immediate data-less duplicate ACK (RFC 5681, SHOULD); and close must send
+the held octet and FIN (implementation profile, no RFC text). The RTO is
+pushed out because a retransmission also carries an ACK and would mask a
+held control segment. If Nagle does not hold the second write, the cases are
+NOT_APPLICABLE.
+
 ### MSS and SACK
 
 `MUST-14` does not treat failure to observe an MSS option as sufficient evidence
