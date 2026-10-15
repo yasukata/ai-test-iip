@@ -76,3 +76,13 @@ static void report_json_case(FILE *json, const struct test_case *c,
     fputs("}", json);
     fflush(json);
 }
+
+/* Flush buffered output before deciding whether the run succeeded. */
+static int report_stdout_failed(void)
+{
+    if (fflush(stdout) == EOF || ferror(stdout)) {
+        fputs("Cannot write test output to stdout\n", stderr);
+        return 1;
+    }
+    return 0;
+}

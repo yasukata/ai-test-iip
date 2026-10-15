@@ -67,6 +67,27 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
                        str(ROOT / "tests/reporting_harness.c")], check=True,
                        capture_output=True, text=True)
 
+    def test_stdout_write_failure_is_recorded_in_json(self):
+        for identifier, status in [("PASS", "PASS"), ("FAIL", "FAIL"), ("ERROR", "ERROR")]:
+            with self.subTest(case=identifier), tempfile.TemporaryDirectory() as temp:
+                dest = Path(temp) / "result.json"
+                with open("/dev/full", "w") as output:
+                    result = subprocess.run(
+                        [str(self.binary), "--case", identifier, "--json", str(dest)],
+                        stdout=output, stderr=subprocess.PIPE, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("Cannot write test output to stdout", result.stderr)
+                report = json.loads(dest.read_text())
+                self.assertEqual(report["exit_code"], 2)
+                self.assertEqual(report["cases"][0]["status"], status)
+
+    def test_list_reports_stdout_failure(self):
+        with open("/dev/full", "w") as output:
+            result = subprocess.run([str(self.binary), "--list"], stdout=output,
+                                    stderr=subprocess.PIPE, text=True)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("Cannot write test output to stdout", result.stderr)
+
     def test_status_mapping_and_exit_codes(self):
         cases = [
             ("PASS", "PASS", 0, "ok"),

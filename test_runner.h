@@ -67,7 +67,7 @@ int main(int argc, char **argv)
         count++;
         if (list) printf("%s\t%s\t%s\t%s\n", c->id, c->profile, c->source, c->description);
     }
-    if (list) return 0;
+    if (list) return report_stdout_failed() ? 2 : 0;
     if (!count) return main_usage();
     if (json_path && !(json = fopen(json_path, "w"))) { perror(json_path); return 2; }
     if (json) fprintf(json, "{\"schema_version\":1,\"ledger_sha256\":\"%s\",\"scope\":\"README.md#evaluation-scope\",\"configuration\":{\"tfo\":%s,\"strict_api\":%s,\"blake2\":%s},\"cases\":[\n", TEST_LEDGER_SHA256, tfo ? "true" : "false", strict ? "true" : "false", blake ? "true" : "false");
@@ -96,7 +96,8 @@ int main(int argc, char **argv)
         if (json) report_json_case(json, c, r, why, emitted);
     }
     /* Case success is never promoted to comprehensive conformance. */
-    int rc = errors ? 2 : (failed || incomplete) ? 1 : conformance ? 3 : 0;
+    int output_failed = report_stdout_failed();
+    int rc = (errors || output_failed) ? 2 : (failed || incomplete) ? 1 : conformance ? 3 : 0;
     if (json) {
         fprintf(json, "\n],\"summary\":{\"pass\":%u,\"fail\":%u,\"not_applicable\":%u,\"deviation\":%u,\"inconclusive\":%u,\"error\":%u},\"conformance\":\"NOT_ESTABLISHED\",\"exit_code\":%d}\n", passed,failed,skipped,deviations,incomplete,errors,rc);
         if (ferror(json)) { fclose(json); return 2; }

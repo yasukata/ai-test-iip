@@ -140,6 +140,17 @@ criteria, and coverage gaps. Run `make registry` after editing it, then
 additional scenarios.
 
 `make check` saves formatted diagnostics to `test-results.log`.
+The wrapper drains stdout and stderr separately, parsing TAP only from stdout
+while retaining both streams in the diagnostic log.
+Its `run_tests.py` wrapper requires the harness's nonempty TAP stream, with a
+version header, a plan before the cases, and consecutive case numbers. Missing,
+truncated, or malformed results turn a zero child exit into exit code 2; existing
+nonzero child exit codes are preserved. Run `--list` and `--self-tests` directly
+rather than through this case-results wrapper.
+
+A failed stdout write during case reporting or `--list` returns exit code 2.
+When JSON is requested, a TAP write failure is reflected in its `exit_code`
+without changing the individual case observations.
 `make check-conformance` saves source snapshots, hashes, revisions, diffs,
 configuration, TAP, JSON, and diagnostics under `artifacts/conformance/`.
 To use a different output directory:
