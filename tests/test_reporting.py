@@ -2,6 +2,7 @@
 import json
 import os
 import shlex
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -123,6 +124,46 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
     def test_json_escapes_reason(self):
         _, report = self.run_case("--case", "ESCAPED")
         self.assertEqual(report["cases"][0]["reason"], 'quoted "reason"\nnext\tfield\\end')
+
+    def test_tap_free_text_cannot_add_records_or_directives(self):
+        reason = 'first\nnot ok 999 - forged # SKIP ignored # TODO ignored\r\t\x1b[31m\x7f\\tail'
+        cases = [("TAP-FAIL", "FAIL", 1, None),
+                 ("TAP-SKIP", "NOT_APPLICABLE", 0, "SKIP"),
+                 ("TAP-TODO", "DEVIATION", 0, "TODO")]
+        for identifier, status, code, directive in cases:
+            with self.subTest(case=identifier):
+                result, report = self.run_case("--case", identifier)
+                self.assertEqual(result.returncode, code)
+                self.assertEqual(report["cases"][0]["status"], status)
+                self.assertEqual(report["cases"][0]["reason"], reason)
+                lines = result.stdout.splitlines()
+                self.assertEqual(len(lines), 3, result.stdout)
+                self.assertEqual(lines[:2], ["TAP version 13", "1..1"])
+                self.assertFalse(any(ord(c) < 32 or ord(c) == 127 for c in lines[2]))
+                self.assertIn(r'description\n \x23 TODO fake', lines[2])
+                self.assertIn(r'first\nnot ok 999 - forged \x23 SKIP ignored \x23 TODO ignored', lines[2])
+                self.assertIn(r'\r\t\x1b[31m\x7f\\tail', lines[2])
+                self.assertEqual(lines[2].count(" # SKIP "), int(directive == "SKIP"))
+                self.assertEqual(lines[2].count(" # TODO "), int(directive == "TODO"))
+
+    def test_console_wrapper_preserves_status_with_special_text(self):
+        cases = [("TAP-FAIL", 1, "1 FAIL", "0 NOT_APPLICABLE", "0 DEVIATION"),
+                 ("TAP-SKIP", 0, "0 FAIL", "1 NOT_APPLICABLE", "0 DEVIATION"),
+                 ("TAP-TODO", 0, "0 FAIL", "0 NOT_APPLICABLE", "1 DEVIATION")]
+        for identifier, code, failures, skipped, deviations in cases:
+            with self.subTest(case=identifier), tempfile.TemporaryDirectory() as temp:
+                log = Path(temp) / "output.log"
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "run_tests.py"), "--log", str(log),
+                     "--", str(self.binary), "--case", identifier],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                summary = next(line for line in result.stdout.splitlines()
+                               if line.startswith("TAP cases:"))
+                self.assertIn(failures, summary)
+                self.assertIn(skipped, summary)
+                self.assertIn(deviations, summary)
+                self.assertEqual(len(log.read_text().splitlines()), 4)
 
     def test_conformance_exit_requires_otherwise_successful_run(self):
         for identifier, code in [("PASS", 3), ("FAIL", 1), ("ERROR", 2)]:

@@ -29,6 +29,7 @@ The following project files are published in this repository:
 - `test_api.c` and `test_api.h` — adapters and helpers for the current iip API
 - `test_backend.c` and `test_backend.h` — packet backend and callback bindings
 - `test_wire.h` — test-side wire-format definitions
+- `test_report.h` — TAP and JSON serialization with single-line TAP text
 - `Makefile` — build and test targets
 - `README.md` — setup, build, and usage instructions
 - `LICENSE` — the MIT License
@@ -52,6 +53,10 @@ separate synthetic registry to check reporting statuses and exit codes without
 depending on failures in the target implementation. The runner self-checks also
 exercise option validation against malformed lengths and padding using exact-size
 buffers, so sanitizer runs can detect reads beyond the declared option area.
+TAP descriptions and reasons escape control characters, backslashes, and `#` so
+free text cannot create extra result lines or SKIP/TODO directives. JSON retains
+the original text, and console-wrapper tests check that statuses remain intact.
+
 Run `make check-harness-sanitizers` to exercise these checks with ASan and UBSan
 independently of target-stack conformance failures.
 

@@ -404,41 +404,58 @@ static enum result test_ttl(const char **why)
     return RESULT_PASS;
 }
 
+/* Keep packet observations separate from the send/retransmit operations. */
+static int diffserv_packet_matches(void *pkt, uint8_t expected, const char *phase)
+{
+    TEST_CONDITION(pkt, "DiffServ %s: output packet unavailable", phase);
+    TEST_CONDITION(PB_IP4(pkt)->tos == expected,
+        "DiffServ %s: expected DS=0x%02x, actual=0x%02x",
+        phase, (unsigned)expected, (unsigned)PB_IP4(pkt)->tos);
+    int valid = ip4_checksum_valid(pkt);
+    TEST_CONDITION(valid, "DiffServ %s: expected valid IPv4 checksum=1, actual=%d",
+        phase, valid);
+    return 1;
+}
+
 static enum result test_diffserv(const char **why)
 {
-	struct fixture f;
-	void *pkt;
-	void *opaque = &f.state;
-	uint32_t initial_rto;
-	const uint8_t diffserv = 0xb8; /* DSCP EF (46), ECN Not-ECT. */
-	(void)why;
-	if (!fixture_init(&f))
-		return RESULT_FAIL;
+    struct fixture f;
+    void *pkt;
+    uint32_t initial_rto;
+    const uint8_t diffserv = 0xb8; /* DSCP EF (46), ECN Not-ECT. */
+    TEST_REQUIRE(why, fixture_init(&f), "DiffServ: fixture initialization failed");
 
-	/* The default DS field remains zero. */
-	pkt = fixture_packet(&f, 0, 0, 0);
-	if (!pkt || PB_IP4(pkt)->tos != 0 || !ip4_checksum_valid(pkt)) {
-		if (pkt)
-			iip_ops_pkt_free(pkt, opaque);
-		return RESULT_FAIL;
-	}
-	iip_ops_pkt_free(pkt, opaque);
+    /* The default DS field remains zero. */
+    pkt = fixture_packet(&f, 0, 0, 0);
+    int valid = diffserv_packet_matches(pkt, 0, "default");
+    if (pkt) iip_ops_pkt_free(pkt, &f.state);
+    if (!valid) { *why = test_failure_detail; return RESULT_FAIL; }
 
-	/* An application-selected value is applied to data and retransmission. */
-	fixture_prepare_sender(&f);
-	test_set_diffserv(f.ws, f.conn, diffserv, &f.state);
-	if (!fixture_send_data(&f, 1) || f.state.out_cnt != 1 ||
-			PB_IP4(f.state.out[0])->tos != diffserv ||
-			!ip4_checksum_valid(f.state.out[0]))
-		return RESULT_FAIL;
-	initial_rto = f.conn->rto_ms;
-	free_output(&f.state);
-	test_event_log_clear(&f.state);
-	fixture_advance_ms(&f, (uint64_t)initial_rto + 1);
-	return test_event_count(&f.state, TEST_EVENT_RETRANSMISSION,
-			TEST_RETRANS_TIMEOUT) == 1 && f.state.out_cnt == 1 &&
-		PB_IP4(f.state.out[0])->tos == diffserv &&
-		ip4_checksum_valid(f.state.out[0]) ? RESULT_PASS : RESULT_FAIL;
+    /* An application-selected value is applied to data and retransmission. */
+    fixture_prepare_sender(&f);
+    test_set_diffserv(f.ws, f.conn, diffserv, &f.state);
+    TEST_REQUIRE(why, fixture_send_data(&f, 1), "DiffServ data: send failed");
+    TEST_REQUIRE(why, f.state.out_cnt == 1,
+        "DiffServ data: expected output packets=1, actual=%u", (unsigned)f.state.out_cnt);
+    if (!diffserv_packet_matches(f.state.out[0], diffserv, "data")) {
+        *why = test_failure_detail;
+        return RESULT_FAIL;
+    }
+    initial_rto = f.conn->rto_ms;
+    free_output(&f.state);
+    test_event_log_clear(&f.state);
+    fixture_advance_ms(&f, (uint64_t)initial_rto + 1);
+    unsigned retransmissions = test_event_count(&f.state, TEST_EVENT_RETRANSMISSION,
+        TEST_RETRANS_TIMEOUT);
+    TEST_REQUIRE(why, retransmissions == 1,
+        "DiffServ retransmission: expected timeout events=1, actual=%u", retransmissions);
+    TEST_REQUIRE(why, f.state.out_cnt == 1,
+        "DiffServ retransmission: expected output packets=1, actual=%u", (unsigned)f.state.out_cnt);
+    if (!diffserv_packet_matches(f.state.out[0], diffserv, "retransmission")) {
+        *why = test_failure_detail;
+        return RESULT_FAIL;
+    }
+    return RESULT_PASS;
 }
 
 static enum result test_psh_last(const char **why)

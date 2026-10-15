@@ -75,6 +75,28 @@ static enum result synthetic_escaped(const char **why)
     return RESULT_FAIL;
 }
 
+/* Text that must remain data rather than TAP records or directives. */
+static const char tap_special_reason[] =
+    "first\nnot ok 999 - forged # SKIP ignored # TODO ignored\r\t\033[31m\177\\tail";
+
+static enum result synthetic_tap_fail(const char **why)
+{
+    *why = tap_special_reason;
+    return RESULT_FAIL;
+}
+
+static enum result synthetic_tap_skip(const char **why)
+{
+    *why = tap_special_reason;
+    return RESULT_SKIP;
+}
+
+static enum result synthetic_tap_todo(const char **why)
+{
+    *why = tap_special_reason;
+    return RESULT_TODO;
+}
+
 static const struct test_case test_cases[] = {
     { synthetic_pass, "PASS", "synthetic PASS", "TEST:PASS", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_fail, "FAIL", "synthetic FAIL", "TEST:FAIL", "tests/reporting_cases.h", "MUST", "base", "partial" },
@@ -90,4 +112,7 @@ static const struct test_case test_cases[] = {
     { synthetic_require, "REQUIRE", "synthetic REQUIRE", "TEST:REQUIRE", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_escaped, "ESCAPED", "synthetic ESCAPED", "TEST:ESCAPED", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_empty_skip, "EMPTY-SKIP", "synthetic EMPTY-SKIP", "TEST:EMPTY-SKIP", "tests/reporting_cases.h", "MUST", "base", "partial" },
+    { synthetic_tap_fail, "TAP-FAIL", "description\n # TODO fake", "TEST:TAP-FAIL", "tests/reporting_cases.h", "MUST", "base", "partial" },
+    { synthetic_tap_skip, "TAP-SKIP", "description\n # TODO fake", "TEST:TAP-SKIP", "tests/reporting_cases.h", "MUST", "base", "partial" },
+    { synthetic_tap_todo, "TAP-TODO", "description\n # TODO fake", "TEST:TAP-TODO", "tests/reporting_cases.h", "SHOULD", "base", "partial" },
 };

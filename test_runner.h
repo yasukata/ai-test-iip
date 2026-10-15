@@ -9,28 +9,7 @@ struct test_case {
 #endif
 #include TEST_CASE_REGISTRY
 
-static void json_string(FILE *f, const char *s)
-{
-    fputc('"', f);
-    for (const unsigned char *p = (const unsigned char *)(s ? s : ""); *p; p++) {
-        if (*p == '"' || *p == '\\') { fputc('\\', f); fputc(*p, f); }
-        else if (*p < 32) fprintf(f, "\\u%04x", *p);
-        else fputc(*p, f);
-    }
-    fputc('"', f);
-}
-
-static const char *result_name(enum result r)
-{
-    switch (r) {
-    case RESULT_PASS: return "PASS";
-    case RESULT_FAIL: return "FAIL";
-    case RESULT_SKIP: return "NOT_APPLICABLE";
-    case RESULT_TODO: return "DEVIATION";
-    case RESULT_INCONCLUSIVE: return "INCONCLUSIVE";
-    default: return "ERROR";
-    }
-}
+#include "test_report.h"
 
 static int profile_enabled(const char *p, int tfo, int strict, int blake)
 {
@@ -113,23 +92,8 @@ int main(int argc, char **argv)
         else if (r == RESULT_TODO) deviations++;
         else skipped++;
         emitted++;
-        printf("%s %zu - %s %s", (r == RESULT_PASS || r == RESULT_SKIP) ? "ok" : "not ok", emitted, c->id, c->description);
-        if (r == RESULT_SKIP) printf(" # SKIP %s", why);
-        else if (r == RESULT_TODO) printf(" # TODO recommendation deviation: %s", why ? why : "see diagnostics");
-        else if (r != RESULT_PASS) printf(" - [%s] %s", result_name(r), why ? why : "assertion or predicate failed; see diagnostics");
-        putchar('\n'); fflush(stdout);
-        if (json) {
-            if (emitted > 1) fputs(",\n", json);
-            fputs("{\"id\":", json); json_string(json,c->id);
-            fputs(",\"requirement_id\":", json); json_string(json,c->requirement);
-            fputs(",\"source\":", json); json_string(json,c->source);
-            fputs(",\"strength\":", json); json_string(json,c->strength);
-            fputs(",\"profile\":", json); json_string(json,c->profile);
-            fputs(",\"status\":", json); json_string(json,result_name(r));
-            fputs(",\"coverage\":", json); json_string(json,c->coverage);
-            fputs(",\"reason\":", json); json_string(json,why);
-            fputs("}", json); fflush(json);
-        }
+        report_tap_case(c, r, why, emitted);
+        if (json) report_json_case(json, c, r, why, emitted);
     }
     /* Case success is never promoted to comprehensive conformance. */
     int rc = errors ? 2 : (failed || incomplete) ? 1 : conformance ? 3 : 0;
