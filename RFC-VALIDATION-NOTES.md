@@ -130,6 +130,19 @@ specific applicable contract. Some base SWS helpers still inspect internal
 state and require further audit. The split is not a claim that every existing
 SWS predicate is now independent of implementation details.
 
+### Nagle: `MUST-17`, `SHLD-7`
+
+`MUST-17` (an application can disable Nagle per connection) and `SHLD-7`
+(Nagle is implemented) are separate cases. The control is bound through
+`IIP_EX_TCP_SET_NAGLE_DISABLED`, which sets or clears
+`II_TCP_CONN_FLAGS_NAGLE_DISABLED`. `MUST-17` checks the default, per
+connection toggling, and that a second one-octet write is sent without
+waiting for an ACK while the control is set. `SHLD-7` checks that, with the
+control clear, the second write is held until the first octet is ACKed and
+then sent; not holding it is a recommendation deviation. While Nagle is not
+implemented, a `MUST-17` PASS shows only that the control exists and that
+disabled behavior is observed, not that the control changes behavior.
+
 ### MSS and SACK
 
 `MUST-14` does not treat failure to observe an MSS option as sufficient evidence

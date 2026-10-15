@@ -97,3 +97,15 @@ static int test_backend_ipv4_opt_send(void *, uint8_t, uint32_t,
 	iip_ret_int = test_backend_ipv4_opt_send(opaque, proto, \
 		src_ipv4_be, &dst_ipv4_be, ipv4_opt, &ipv4_opt_len); \
 } while (0)
+
+/* Per-connection Nagle control (RFC 9293 MUST-17).  iip exposes the state
+ * as II_TCP_CONN_FLAGS_NAGLE_DISABLED in the connection flags; the
+ * application sets or clears it directly. */
+#define IIP_EX_TCP_SET_NAGLE_DISABLED(_w, _conn, _disabled, _opaque) do { \
+	struct ii_tcp_conn *__c = (_conn); \
+	if (_disabled) \
+		__c->flags |= II_TCP_CONN_FLAGS_NAGLE_DISABLED; \
+	else \
+		__c->flags &= ~II_TCP_CONN_FLAGS_NAGLE_DISABLED; \
+	(void)(_w); (void)(_opaque); \
+} while (0)

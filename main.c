@@ -2515,86 +2515,123 @@ static unsigned int fixture_wait_for_zero_window_probes(struct fixture *f,
 	return found;
 }
 
+/*
+ * Two one-octet writes on an established connection with an open window.
+ * Returns the number of segments emitted for the second write before any
+ * ACK of the first (0 = held, 1 = sent), or -1 on a precondition failure.
+ * When held, *released reports whether the ACK of the first octet sent it.
+ */
+static int nagle_second_small_write(struct fixture *f, int disable, int *released)
+{
+	struct tcp_packet_spec spec;
+	uint32_t first_ack;
+	int sent;
+	if (!fixture_init(f))
+		return -1;
+	fixture_prepare_sender(f);
+	f->conn->cc.win = 8;
+	if (disable >= 0)
+		IIP_EX_TCP_SET_NAGLE_DISABLED(f->ws, f->conn, disable, &f->state);
+	if (!fixture_send_data(f, 1) || f->state.out_cnt != 1)
+		return -1;
+	first_ack = f->conn->acked_seq + 1;
+	free_output(&f->state);
+	test_event_log_clear(&f->state);
+	/* Below the 1 s sender-SWS override and below any RTO. */
+	fake_clock_advance_ms(&f->state, 200);
+	if (!fixture_send_data(f, 1) && test_ring_end(f->ws, &f->conn->tx_ring, 0) == NULL)
+		return -1;
+	if (f->state.out_cnt > 1)
+		return -1;
+	sent = (int)f->state.out_cnt;
+	if (sent == 1 && PB_TCP_PAYLOAD_LEN(f->state.out[0]) != 1)
+		return -1;
+	if (released) {
+		*released = 0;
+		if (!sent) {
+			free_output(&f->state);
+			fixture_incoming_spec(f, &spec, 0, NULL, 0);
+			spec.ack_seq = first_ack;
+			fixture_deliver(f, build_tcp_packet(&spec, &f->state));
+			*released = f->state.out_cnt == 1 &&
+				PB_TCP_PAYLOAD_LEN(f->state.out[0]) == 1;
+		}
+	}
+	return sent;
+}
+
+/*
+ * RFC 9293 MUST-17 (Section 3.7.4): an application MUST be able to disable
+ * the Nagle algorithm on an individual connection.  iip exposes the state
+ * as II_TCP_CONN_FLAGS_NAGLE_DISABLED; the harness binding is
+ * IIP_EX_TCP_SET_NAGLE_DISABLED (test_backend.h).  With the control set, a
+ * second small write must leave without waiting for the first ACK.
+ * Whether Nagle is implemented at all is SHLD-7, checked separately.
+ */
 static enum result test_disable_nagle(const char **why)
 {
 #ifndef IIP_EX_TCP_SET_NAGLE_DISABLED
-	/*
-	 * The Nagle algorithm itself is a SHOULD (SHLD-7).  MUST-17 requires
-	 * only that an application be able to disable it.  Without a
-	 * per-connection control there is nothing to exercise here, so report
-	 * SKIP rather than FAIL.
-	 */
 	*why = "no Nagle-disable control is exposed; Nagle is treated as not implemented";
 	return RESULT_SKIP;
 #else
-	struct fixture enabled, disabled;
-	struct tcp_packet_spec spec;
-	uint32_t first_ack;
-	(void)why;
-
-	/* With Nagle enabled, a second small segment waits for the first ACK. */
-	if (!fixture_init(&enabled))
-		return RESULT_FAIL;
-	fixture_prepare_sender(&enabled);
-	enabled.conn->cc.win = 8;
-	if (enabled.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)
-		return RESULT_FAIL;
-	if (!fixture_send_data(&enabled, 1) || enabled.state.out_cnt != 1)
-		return RESULT_FAIL;
-	first_ack = enabled.conn->acked_seq + 1;
-	free_output(&enabled.state);
-	test_event_log_clear(&enabled.state);
-	fake_clock_advance_ms(&enabled.state, 200);
-	if (!fixture_send_data(&enabled, 1) || enabled.state.out_cnt != 0 ||
-			test_ring_end(enabled.ws, &enabled.conn->tx_ring, 0) == NULL) {
-		fprintf(stderr, "Nagle enabled hold: out=%u queued=%p\n",
-				enabled.state.out_cnt, (void *)test_ring_end(enabled.ws, &enabled.conn->tx_ring, 0));
+	struct fixture f, other;
+	int sent;
+	if (!fixture_init(&f))
+		return RESULT_ERROR;
+	if (f.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED) {
+		*why = "Nagle is disabled by default on a new connection";
 		return RESULT_FAIL;
 	}
-	fixture_incoming_spec(&enabled, &spec, 0, NULL, 0);
-	spec.ack_seq = first_ack;
-	fixture_deliver(&enabled, build_tcp_packet(&spec, &enabled.state));
-	if (enabled.state.out_cnt != 1 ||
-			PB_TCP_PAYLOAD_LEN(enabled.state.out[0]) != 1) {
-		fprintf(stderr, "Nagle enabled release: out=%u payload=%u\n",
-				enabled.state.out_cnt, enabled.state.out_cnt ?
-				PB_TCP_PAYLOAD_LEN(enabled.state.out[0]) : 0);
+	/* The control is per connection and reversible. */
+	if (!fixture_init(&other))
+		return RESULT_ERROR;
+	IIP_EX_TCP_SET_NAGLE_DISABLED(f.ws, f.conn, 1, &f.state);
+	if (!(f.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED) ||
+			(other.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)) {
+		*why = "the Nagle-disable control is not per connection";
 		return RESULT_FAIL;
 	}
-
-	/* Directly disable Nagle: both small segments are sent without an ACK. */
-	if (!fixture_init(&disabled))
-		return RESULT_FAIL;
-	fixture_prepare_sender(&disabled);
-	disabled.conn->cc.win = 8;
-	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, disabled.conn, 1,
-			&disabled.state);
-	if (!(disabled.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED))
-		return RESULT_FAIL;
-	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, disabled.conn, 0,
-			&disabled.state);
-	if (disabled.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)
-		return RESULT_FAIL;
-	IIP_EX_TCP_SET_NAGLE_DISABLED(disabled.ws, disabled.conn, 1,
-			&disabled.state);
-	if (!fixture_send_data(&disabled, 1) || disabled.state.out_cnt != 1) {
-		fprintf(stderr, "Nagle disabled first: out=%u\n",
-				disabled.state.out_cnt);
+	IIP_EX_TCP_SET_NAGLE_DISABLED(f.ws, f.conn, 0, &f.state);
+	if (f.conn->flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED) {
+		*why = "the Nagle-disable control cannot be cleared";
 		return RESULT_FAIL;
 	}
-	free_output(&disabled.state);
-	test_event_log_clear(&disabled.state);
-	fake_clock_advance_ms(&disabled.state, 200);
-	if (!fixture_send_data(&disabled, 1) || disabled.state.out_cnt != 1 ||
-			PB_TCP_PAYLOAD_LEN(disabled.state.out[0]) != 1) {
-		fprintf(stderr, "Nagle disabled second: out=%u payload=%u\n",
-				disabled.state.out_cnt, disabled.state.out_cnt ?
-				PB_TCP_PAYLOAD_LEN(disabled.state.out[0]) : 0);
+	sent = nagle_second_small_write(&f, 1, NULL);
+	if (sent < 0) {
+		*why = "precondition: small writes were not emitted as expected";
+		return RESULT_ERROR;
+	}
+	if (sent != 1) {
+		*why = "with Nagle disabled, a second small segment waited for an ACK";
 		return RESULT_FAIL;
 	}
-
 	return RESULT_PASS;
 #endif
+}
+
+/*
+ * RFC 9293 SHLD-7 (Section 3.7.4): a TCP implementation SHOULD implement
+ * the Nagle algorithm.  With unacknowledged data outstanding, a new
+ * segment smaller than Eff.snd.MSS is held until that data is ACKed.
+ */
+static enum result test_nagle_algorithm(const char **why)
+{
+	struct fixture f;
+	int released = 0;
+	int sent = nagle_second_small_write(&f, -1, &released);
+	if (sent < 0) {
+		*why = "precondition: small writes were not emitted as expected";
+		return RESULT_ERROR;
+	}
+	if (sent == 1) {
+		*why = "a second small segment was sent while the first was unacknowledged (Nagle not applied)";
+		return RESULT_TODO;
+	}
+	if (!released) {
+		*why = "a small segment held by Nagle was not sent when the outstanding data was ACKed";
+		return RESULT_FAIL;
+	}
+	return RESULT_PASS;
 }
 
 static enum result test_karn_rtt_sampling(const char **why)

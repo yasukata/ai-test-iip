@@ -236,9 +236,23 @@
       "profile": "base",
       "applicability": "IPv4; selected integration; base",
       "responsibility": "iip + documented callbacks",
-      "oracle": "Assertions in test_disable_nagle; see README.md#evaluation-scope and the coverage gaps for limitations",
+      "oracle": "Assertions in test_disable_nagle (control bound through IIP_EX_TCP_SET_NAGLE_DISABLED / II_TCP_CONN_FLAGS_NAGLE_DISABLED); see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Default state, per-connection toggling and two one-octet writes with Nagle disabled; setting the control at connect time is not exercised"
+    },
+    {
+      "id": "SHLD-7",
+      "function": "test_nagle_algorithm",
+      "description": "implement the Nagle algorithm",
+      "requirement_id": "RFC9293:SHLD-7",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.7.4",
+      "strength": "SHOULD",
+      "profile": "base",
+      "applicability": "IPv4; selected integration; base",
+      "responsibility": "iip",
+      "oracle": "Assertions in test_nagle_algorithm; see README.md#evaluation-scope and the coverage gaps for limitations",
+      "coverage": "partial",
+      "gaps": "Two one-octet writes with one segment outstanding; hold and release on ACK only. Interaction with PSH, FIN, sender SWS and full-sized segments not exercised"
     },
     {
       "id": "MUST-18",
