@@ -27,7 +27,7 @@ class Reporting(unittest.TestCase):
         self.assertIsNone(j)
 
     def test_unbound_api_is_not_pass(self):
-        r,j = self.run_case('--case','MUST-51')
+        r,j = self.run_case('--case','MUST-52')
         self.assertEqual(r.returncode,1)
         self.assertEqual(j['cases'][0]['status'],'INCONCLUSIVE')
 

@@ -196,11 +196,15 @@ integration. A prior run without the hook is not evidence about a run with it.
 
 ### Source routing: `MUST-51`, `MUST-52`
 
-These cases are inconclusive while the test-side route configuration lacks a
-native API binding. The old helper checks remain under `PROFILE-ROUTE-1/2`.
-Storing a route in harness memory does not prove it reached iip. Future coverage
-must establish the actual binding and inspect transmitted options, destination,
-and checksum before promoting the requirement to a behavioral verdict.
+The harness route table is bound to iip through `IIP_OPS_IPV4_OPT_SEND`
+(`test_backend.h`/`test_backend.c`). The hook supplies the IPv4 option bytes
+and replaces the IPv4 header destination with the first hop; the TCP
+pseudo-header keeps the ultimate destination. Routes are keyed by address
+pair because the hook runs before the L4 header is copied. `MUST-51` checks
+SYN, handshake ACK and a data segment for the option, first-hop destination,
+frame length equal to the IPv4 total length, and valid IPv4/TCP checksums.
+`MUST-52` remains inconclusive; the old helper checks remain under
+`PROFILE-ROUTE-1/2`.
 
 ### TFO and independent boundary cases
 

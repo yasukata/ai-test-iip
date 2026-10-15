@@ -60,6 +60,93 @@ static enum result test_source_route_api_available(const char **why)
     return RESULT_INCONCLUSIVE;
 }
 
+/* RFC 9293 MUST-51: a source route specified at active OPEN must be taken.
+ * The route reaches iip through IIP_OPS_IPV4_OPT_SEND (test_backend.h).
+ * SYN, handshake ACK and a data segment must each carry the option, be
+ * addressed to the first hop, have a frame length equal to the IPv4 total
+ * length, and keep valid IPv4/TCP checksums (pseudo-header uses the
+ * ultimate destination). */
+static int must51_all_routed(struct fixture *f, uint32_t wire_dst_be,
+        uint32_t final_dst_be, const uint8_t *option, uint16_t option_len)
+{
+    unsigned int i;
+    if (!f->state.out_cnt) return 0;
+    for (i = 0; i < f->state.out_cnt; i++) {
+        void *pkt = f->state.out[i];
+        if (iip_ops_pkt_get_len(pkt, &f->state) !=
+                (uint16_t)(iip_ops_l2_hdr_len(pkt, &f->state) + PB_IP4_TOTAL_LEN(pkt)))
+            return 0;
+        if (!test_packet_has_source_route(pkt, wire_dst_be,
+                final_dst_be, option, option_len))
+            return 0;
+    }
+    return 1;
+}
+
+static enum result test_source_route_active_open(const char **why)
+{
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    struct ii_tcp_conn *conn;
+    uint8_t option[40];
+    uint16_t option_len;
+    const uint16_t local_port_be = ii_htons(14010);
+    const uint16_t peer_port_be = ii_htons(25010);
+    const uint32_t wire_dst_be = ii_htonl(0xcb007101U); /* first hop */
+    uint32_t final_dst_be, address_be[1];
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    final_dst_be = ii_htonl(f.conn->dst_ip[0]);
+    address_be[0] = final_dst_be;
+    option_len = test_make_source_route_option(option, 131 /* LSRR */, 4,
+            address_be, 1);
+    if (!test_source_route_add(&f.state, 1, ii_htonl(f.conn->src_ip[0]),
+            local_port_be, final_dst_be, peer_port_be, wire_dst_be,
+            option, option_len)) return RESULT_ERROR;
+    if (test_tcp_active_open(f.ws, f.local_mac,
+            &(uint32_t){ ii_htonl(f.conn->src_ip[0]) }, local_port_be,
+            f.peer_mac, final_dst_be, peer_port_be, &f.state) == 0xffff)
+        return RESULT_ERROR;
+    fixture_run_timers(&f);
+    conn = fixture_find_peer_port(&f, peer_port_be);
+    if (!conn || f.state.out_cnt != 1 || !PB_TCP_HDR_HAS_SYN(f.state.out[0])) {
+        *why = "active OPEN did not emit exactly one SYN"; return RESULT_ERROR;
+    }
+    if (!must51_all_routed(&f, wire_dst_be, final_dst_be, option, option_len)) {
+        *why = "SYN did not take the application source route"; return RESULT_FAIL;
+    }
+    free_output(&f.state);
+    /* SYN-ACK without IP options: the application route must still apply. */
+    fixture_incoming_spec(&f, &spec, 100, NULL, 0);
+    spec.src_port_be = peer_port_be;
+    spec.dst_port_be = local_port_be;
+    spec.ack_seq = conn->seq;
+    spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    if (conn->state != II_TCP_STATE_ESTABLISHED) {
+        *why = "handshake precondition failed"; return RESULT_ERROR;
+    }
+    if (f.state.out_cnt &&
+            !must51_all_routed(&f, wire_dst_be, final_dst_be, option, option_len)) {
+        *why = "handshake ACK did not take the application source route"; return RESULT_FAIL;
+    }
+    free_output(&f.state);
+    {
+        void *payload = iip_ops_pkt_alloc(&f.state);
+        if (!payload) return RESULT_ERROR;
+        memset(iip_ops_pkt_get_data(payload, &f.state), 0x5a, 100);
+        iip_ops_pkt_set_len(payload, 100, &f.state);
+        test_api_send(f.ws, conn, payload, 0, &f.state);
+        fixture_run_timers(&f);
+    }
+    if (!f.state.out_cnt) {
+        *why = "data segment not emitted"; return RESULT_INCONCLUSIVE;
+    }
+    if (!must51_all_routed(&f, wire_dst_be, final_dst_be, option, option_len)) {
+        *why = "data segment did not take the application source route"; return RESULT_FAIL;
+    }
+    return RESULT_PASS;
+}
+
 static enum result test_rtt_first_sample(const char **why)
 {
     struct fixture f;

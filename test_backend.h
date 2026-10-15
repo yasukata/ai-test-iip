@@ -83,3 +83,17 @@ static bool test_backend_fastopen(struct iip_workspace *, uint32_t, const uint8_
 	test_event_tcp_icmp_error(opaque, &II_TCP_CONN(conn_id), buf[0], buf[1]); \
 	iip_ret_int = 0; \
 } while (0)
+
+/* IIP_OPS_IPV4_OPT_SEND() is expanded once per transmitted IPv4 packet
+ * (each fragment included) in both the copy and the zero-copy transmit
+ * paths.  Only identifiers common to both expansions are used: proto,
+ * src_ipv4_be, dst_ipv4_be (on entry: ultimate destination; may be replaced
+ * with the first hop), ipv4_opt and ipv4_opt_len.  The L4 header has not
+ * been copied yet in the copy path, so routes are keyed by address pair. */
+static int test_backend_ipv4_opt_send(void *, uint8_t, uint32_t,
+		uint32_t *, uint8_t *, uint8_t *);
+#undef IIP_OPS_IPV4_OPT_SEND
+#define IIP_OPS_IPV4_OPT_SEND() do { \
+	iip_ret_int = test_backend_ipv4_opt_send(opaque, proto, \
+		src_ipv4_be, &dst_ipv4_be, ipv4_opt, &ipv4_opt_len); \
+} while (0)

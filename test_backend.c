@@ -140,3 +140,34 @@ static int test_backend_callback(struct iip_workspace *w, uint32_t id, uint32_t 
 	return 0;
 }
 
+
+/* Bind the harness route table to iip's IPv4 option hook.  An
+ * application-defined route (MUST-51/52) takes precedence over a route
+ * captured from a received segment (MUST-53) for the same address pair. */
+static int test_backend_ipv4_opt_send(void *opaque, uint8_t proto,
+		uint32_t src_ipv4_be, uint32_t *dst_ipv4_be,
+		uint8_t *ipv4_opt, uint8_t *ipv4_opt_len)
+{
+	struct test_state *state = opaque;
+	const struct test_source_route *found = NULL;
+	unsigned int i;
+	*ipv4_opt_len = 0;
+	if (!state || proto != 6 /* tcp */)
+		return 0;
+	for (i = 0; i < TEST_SOURCE_ROUTE_MAX; i++) {
+		const struct test_source_route *route = &state->source_routes[i];
+		if (!route->active || route->local_ip4_be != src_ipv4_be ||
+				route->peer_ip4_be != *dst_ipv4_be)
+			continue;
+		if (!found || (route->application_defined && !found->application_defined))
+			found = route;
+	}
+	if (!found)
+		return 0;
+	if (found->option_len > 40 || (found->option_len & 3U))
+		return -1;
+	memcpy(ipv4_opt, found->option, found->option_len);
+	*ipv4_opt_len = (uint8_t)found->option_len;
+	*dst_ipv4_be = found->wire_dst_ip4_be;
+	return 0;
+}
