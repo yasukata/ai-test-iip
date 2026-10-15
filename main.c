@@ -2167,7 +2167,7 @@ static void fixture_prepare_sender(struct fixture *f)
 	f->conn->peer_win = 65535;
 	f->conn->ws = 0;
 	f->conn->acked_seq = f->conn->seq;
-	f->conn->ack_seq_sent = f->conn->ack_seq;
+	f->conn->ack_seq_xmitted = f->conn->ack_seq;
 }
 
 static int fixture_send_data(struct fixture *f, uint16_t len)
@@ -4229,7 +4229,7 @@ static enum result test_retransmitted_syn_ack_in_established(const char **why)
 	 */
 	f.conn->seq_next_expected = peer_isn + 1;
 	f.conn->ack_seq = peer_isn + 1;
-	f.conn->ack_seq_sent = peer_isn + 1;
+	f.conn->ack_seq_xmitted = peer_isn + 1;
 	fixture_incoming_spec(&f, &spec, peer_isn, NULL, 0);
 	spec.ack_seq = f.conn->iss + 1;
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
@@ -7487,7 +7487,7 @@ static int no_indefinite_buffering_scenario(void)
 	fake_clock_set_ns(&f.state, 1000000000ULL);
 	f.conn->peer_win = 65535;
 	f.conn->acked_seq = f.conn->seq;
-	f.conn->ack_seq_sent = f.conn->ack_seq;
+	f.conn->ack_seq_xmitted = f.conn->ack_seq;
 	payload = iip_ops_pkt_alloc(&f.state);
 	((uint8_t *)iip_ops_pkt_get_data(payload, &f.state))[0] = 0x5a;
 	iip_ops_pkt_set_len(payload, 1, &f.state);
