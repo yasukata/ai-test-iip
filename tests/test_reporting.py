@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from process_support import run_command
+
 ROOT = Path(__file__).resolve().parent.parent
 
 class HarnessRun:
@@ -16,7 +18,7 @@ class HarnessRun:
     def run_case(self, *args):
         with tempfile.TemporaryDirectory() as temp:
             dest = Path(temp)/'result.json'
-            r = subprocess.run([str(self.binary), *args, '--json',str(dest)],capture_output=True,text=True)
+            r = run_command([str(self.binary), *args, '--json',str(dest)],capture_output=True,text=True)
             return r, json.loads(dest.read_text()) if dest.exists() else None
 
 class Reporting(HarnessRun, unittest.TestCase):
@@ -53,7 +55,7 @@ class Reporting(HarnessRun, unittest.TestCase):
         self.assertEqual(r.returncode,3)
 
     def test_json_write_error(self):
-        r = subprocess.run([str(ROOT/'ai-test-iip'),'--case','MUST-3','--json','/dev/full'],capture_output=True)
+        r = run_command([str(ROOT/'ai-test-iip'),'--case','MUST-3','--json','/dev/full'],capture_output=True)
         self.assertEqual(r.returncode,2)
 
 class SyntheticReporting(HarnessRun, unittest.TestCase):
@@ -63,7 +65,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
         cls.addClassCleanup(temp.cleanup)
         cls.binary = Path(temp.name) / "reporting-harness"
         command = shlex.split(os.environ.get("CC", "cc"))
-        subprocess.run(command + ["-std=gnu11", "-O0", "-g", "-o", str(cls.binary),
+        run_command(command + ["-std=gnu11", "-O0", "-g", "-o", str(cls.binary),
                        str(ROOT / "tests/reporting_harness.c")], check=True,
                        capture_output=True, text=True)
 
@@ -72,7 +74,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
             with self.subTest(case=identifier), tempfile.TemporaryDirectory() as temp:
                 dest = Path(temp) / "result.json"
                 with open("/dev/full", "w") as output:
-                    result = subprocess.run(
+                    result = run_command(
                         [str(self.binary), "--case", identifier, "--json", str(dest)],
                         stdout=output, stderr=subprocess.PIPE, text=True)
                 self.assertEqual(result.returncode, 2)
@@ -83,7 +85,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
 
     def test_list_reports_stdout_failure(self):
         with open("/dev/full", "w") as output:
-            result = subprocess.run([str(self.binary), "--list"], stdout=output,
+            result = run_command([str(self.binary), "--list"], stdout=output,
                                     stderr=subprocess.PIPE, text=True)
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("Cannot write test output to stdout", result.stderr)
@@ -99,6 +101,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
             ("SHOULD-FAIL", "DEVIATION", 0, "not ok"),
             ("INCONCLUSIVE", "INCONCLUSIVE", 1, "not ok"),
             ("ERROR", "ERROR", 2, "not ok"),
+            ("SETUP", "ERROR", 2, "not ok"),
             ("INVALID", "ERROR", 2, "not ok"),
             ("SIGNAL", "FAIL", 1, "not ok"),
         ]
@@ -142,6 +145,12 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
         reasons = {c["id"]: c["reason"] for c in report["cases"]}
         self.assertEqual(reasons["EMPTY-SKIP"], "missing applicability reason")
 
+    def test_setup_failure_does_not_leak_into_the_next_case(self):
+        result, report = self.run_case("--case", "SETUP", "--case", "PASS")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual([c["status"] for c in report["cases"]], ["ERROR", "PASS"])
+        self.assertEqual(report["cases"][0]["reason"], "synthetic workspace allocation failed")
+
     def test_json_escapes_reason(self):
         _, report = self.run_case("--case", "ESCAPED")
         self.assertEqual(report["cases"][0]["reason"], 'quoted "reason"\nnext\tfield\\end')
@@ -174,7 +183,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
         for identifier, code, failures, skipped, deviations in cases:
             with self.subTest(case=identifier), tempfile.TemporaryDirectory() as temp:
                 log = Path(temp) / "output.log"
-                result = subprocess.run(
+                result = run_command(
                     [sys.executable, str(ROOT / "run_tests.py"), "--log", str(log),
                      "--", str(self.binary), "--case", identifier],
                     capture_output=True, text=True)
@@ -195,7 +204,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
                 result, report = self.run_case("--case", identifier)
                 self.assertEqual(result.returncode, code)
                 self.assertEqual(report["cases"][0]["status"], status)
-                wrapped = subprocess.run(
+                wrapped = run_command(
                     [sys.executable, str(ROOT / "run_tests.py"), "--log", str(Path(temp) / "run.log"),
                      "--", str(self.binary), "--case", identifier],
                     capture_output=True, text=True)

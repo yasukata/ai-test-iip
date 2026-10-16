@@ -9,6 +9,7 @@ enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP, RESULT_TODO, RESULT_INCONCL
 
 /* A stack assertion or hang is a failed test, and must not hide later tests. */
 static int test_process_failed;
+static const char *test_setup_error;
 static char test_failure_detail[512];
 
 /* Always reap a child when a timeout or a parent-side wait error interrupts it. */
@@ -76,6 +77,7 @@ static enum result run_isolated(enum result (*run)(const char **),
         if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) _exit(125);
         harness_event_overflow = 0;
         test_failure_detail[0] = 0;
+        test_setup_error = NULL;
         alarm(timeout_seconds);
         const char *detail = NULL;
         if (run) report.result = run(&detail);
@@ -84,6 +86,7 @@ static enum result run_isolated(enum result (*run)(const char **),
                 report.result == RESULT_INCONCLUSIVE || report.result == RESULT_ERROR) &&
                 (!detail || !*detail) && test_failure_detail[0])
             detail = test_failure_detail;
+        if (test_setup_error) { report.result = RESULT_ERROR; detail = test_setup_error; }
         if (harness_event_overflow) { report.result = RESULT_ERROR; detail = "event log overflow; observations incomplete"; }
         if (detail) snprintf(report.why, sizeof(report.why), "%s", detail);
         fflush(NULL);

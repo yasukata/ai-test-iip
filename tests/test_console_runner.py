@@ -8,6 +8,8 @@ import tempfile
 import time
 import unittest
 
+from process_support import managed_command, run_command
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -17,7 +19,7 @@ class ConsoleRunner(unittest.TestCase):
             log = Path(temp) / "output.log"
             child = (f"import sys; sys.stderr.write({stderr!r}); sys.stderr.flush(); "
                      f"sys.stdout.write({output!r}); sys.exit({code})")
-            result = subprocess.run(
+            result = run_command(
                 [sys.executable, str(ROOT / "run_tests.py"), "--log", str(log),
                  "--", sys.executable, "-c", child],
                 capture_output=True, text=True, timeout=10)
@@ -131,7 +133,7 @@ class ConsoleRunner(unittest.TestCase):
         self.assertIn("no test cases reported", result.stderr)
 
     def test_log_write_failure_stops_a_running_child(self):
-        result = subprocess.run(
+        result = run_command(
             [sys.executable, str(ROOT / "run_tests.py"), "--log", "/dev/full", "--",
              sys.executable, "-c", "while True: print('diagnostic', flush=True)"],
             capture_output=True, text=True, timeout=10)
@@ -153,7 +155,7 @@ class ConsoleRunner(unittest.TestCase):
                     + ("time.sleep(60)" if log_failure else "sys.exit(0)")
                 )
                 try:
-                    result = subprocess.run(
+                    result = run_command(
                         [sys.executable, str(ROOT / "run_tests.py"), "--log", log,
                          "--", sys.executable, "-c", child],
                         capture_output=True, text=True, timeout=10)
@@ -199,7 +201,7 @@ class ConsoleRunner(unittest.TestCase):
                         + f"pathlib.Path({str(ready_file)!r}).touch(); "
                         + "time.sleep(60)"
                     )
-                    with subprocess.Popen(
+                    with managed_command(
                         [sys.executable, str(ROOT / "run_tests.py"), "--log", str(log),
                          "--", sys.executable, "-c", child],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,

@@ -344,14 +344,18 @@ static int tcp_simultaneous_close_scenario(void)
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
 	spec.tcp_flags = TEST_TCP_FIN;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	if (f.conn->state != II_TCP_STATE_CLOSING)
-		return 0;
+	TEST_CONDITION(f.conn->state == II_TCP_STATE_CLOSING,
+        "simultaneous close after FIN: expected state=%u, actual=%u",
+        II_TCP_STATE_CLOSING, f.conn->state);
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 1, NULL, 0);
 	spec.tcp_flags = TEST_TCP_ACK;
 	spec.ack_seq = f.conn->seq;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	return f.conn->state == II_TCP_STATE_TIME_WAIT;
+	TEST_CONDITION(f.conn->state == II_TCP_STATE_TIME_WAIT,
+        "simultaneous close after ACK: expected state=%u, actual=%u",
+        II_TCP_STATE_TIME_WAIT, f.conn->state);
+    return 1;
 }
 
 static int tcp_sequence_wraparound_scenario(void)
@@ -369,9 +373,16 @@ static int tcp_sequence_wraparound_scenario(void)
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	payload_event = test_event_nth(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_PAYLOAD, 0);
-	return f.conn->seq_next_expected == 2U && f.state.payload_chunk_count == 1 &&
-		f.state.payload_byte_count == sizeof(payload) &&
-		payload_event && payload_event->value[0] == sizeof(payload);
+	TEST_CONDITION(f.conn->seq_next_expected == 2U,
+        "sequence wrap: expected RCV.NXT=2, actual=%u", f.conn->seq_next_expected);
+    TEST_CONDITION(f.state.payload_chunk_count == 1 &&
+        f.state.payload_byte_count == sizeof(payload) && payload_event &&
+        payload_event->value[0] == sizeof(payload),
+        "sequence wrap: expected chunks=1 bytes=%zu event length=%zu, actual=%u/%llu/%llu",
+        sizeof(payload), sizeof(payload), f.state.payload_chunk_count,
+        (unsigned long long)f.state.payload_byte_count,
+        (unsigned long long)(payload_event ? payload_event->value[0] : 0));
+    return 1;
 }
 
 static int tcp_out_of_order_reassembly_scenario(void)

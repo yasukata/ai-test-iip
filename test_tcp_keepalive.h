@@ -5,7 +5,6 @@
 static enum result test_keepalive_default_off(const char **why)
 {
 	struct fixture f;
-	(void)why;
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	fake_clock_set_ns(&f.state, 1000000000ULL);
@@ -13,9 +12,12 @@ static enum result test_keepalive_default_off(const char **why)
 	test_event_log_clear(&f.state);
 	fake_clock_advance_sec(&f.state, 2 * 60 * 60 + 1);
 	fixture_run_timers(&f);
-	return test_event_count(&f.state, TEST_EVENT_TIMER, 0) > 0 &&
-		test_event_count(&f.state, TEST_EVENT_TX_PACKET, 0) == 0
-		? RESULT_PASS : RESULT_FAIL;
+	TEST_REQUIRE(why, test_event_count(&f.state, TEST_EVENT_TIMER, 0) > 0,
+        "default-off: expected timer observations, actual=0");
+    TEST_REQUIRE(why, test_event_count(&f.state, TEST_EVENT_TX_PACKET, 0) == 0,
+        "default-off: expected TX packets=0, actual=%u",
+        test_event_count(&f.state, TEST_EVENT_TX_PACKET, 0));
+    return RESULT_PASS;
 }
 
 static int fixture_has_keepalive_probe(struct fixture *f,
@@ -145,10 +147,8 @@ static enum result test_keepalive_default_interval(const char **why)
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
 	interval = f.conn->keepalive_interval_ms;
-	if (interval < 2U * 60U * 60U * 1000U) {
-		*why = "default keep-alive interval is less than two hours";
-		return RESULT_FAIL;
-	}
+	TEST_REQUIRE(why, interval >= 2U * 60U * 60U * 1000U,
+        "default keep-alive interval: expected >=7200000 ms, actual=%u ms", interval);
 	fake_clock_set_ns(&f.state, 1000000000ULL);
 	expected_seq = f.conn->seq - 1U;
 	test_set_keepalive(f.ws, f.conn, interval, &f.state);

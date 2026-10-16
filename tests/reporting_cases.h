@@ -1,6 +1,14 @@
 /* Private registry for reporting_harness.c; never part of the real ledger. */
 #define TEST_LEDGER_SHA256 "synthetic-reporting-cases"
 
+static enum result synthetic_setup_failure(const char **why)
+{
+    (void)why;
+    /* Legacy boolean helpers may translate setup failure into FAIL. */
+    return fixture_setup_failed("synthetic workspace allocation failed")
+        ? RESULT_PASS : RESULT_FAIL;
+}
+
 static enum result synthetic_pass(const char **why)
 {
     *why = NULL;
@@ -118,6 +126,7 @@ static enum result synthetic_status_inconclusive(const char **why)
 }
 
 static const struct test_case test_cases[] = {
+    { synthetic_setup_failure, "SETUP", "synthetic setup error", "TEST:SETUP", "tests/reporting_cases.h", "SHOULD", "base", "partial" },
     { synthetic_pass, "PASS", "synthetic PASS", "TEST:PASS", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_fail, "FAIL", "synthetic FAIL", "TEST:FAIL", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_skip, "SKIP", "synthetic SKIP", "TEST:SKIP", "tests/reporting_cases.h", "MUST", "base", "partial" },

@@ -2213,6 +2213,76 @@
       "oracle": "Assertions in test_abort_after_fin_notification; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
       "gaps": "FIN completion vs immediate RST covered; abort after prior peer FIN cannot be distinguished by the current callback API"
+    },
+    {
+      "id": "PROFILE-SEQ-CONTROL",
+      "function": "test_receive_wrap_control",
+      "description": "receive ordering and FIN without sequence wrap",
+      "requirement_id": "TEST:PROFILE-SEQ-CONTROL",
+      "source": "README.md",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; white-box fixture; regression profile",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "Out-of-order data is withheld, hole filling delivers four ordered bytes once, duplicate does not advance RCV.NXT, FIN enters CLOSE_WAIT once.",
+      "coverage": "partial",
+      "gaps": "White-box established connection; other states, sender ACK wrap and larger overlaps remain untested."
+    },
+    {
+      "id": "PROFILE-SEQ-WRAP",
+      "function": "test_receive_wrap_boundary",
+      "description": "receive ordering and FIN across sequence wrap",
+      "requirement_id": "TEST:PROFILE-SEQ-WRAP",
+      "source": "README.md",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; white-box fixture; regression profile",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "Same observations as PROFILE-SEQ-CONTROL with initial RCV.NXT=UINT32_MAX-1.",
+      "coverage": "partial",
+      "gaps": "White-box established connection; other states, sender ACK wrap and larger overlaps remain untested."
+    },
+    {
+      "id": "PROFILE-CLOCK-CONTROL",
+      "function": "test_keepalive_clock_control",
+      "description": "keep-alive deadline without clock wrap",
+      "requirement_id": "TEST:PROFILE-CLOCK-CONTROL",
+      "source": "README.md",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; white-box fixture; regression profile",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "No packet at 999 ms; valid keep-alive probe at 1499 ms (next 500 ms slow-timer evaluation) for configured interval 1000 ms.",
+      "coverage": "partial",
+      "gaps": "White-box timer epoch; exact deadline, retransmission timers and repeated wraps remain untested."
+    },
+    {
+      "id": "PROFILE-CLOCK-WRAP",
+      "function": "test_keepalive_clock_wrap",
+      "description": "keep-alive deadline across millisecond clock wrap",
+      "requirement_id": "TEST:PROFILE-CLOCK-WRAP",
+      "source": "README.md",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; white-box fixture; regression profile",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "Same observations as PROFILE-CLOCK-CONTROL with initial clock UINT32_MAX-500 ms.",
+      "coverage": "partial",
+      "gaps": "White-box timer epoch; exact deadline, retransmission timers and repeated wraps remain untested."
+    },
+    {
+      "id": "PROFILE-RTT-3",
+      "function": "test_rtt_first_sample_long",
+      "description": "first RTT sample at 800 ms",
+      "requirement_id": "TEST:PROFILE-RTT-3",
+      "source": "README.md",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; white-box fixture; regression profile",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "With initial RTO explicitly extended to avoid retransmission, first 800 ms sample gives SRTT=4 and RTTVAR=2 in 200 ms ticks.",
+      "coverage": "partial",
+      "gaps": "Does not validate initial RTO, timestamp negotiation, rounding or all sample durations."
     }
   ]
 }

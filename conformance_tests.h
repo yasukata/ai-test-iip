@@ -387,7 +387,7 @@ static enum result test_nagle_does_not_hold_fin(const char **why)
     return RESULT_FAIL;
 }
 
-static enum result test_rtt_first_sample(const char **why)
+static enum result test_rtt_first_sample_ticks(const char **why, unsigned ticks)
 {
     struct fixture f;
     struct tcp_packet_spec spec;
@@ -404,8 +404,8 @@ static enum result test_rtt_first_sample(const char **why)
      * Without this explicit precondition, iip's short initial RTO retransmits
      * the SYN before the sample, making Karn's rule apply. */
     c->rto_ms = 3000; c->rto_expire = f.ws->now_ms + 3000;
-    /* iip exposes its estimator in 200ms ticks. Sample exactly two ticks. */
-    for (unsigned i = 0; i < 2; i++) {
+    /* iip exposes its estimator in 200ms ticks. Use an exact number of ticks. */
+    for (unsigned i = 0; i < ticks; i++) {
         fixture_advance_ms(&f, 200);
     }
     if (test_event_count(&f.state, TEST_EVENT_RETRANSMISSION, 0)) {
@@ -415,12 +415,17 @@ static enum result test_rtt_first_sample(const char **why)
     spec.src_port_be = port; spec.dst_port_be = ii_htons(19000);
     spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK; spec.ack_seq = ack;
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-    if (c->state != II_TCP_STATE_ESTABLISHED || c->rtt.srtt != 2 || c->rtt.rttvar != 1) {
-        fprintf(stderr, "first RTT=400ms: state=%u SRTT=%u RTTVAR=%u (ticks; expected 2/1)\n", c->state,c->rtt.srtt,c->rtt.rttvar);
-        *why = "first unambiguous RTT sample not initialized as R and R/2"; return RESULT_FAIL;
-    }
+    TEST_REQUIRE(why, c->state == II_TCP_STATE_ESTABLISHED &&
+        c->rtt.srtt == ticks && c->rtt.rttvar == ticks / 2,
+        "first RTT=%u ms: expected state=%u SRTT=%u RTTVAR=%u ticks, actual=%u/%u/%u",
+        ticks * 200U, II_TCP_STATE_ESTABLISHED, ticks, ticks / 2,
+        c->state, c->rtt.srtt, c->rtt.rttvar);
     return RESULT_PASS;
 }
+static enum result test_rtt_first_sample(const char **why)
+{ return test_rtt_first_sample_ticks(why, 2); }
+static enum result test_rtt_first_sample_long(const char **why)
+{ return test_rtt_first_sample_ticks(why, 4); }
 
 static enum result test_rtt_subsequent_sample(const char **why)
 {
@@ -614,3 +619,71 @@ static enum result test_abort_after_fin_notification(const char **why)
     }
     return RESULT_PASS;
 }
+
+/* White-box sequence placement; payload order is checked by the callback. */
+static enum result test_receive_wrap_case(const char **why, uint32_t start)
+{
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    const uint8_t data[] = { 0, 1, 2, 3 };
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    f.conn->seq_next_expected = start;
+    f.conn->ack_seq = start;
+    f.conn->ack_seq_xmitted = start;
+    fixture_incoming_spec(&f, &spec, start + 2U, data + 2, 2);
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.state.payload_byte_count == 0,
+        "out-of-order delivery: expected bytes=0, actual=%llu",
+        (unsigned long long)f.state.payload_byte_count);
+    free_output(&f.state);
+    fixture_incoming_spec(&f, &spec, start, data, 2);
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.conn->seq_next_expected == start + 4U && f.state.payload_byte_count == 4,
+        "gap filled: expected RCV.NXT=%u bytes=4, actual=%u/%llu", start + 4U,
+        f.conn->seq_next_expected, (unsigned long long)f.state.payload_byte_count);
+    free_output(&f.state);
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.state.payload_byte_count == 4 && f.conn->seq_next_expected == start + 4U,
+        "duplicate: expected bytes=4 RCV.NXT=%u, actual=%llu/%u", start + 4U,
+        (unsigned long long)f.state.payload_byte_count, f.conn->seq_next_expected);
+    free_output(&f.state);
+    fixture_incoming_spec(&f, &spec, start + 4U, NULL, 0);
+    spec.tcp_flags |= TEST_TCP_FIN;
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_CLOSE_WAIT &&
+        f.conn->seq_next_expected == start + 5U && f.state.close_wait.count == 1,
+        "FIN: expected state=%u RCV.NXT=%u notifications=1, actual=%u/%u/%u",
+        II_TCP_STATE_CLOSE_WAIT, start + 5U, f.conn->state,
+        f.conn->seq_next_expected, f.state.close_wait.count);
+    return RESULT_PASS;
+}
+static enum result test_receive_wrap_control(const char **why)
+{ return test_receive_wrap_case(why, 10000U); }
+static enum result test_receive_wrap_boundary(const char **why)
+{ return test_receive_wrap_case(why, UINT32_MAX - 1U); }
+
+static enum result test_keepalive_clock_case(const char **why, uint32_t start)
+{
+    struct fixture f;
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    fake_clock_set_ns(&f.state, (uint64_t)start * 1000000ULL);
+    f.ws->now_ms = start;
+    f.ws->timer.prev_fast = start;
+    f.ws->timer.prev_slow = start;
+    f.ws->timer.prev_very_slow = start;
+    f.conn->keepalive_ts = start;
+    test_set_keepalive(f.ws, f.conn, 1000U, &f.state);
+    fixture_advance_ms(&f, 999);
+    TEST_REQUIRE(why, f.state.out_cnt == 0,
+        "keep-alive before deadline: expected packets=0, actual=%u", f.state.out_cnt);
+    /* The 999 ms observation ran the slow timer; allow its next 500 ms tick. */
+    fixture_advance_ms(&f, 500);
+    TEST_REQUIRE(why, fixture_has_keepalive_probe(&f, f.conn->seq - 1U),
+        "keep-alive after deadline: expected probe seq=%u, actual packets=%u clock=%u",
+        f.conn->seq - 1U, f.state.out_cnt, f.ws->now_ms);
+    return RESULT_PASS;
+}
+static enum result test_keepalive_clock_control(const char **why)
+{ return test_keepalive_clock_case(why, 1000U); }
+static enum result test_keepalive_clock_wrap(const char **why)
+{ return test_keepalive_clock_case(why, UINT32_MAX - 500U); }

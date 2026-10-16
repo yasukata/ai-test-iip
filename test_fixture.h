@@ -63,6 +63,13 @@ static int test_urgent_boundary_is(const struct fixture *f, uint32_t expected)
 		f->state.urgent.ptr == expected;
 }
 
+/* Preserve setup failures even through boolean scenario helpers. */
+static int fixture_setup_failed(const char *detail)
+{
+    test_setup_error = detail;
+    return test_condition_failed(__func__, __LINE__, "%s", detail);
+}
+
 static int fixture_init(struct fixture *f)
 {
 	uint32_t conn_id;
@@ -70,10 +77,10 @@ static int fixture_init(struct fixture *f)
 	f->local_mac[0] = 0x02;
 	f->peer_mac[0] = 0x04;
 	f->ws = calloc(1, sizeof(*f->ws));
-	if (!f->ws) return test_condition_failed(__func__, __LINE__, "workspace allocation failed");
+	if (!f->ws) return fixture_setup_failed("workspace allocation failed");
 	test_workspace_init(f->ws);
 	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &conn_id) != IIP_ERR_OK)
-		return test_condition_failed(__func__, __LINE__, "connection allocation failed");
+		return fixture_setup_failed("connection allocation failed");
 	f->conn = &f->ws->tcp_conns.array[conn_id];
 	f->state.use_fake_clock = 1;
 	f->state.now_ns = 1000000000ULL;
