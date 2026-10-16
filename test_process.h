@@ -12,9 +12,22 @@ static int test_process_failed;
 static const char *test_setup_error;
 static char test_failure_detail[512];
 
+static volatile sig_atomic_t isolated_group;
+static void interrupt_isolated_group(int signum)
+{
+    pid_t child = isolated_group;
+    if (child > 0) {
+        kill(-child, SIGKILL);
+        kill(child, SIGKILL);
+        while (waitpid(child, NULL, 0) < 0 && errno == EINTR) {}
+    }
+    _exit(128 + signum);
+}
+
 /* Always reap a child when a timeout or a parent-side wait error interrupts it. */
 static int kill_and_reap(pid_t child, int *status)
 {
+    kill(-child, SIGKILL);
     kill(child, SIGKILL);
     pid_t waited;
     do { waited = waitpid(child, status, 0); } while (waited < 0 && errno == EINTR);
@@ -70,10 +83,26 @@ static enum result run_isolated(enum result (*run)(const char **),
         *why = "cannot configure result pipe";
         return RESULT_ERROR;
     }
+    sigset_t blocked, previous_mask;
+    struct sigaction action = { 0 }, previous_int, previous_term;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGINT); sigaddset(&blocked, SIGTERM);
+    sigprocmask(SIG_BLOCK, &blocked, &previous_mask);
+    action.sa_handler = interrupt_isolated_group;
+    sigemptyset(&action.sa_mask);
+    sigaddset(&action.sa_mask, SIGINT); sigaddset(&action.sa_mask, SIGTERM);
+    sigaction(SIGINT, &action, &previous_int);
+    sigaction(SIGTERM, &action, &previous_term);
     pid_t child = fork();
-    if (child < 0) { close(channel[0]); close(channel[1]); *why = "cannot fork test"; return RESULT_ERROR; }
+    if (child < 0) {
+        sigaction(SIGINT, &previous_int, NULL); sigaction(SIGTERM, &previous_term, NULL);
+        sigprocmask(SIG_SETMASK, &previous_mask, NULL);
+        close(channel[0]); close(channel[1]); *why = "cannot fork test"; return RESULT_ERROR; }
     if (!child) {
         close(channel[0]);
+        if (setpgid(0, 0)) _exit(125);
+        sigaction(SIGINT, &previous_int, NULL); sigaction(SIGTERM, &previous_term, NULL);
+        sigprocmask(SIG_SETMASK, &previous_mask, NULL);
         if (dup2(STDERR_FILENO, STDOUT_FILENO) < 0) _exit(125);
         harness_event_overflow = 0;
         test_failure_detail[0] = 0;
@@ -94,9 +123,19 @@ static enum result run_isolated(enum result (*run)(const char **),
         close(channel[1]);
         _exit(n == sizeof(report) ? EXIT_SUCCESS : EXIT_FAILURE);
     }
+    /* Either side may establish the group first. */
+    (void)setpgid(child, child);
+    isolated_group = child;
+    sigprocmask(SIG_SETMASK, &previous_mask, NULL);
     close(channel[1]);
     int timed_out = 0;
-    if (!wait_isolated_child(child, timeout_seconds, &status, &timed_out)) {
+    int waited = wait_isolated_child(child, timeout_seconds, &status, &timed_out);
+    kill(-child, SIGKILL);
+    sigprocmask(SIG_BLOCK, &blocked, NULL);
+    isolated_group = 0;
+    sigaction(SIGINT, &previous_int, NULL); sigaction(SIGTERM, &previous_term, NULL);
+    sigprocmask(SIG_SETMASK, &previous_mask, NULL);
+    if (!waited) {
         close(channel[0]);
         *why = "cannot wait for test process";
         return RESULT_ERROR;

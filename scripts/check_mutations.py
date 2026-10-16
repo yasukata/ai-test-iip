@@ -6,8 +6,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
 
 ROOT=Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
+from process_support import run_command
 # Include every harness module when building an isolated mutated copy.
 FILES = sorted(p.name for p in ROOT.iterdir() if p.suffix in ('.c', '.h')) + ['iip/main.c']
 
@@ -53,11 +56,15 @@ EXPERIMENTS=[
 ]
 
 def run(dst,out,label,case):
+    (out/(label+'.json')).unlink(missing_ok=True)
     with (out/(label+'.build.log')).open('w') as log:
-        subprocess.run(['cc','-std=gnu11','-O1','-g','-Wall','-Wextra','-o',str(dst/'harness'),str(dst/'main.c')],stdout=log,stderr=subprocess.STDOUT,check=True)
+        run_command(['cc','-std=gnu11','-O1','-g','-Wall','-Wextra','-o',str(dst/'harness'),str(dst/'main.c')],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=60)
     with (out/(label+'.tap')).open('w') as tap, (out/(label+'.log')).open('w') as log:
-        r=subprocess.run([str(dst/'harness'),'--case',case,'--json',str(out/(label+'.json'))],stdout=tap,stderr=log,timeout=40)
+        r=run_command([str(dst/'harness'),'--case',case,'--json',str(out/(label+'.json'))],stdout=tap,stderr=log,timeout=40)
     j=json.loads((out/(label+'.json')).read_text())
+    if (len(j['cases']) != 1 or j['cases'][0]['id'] != case or
+            j['exit_code'] != r.returncode):
+        raise ValueError('inconsistent result report')
     return j['cases'][0]['status'],r.returncode
 
 def main():
@@ -65,22 +72,32 @@ def main():
     out=Path(args.output).resolve();out.mkdir(parents=True,exist_ok=True)
     results=[]
     for name,case,expected,kind in EXPERIMENTS:
-        with tempfile.TemporaryDirectory(prefix='iip-mutation-') as tmp:
-            dst=Path(tmp)
-            for f in FILES:
-                (dst/f).parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/f,dst/f)
-            baseline,base_rc=run(dst,out,name+'-baseline',case)
-            assert baseline=='PASS' and base_rc==0, (name,'baseline not passing',baseline,base_rc)
-            mutate(dst,name)
-            for f in ('iip/main.c','test_tcp_window.h'):
-                if (dst/f).read_bytes() != (ROOT/f).read_bytes():
-                    import difflib
-                    (out/(name+'.patch')).write_text(''.join(difflib.unified_diff((ROOT/f).read_text().splitlines(True),(dst/f).read_text().splitlines(True),fromfile=f,tofile=f)))
-            actual,rc=run(dst,out,name,case)
-            ok=actual==expected and (rc==0 if expected=='PASS' else rc!=0)
-            results.append(dict(experiment=name,case=case,kind=kind,expected=expected,actual=actual,exit_code=rc,ok=ok))
-            print(name,actual,'OK' if ok else 'UNEXPECTED',flush=True)
-    (out/'summary.json').write_text(json.dumps(results,indent=2)+'\n')
+        stage = 'baseline'
+        try:
+            with tempfile.TemporaryDirectory(prefix='iip-mutation-') as tmp:
+                dst=Path(tmp)
+                for f in FILES:
+                    (dst/f).parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/f,dst/f)
+                baseline,base_rc=run(dst,out,name+'-baseline',case)
+                assert baseline=='PASS' and base_rc==0, (name,'baseline not passing',baseline,base_rc)
+                stage = 'mutation'
+                mutate(dst,name)
+                for f in ('iip/main.c','test_tcp_window.h'):
+                    if (dst/f).read_bytes() != (ROOT/f).read_bytes():
+                        import difflib
+                        (out/(name+'.patch')).write_text(''.join(difflib.unified_diff((ROOT/f).read_text().splitlines(True),(dst/f).read_text().splitlines(True),fromfile=f,tofile=f)))
+                actual,rc=run(dst,out,name,case)
+                ok=actual==expected and (rc==0 if expected=='PASS' else rc!=0)
+                results.append(dict(experiment=name,case=case,kind=kind,expected=expected,actual=actual,exit_code=rc,ok=ok))
+                print(name,actual,'OK' if ok else 'UNEXPECTED',flush=True)
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, TypeError, AssertionError) as error:
+            results.append(dict(experiment=name, case=case, kind=kind, expected=expected,
+                                actual='ERROR', stage=stage, error=str(error), ok=False))
+            print(name, 'ERROR', str(error), flush=True)
+        finally:
+            temporary = out / 'summary.json.tmp'
+            temporary.write_text(json.dumps(results, indent=2) + '\n')
+            temporary.replace(out / 'summary.json')
     return 0 if all(x['ok'] for x in results) else 1
 
 if __name__=='__main__': raise SystemExit(main())

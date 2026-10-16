@@ -16,16 +16,55 @@ import sys
 import time
 
 
+_interrupt_depth = 0
+_pending_interrupt = None
+
+
 class RunInterrupted(Exception):
     def __init__(self, signum):
         self.signum = signum
 
 
 @contextmanager
+def defer_interruptions():
+    global _interrupt_depth, _pending_interrupt
+    _interrupt_depth += 1
+    try:
+        yield
+    finally:
+        _interrupt_depth -= 1
+        if not _interrupt_depth and _pending_interrupt is not None:
+            signum, _pending_interrupt = _pending_interrupt, None
+            raise RunInterrupted(signum)
+
+
+@contextmanager
+def command_process(command, **kwargs):
+    process = None
+    try:
+        with defer_interruptions():
+            process = subprocess.Popen(command, **kwargs)
+        yield process
+    finally:
+        if process is not None:
+            stop_process_group(process)
+            process.wait()
+            for stream in (process.stdout, process.stderr):
+                if stream:
+                    stream.close()
+
+
+@contextmanager
 def interruption_handlers():
     """Unwind process cleanup on both terminal and supervisor cancellation."""
     def interrupt(signum, frame):
-        raise RunInterrupted(signum)
+        global _pending_interrupt
+        for number in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(number, signal.SIG_IGN)
+        if _interrupt_depth:
+            _pending_interrupt = signum
+        else:
+            raise RunInterrupted(signum)
 
     previous = {signum: signal.signal(signum, interrupt)
                 for signum in (signal.SIGINT, signal.SIGTERM)}
@@ -38,6 +77,15 @@ def interruption_handlers():
 
 def stop_process_group(process):
     """Stop the command and descendants that inherited its output pipes."""
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -47,21 +95,34 @@ def stop_process_group(process):
 @contextmanager
 def output_lines(process):
     """Drain both pipes concurrently, retaining each line's source for parsing."""
-    pending = queue.Queue()
+    pending = queue.Queue(maxsize=256)
+    stopped = threading.Event()
+
+    def enqueue(item):
+        while not stopped.is_set():
+            try:
+                pending.put(item, timeout=0.1)
+                return
+            except queue.Full:
+                pass
 
     def read(stream, is_stdout):
         try:
-            for line in stream:
-                pending.put((is_stdout, line))
+            while not stopped.is_set():
+                line = stream.readline(65537)
+                if not line:
+                    break
+                if len(line) > 65536:
+                    raise OSError("test output line exceeds 65536 characters")
+                enqueue((is_stdout, line))
         except (OSError, ValueError) as error:
-            pending.put((is_stdout, error))
+            enqueue((is_stdout, error))
         finally:
-            pending.put((is_stdout, None))
+            enqueue((is_stdout, None))
 
     readers = [threading.Thread(target=read, args=(stream, is_stdout), daemon=True)
                for stream, is_stdout in ((process.stdout, True), (process.stderr, False))]
-    for reader in readers:
-        reader.start()
+    started = []
 
     def lines():
         finished = 0
@@ -76,16 +137,21 @@ def output_lines(process):
             if line is None:
                 finished += 1
             elif isinstance(line, Exception):
-                raise OSError("cannot read test output") from line
+                raise OSError(f"cannot read test output: {line}") from line
             else:
                 yield is_stdout, line
 
     try:
+        for reader in readers:
+            with defer_interruptions():
+                reader.start()
+                started.append(reader)
         yield lines()
     finally:
         # A logging/printing failure must not leave the child blocked on a pipe.
+        stopped.set()
         stop_process_group(process)
-        for reader in readers:
+        for reader in started:
             reader.join()
 
 
@@ -213,7 +279,7 @@ def main():
     print(f"Running: {' '.join(command)}", flush=True)
     try:
         with interruption_handlers(), log_path.open("w", encoding="utf-8") as log:
-            with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            with command_process(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True, errors="replace", bufsize=1,
                                   start_new_session=True) as process:
                 with output_lines(process) as lines:

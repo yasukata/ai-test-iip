@@ -272,3 +272,23 @@ non-wrapping controls. Keep-alive is observed at 999 ms and 1499 ms to account f
 the 500 ms timer evaluation interval. These use white-box fixture placement and
 remain partial coverage: other TCP states, sender ACK wrap, other timers,
 timestamp negotiation, initial RTO and RTT rounding are not established by them.
+
+Harness fault checks build in a fresh temporary directory and remove it on exit,
+so independent invocations do not overwrite each other's executables. Isolated
+C cases own a process group; remaining descendants are stopped after a report,
+a timeout, or parent cancellation. SIGINT/SIGTERM are blocked while that group
+is being registered, and restored before the next case.
+
+The console wrapper defers cancellation during command and reader-thread startup
+until cleanup owns the new resource. Further cancellation signals are ignored
+while the first interruption unwinds. Output buffering is bounded to 256 queued
+lines, each at most 65536 characters. Longer lines produce an output error;
+consumer failure releases readers even when the queue is full.
+
+Mutation experiments bound builds to 60 seconds and runs to 40 seconds. Build
+errors, timeouts, missing or inconsistent JSON and mutation failures are recorded
+as ERROR, with the experiment stage and diagnostic. Later experiments continue,
+and summary.json is replaced after each experiment. Old per-run JSON is removed
+before execution so missing output cannot reuse a previous result.
+The wrapper allows the command up to one second after TERM to clean up its own
+isolated groups before sending KILL to remaining members of the command group.

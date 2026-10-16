@@ -35,6 +35,48 @@ static void ignored_alarm_self_test(void)
     for (;;) pause();
 }
 
+static void descendant_self_test(void)
+{
+    pid_t child = fork();
+    assert(child >= 0);
+    if (!child) { signal(SIGALRM, SIG_IGN); for (;;) pause(); }
+}
+static void descendant_timeout_self_test(void)
+{
+    descendant_self_test();
+    ignored_alarm_self_test();
+}
+static void descendant_missing_self_test(void)
+{
+    descendant_self_test();
+    _exit(0);
+}
+static void descendant_cleanup_checks(void)
+{
+    void (*cases[])(void) = { descendant_self_test, descendant_timeout_self_test,
+                             descendant_missing_self_test };
+    for (unsigned i = 0; i < ARRAY_LENGTH(cases); i++) {
+        int channel[2];
+        assert(pipe(channel) == 0);
+        assert(fcntl(channel[0], F_SETFL, O_NONBLOCK) == 0);
+        const char *why = NULL;
+        enum result result = run_isolated_self_test(cases[i], &why, 1);
+        assert(result == (i == 0 ? RESULT_PASS : i == 1 ? RESULT_FAIL : RESULT_ERROR));
+        close(channel[1]);
+        char byte;
+        ssize_t n = -1;
+        for (unsigned attempt = 0; attempt < 1000; attempt++) {
+            n = read(channel[0], &byte, 1);
+            if (n == 0) break; /* Every inherited writer was closed. */
+            assert(n < 0 && (errno == EAGAIN || errno == EINTR));
+            const struct timespec delay = { 0, 1000000L };
+            nanosleep(&delay, NULL);
+        }
+        assert(n == 0);
+        close(channel[0]);
+    }
+}
+
 static void isolated_self_test_checks(void)
 {
     static const struct {
@@ -116,6 +158,7 @@ int main(void)
     fputs("Option validator negative controls: expected diagnostics follow\n", stderr);
     assert(run_isolated_test(option_validation_case, &why) == RESULT_PASS);
     isolated_self_test_checks();
+    descendant_cleanup_checks();
     puts("Runner fault and option validation checks: PASS");
     return 0;
 }
