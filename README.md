@@ -206,6 +206,15 @@ application notifications include integration callbacks. Source-route settings
 that are not connected to the native API are reported as inconclusive.
 Direct ESTABLISHED fixtures do not replace handshake negotiation tests.
 
+`IP4-OPT-2` enables a test-side input adapter that checks IPv4 option lengths,
+discards malformed options, and uses iip's IPv4 sender to emit ICMP Parameter
+Problem with a pointer to the offending byte. It checks bad-checksum and
+non-initial-fragment suppression as well as valid-option delivery. This is
+an integration scenario, not a check of iip's native Parameter Problem
+generator. The adapter is disabled for other cases. It covers structural
+option errors, not option-specific semantics, subnet-directed broadcasts,
+rate limiting, or the full set of ICMP error suppression rules.
+
 `UDP-PORT-1` enables a test-side UDP port binding in `test_backend.c`.
 The callback delivers bound-port traffic and sends ICMP Port Unreachable for
 unbound unicast traffic using iip's IPv4 sender. The case checks bound-port

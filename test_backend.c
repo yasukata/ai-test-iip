@@ -46,6 +46,63 @@ static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *w,
 	return discard;
 }
 
+/* Input integration owns malformed-option packets that it consumes. */
+static int test_backend_ip4_option_error(void *pkt, void *opaque)
+{
+	struct test_state *state = opaque;
+	uint16_t size = iip_ops_pkt_get_len(pkt, opaque);
+	if (size < II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL ||
+			ii_ntohs(iip_ops_l2_ethertype_be(pkt, opaque)) != 0x0800)
+		return 0;
+	uint8_t *frame = iip_ops_pkt_get_data(pkt, opaque);
+	uint8_t *ip = frame + II_ETH_HDR_LEN;
+	uint16_t ihl = (ip[0] & 15) * 4;
+	uint16_t total = ii_ntohs(ii_read_uint16(ip + 2));
+	if ((ip[0] >> 4) != 4 || ihl < 20 || total < ihl ||
+			size < II_ETH_HDR_LEN + total ||
+			memcmp(frame, state->local_mac, 6) ||
+			ii_extract_ipv4_dst_be(ip) != state->local_ip4_be)
+		return 0;
+	const uint8_t *check[1] = { ip };
+	uint16_t check_len[1] = { ihl };
+	if (ii_csum16(check, check_len, 1, 0)) {
+		iip_ops_pkt_free(pkt, opaque);
+		return 1;
+	}
+	unsigned int pointer = 0;
+	for (unsigned int at = 20; at < ihl; ) {
+		if (ip[at] == 0) break;
+		if (ip[at] == 1) { at++; continue; }
+		if (at + 1 == ihl) { pointer = at; break; }
+		if (ip[at + 1] < 2 || at + ip[at + 1] > ihl) {
+			pointer = at + 1;
+			break;
+		}
+		at += ip[at + 1];
+	}
+	if (!pointer) return 0;
+	uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
+	bool error_packet = ip[9] == 1 && total > ihl &&
+		(ip[ihl] == 3 || ip[ihl] == 4 || ip[ihl] == 5 ||
+		 ip[ihl] == 11 || ip[ihl] == 12);
+	int result = 1;
+	if (!(frame[0] & 1) && (src >> 24) != 0 && (src >> 24) != 127 &&
+			(src >> 28) < 0xe &&
+			!(ii_ntohs(ii_read_uint16(ip + 6)) & 0x1fff) && !error_packet) {
+		uint8_t icmp[II_ICMP_HDR_LEN] = { 12, 0, 0, 0, 0, 0, 0, 0 };
+		icmp[4] = (uint8_t)pointer;
+		const uint8_t *parts[2] = { icmp, ip };
+		IIP_PKT_LEN_T lengths[2] = { sizeof(icmp), ihl + (total - ihl < 8 ? total - ihl : 8) };
+		ii_write_uint16(icmp + 2, ii_htons(ii_csum16(parts, lengths, 2, 0)));
+		if (ii_ipv4_send_ethernet(frame, ii_extract_ipv4_dst_be(ip),
+				frame + 6, ii_extract_ipv4_src_be(ip), 1, 0,
+				parts, lengths, 2, opaque) != IIP_ERR_OK)
+			result = -1;
+	}
+	iip_ops_pkt_free(pkt, opaque);
+	return result;
+}
+
 static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 {
 	struct ii_pb *p = &w->pbs.array[id];

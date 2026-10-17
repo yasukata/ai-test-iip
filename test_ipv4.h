@@ -635,6 +635,24 @@ static enum result test_ip4_malformed_option_error(const char **why)
 	spec.ip_options[0] = 0x9e;
 	spec.ip_options[1] = 5;
 	spec.ip_options_len = 4;
+	f.state.ip4_option_error_integration = 1;
+	/* Neither a corrupt IPv4 checksum nor a non-initial fragment may
+	 * trigger an ICMP error, even with the same malformed option. */
+	for (unsigned int control = 0; control < 2; control++) {
+		input = build_tcp_packet(&spec, &f.state);
+		if (control == 0)
+			PB_IP4(input)->csum_be ^= ii_htons(1);
+		else {
+			uint8_t *ip = (uint8_t *)PB_IP4(input);
+			ii_write_uint16(ip + 6, ii_htons(1));
+			update_ip4_checksum(input);
+		}
+		fixture_deliver(&f, input);
+		if (f.state.payload_chunk_count || f.state.out_cnt) {
+			*why = "malformed option integration answered a bad checksum or non-initial fragment";
+			return RESULT_FAIL;
+		}
+	}
 	input = build_tcp_packet(&spec, &f.state);
 	memcpy(quoted, PB_IP4(input), sizeof(quoted));
 	fixture_deliver(&f, input);
@@ -690,6 +708,15 @@ static enum result test_ip4_malformed_option_error(const char **why)
 		*why = "ICMP Parameter Problem does not quote the IPv4 header and 8 octets";
 		return RESULT_FAIL;
 	}
+	free_output(&f.state);
+	/* A valid unknown option must still reach the native receive path. */
+	spec.ip_options[1] = 4;
+	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+	if (f.state.payload_chunk_count != 1) {
+		*why = "option error integration prevented delivery of a valid option";
+		return RESULT_FAIL;
+	}
+	free_output(&f.state);
 	return RESULT_PASS;
 }
 

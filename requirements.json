@@ -1271,10 +1271,10 @@
       "strength": "SHOULD",
       "profile": "base",
       "applicability": "IPv4; selected integration; base",
-      "responsibility": "iip + documented callbacks",
+      "responsibility": "iip + test-side IPv4 option validation and ICMP Parameter Problem implementation; not iip alone",
       "oracle": "Assertions in test_ip4_malformed_option_error; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Structural option errors only; native iip Parameter Problem generation, option-specific semantics, directed broadcasts, rate limiting and exhaustive ICMP suppression are not covered"
     },
     {
       "id": "IP4-SIZE-1",

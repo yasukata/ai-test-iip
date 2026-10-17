@@ -396,6 +396,7 @@ struct test_state {
 	/* Optional test-side UDP socket integration; otherwise deliver all ports. */
 	uint8_t udp_port_filter_enabled;
 	uint16_t udp_bound_port_be;
+	uint8_t ip4_option_error_integration;
 	struct {
 		uint8_t auto_close;
 		unsigned int count;

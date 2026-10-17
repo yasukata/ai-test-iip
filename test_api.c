@@ -182,7 +182,19 @@ static uint16_t test_api_run(struct iip_workspace *w, uint8_t *mac, uint32_t ip,
 	if (w->now_ms - w->timer.prev_slow >= 500) test_event_timer(opaque, TEST_TIMER_SLOW, w->now_ms);
 	if (w->now_ms - w->timer.prev_very_slow >= 1000) test_event_timer(opaque, TEST_TIMER_VERY_SLOW, w->now_ms);
 	unsigned int first_output = state->out_cnt;
-	int rc = iip_run(w, pkts, cnt, next, opaque);
+	void *forwarded[TEST_PKT_MAX];
+	uint16_t forwarded_count = 0;
+	if (state->ip4_option_error_integration) {
+		assert(cnt <= TEST_PKT_MAX);
+		for (uint16_t i = 0; i < cnt; i++) {
+			int handled = test_backend_ip4_option_error(pkts[i], opaque);
+			assert(handled >= 0);
+			if (!handled) forwarded[forwarded_count++] = pkts[i];
+		}
+	}
+	int rc = state->ip4_option_error_integration
+		? iip_run(w, forwarded, forwarded_count, next, opaque)
+		: iip_run(w, pkts, cnt, next, opaque);
 	test_api_record_run_events(w, before, first_output, opaque);
 	return rc == 0 ? cnt : UINT16_MAX;
 }
