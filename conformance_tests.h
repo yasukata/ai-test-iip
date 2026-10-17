@@ -609,14 +609,13 @@ static enum result test_abort_after_fin_notification(const char **why)
             *why = "close completion callback missing"; return RESULT_FAIL;
         }
     }
-    /* The current callback only exposes handle, tuple and opaque. After peer
-     * FIN, an ACK of our FIN and an RST produce the same application history. */
+    /* Observe the close reason while the application callback can read it. */
     const struct test_event *a = test_event_nth(&normal.state, TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED, 0);
     const struct test_event *b = test_event_nth(&aborted.state, TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED, 0);
-    if (!memcmp(a->value, b->value, sizeof(a->value))) {
-        *why = "normal FIN completion and RST after peer FIN expose identical callback information";
-        return RESULT_FAIL;
-    }
+    TEST_REQUIRE(why, a && a->value[2] == 0,
+        "normal FIN completion was reported as an RST close");
+    TEST_REQUIRE(why, b && b->value[2] == 1,
+        "RST after peer FIN was not reported as an RST close");
     return RESULT_PASS;
 }
 

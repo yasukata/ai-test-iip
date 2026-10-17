@@ -346,7 +346,8 @@ struct test_event {
 	void *object;
 	/* TX: seq, ack, flags, payload_len; STATE: old, new;
 	 * TIMER: now_ms; CALLBACK: callback-specific arguments
-	 * (TCP_ICMP_ERROR: ICMP type, ICMP code, local port, remote port);
+	 * (TCP_ICMP_ERROR: ICMP type, ICMP code, local port, remote port;
+	 * CLOSED: local port, remote port, closed by RST, reserved);
 	 * RETRANSMISSION: seq, count, rto_ms, payload_len;
 	 * LOSS: old_cwnd, new_cwnd, old_ssthresh, new_ssthresh. */
 	uint32_t value[4];
@@ -1158,8 +1159,10 @@ static void iip_ops_tcp_closed(void *handle, uint8_t local_mac[],
 		uint32_t peer_ip4_be, uint16_t peer_port_be, void *tcp_opaque,
 		void *opaque)
 {
+	const struct ii_tcp_conn *conn = handle;
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED,
-			handle, ii_ntohs(local_port_be), ii_ntohs(peer_port_be), 0, 0);
+			handle, ii_ntohs(local_port_be), ii_ntohs(peer_port_be),
+			!!(conn->flags & II_TCP_CONN_FLAGS_CLOSE_RST), 0);
 	(void)local_mac; (void)local_ip4_be; (void)peer_mac; (void)peer_ip4_be;
 	(void)tcp_opaque;
 }
