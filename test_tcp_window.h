@@ -489,11 +489,9 @@ static enum result test_sender_sws_avoidance(const char **why)
 
 /*
  * Emit one ACK so that RCV.WND is fixed on the wire before a window-edge
- * test.  iip announces a fixed receive-window shift of 7 (the shift passed
- * to ii_tcp_compute_win), independent of conn->ws, so the white-box fixture
- * interprets the field with that implementation constant.
+ * test.  Decode the window field with conn->ws, matching the shift passed
+ * to ii_tcp_compute_win by the implementation.
  */
-#define TEST_IIP_RX_WINDOW_SHIFT 7U
 static int fixture_advertise_window(struct fixture *f, uint32_t expected)
 {
 	void *pkt = fixture_packet(f, 0, 0, 0);
@@ -502,8 +500,7 @@ static int fixture_advertise_window(struct fixture *f, uint32_t expected)
 
 	if (!pkt)
 		return 0;
-	window = (uint32_t)ii_ntohs(PB_TCP(pkt)->win_be) <<
-		TEST_IIP_RX_WINDOW_SHIFT;
+	window = (uint32_t)ii_ntohs(PB_TCP(pkt)->win_be) << f->conn->ws;
 	ok = window == expected;
 	if (!ok)
 		fprintf(stderr, "advertised window %u, expected %u\n",
