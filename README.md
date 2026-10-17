@@ -206,6 +206,16 @@ application notifications include integration callbacks. Source-route settings
 that are not connected to the native API are reported as inconclusive.
 Direct ESTABLISHED fixtures do not replace handshake negotiation tests.
 
+`UDP-PORT-1` enables a test-side UDP port binding in `test_backend.c`.
+The callback delivers bound-port traffic and sends ICMP Port Unreachable for
+unbound unicast traffic using iip's IPv4 sender. The case checks bound-port
+delivery, silent rejection of an invalid UDP checksum, and the unbound-port
+reply including its addresses, checksums, and quoted datagram. This measures
+iip plus the test-side UDP integration, not native UDP socket support in iip.
+Other UDP cases retain the default callback that delivers all ports. The
+integration has one wildcard-address binding and does not model subnet masks,
+directed broadcasts, or a complete UDP socket API.
+
 | Status | Meaning |
 | --- | --- |
 | PASS | The selected scenario satisfied its assertions |

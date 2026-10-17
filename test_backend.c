@@ -49,6 +49,38 @@ static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *w,
 static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 {
 	struct ii_pb *p = &w->pbs.array[id];
+	struct test_state *state = opaque;
+	if (state->udp_port_filter_enabled) {
+		uint8_t quote[60 + II_UDP_HDR_LEN];
+		IIP_PKT_LEN_T copied;
+		uint8_t *frame = iip_ops_pkt_get_data(p->part_pkt[0], opaque);
+		const uint8_t *ip = frame + II_ETH_HDR_LEN;
+		uint8_t ihl = ii_extract_ipv4_hdr_len(ip);
+		uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
+		uint32_t dst = ii_ntohl(ii_extract_ipv4_dst_be(ip));
+		if (ihl < II_IPV4_HDR_LEN_MINIMAL || ihl > 60 ||
+				ii_pb_payload_copy(w, id, II_ETH_HDR_LEN, quote,
+					ihl + II_UDP_HDR_LEN, &copied, opaque) != IIP_ERR_OK ||
+				copied != ihl + II_UDP_HDR_LEN)
+			return -1;
+		if (ii_read_uint16(quote + ihl + 2) != state->udp_bound_port_be) {
+			/* Do not generate ICMP errors for non-unicast traffic or a
+			 * reassembly whose first stored fragment is not fragment zero. */
+			if ((frame[0] & 1) || src == 0 || src == UINT32_MAX ||
+					(src >> 24) == 0 || (src >> 24) == 127 ||
+					(src >> 28) >= 0xe || dst == UINT32_MAX ||
+					(dst >> 28) >= 0xe || (ii_ntohs(ii_read_uint16(ip + 6)) & 0x1fff))
+				return 0;
+			uint8_t icmp[II_ICMP_HDR_LEN] = { 3, 3, 0, 0, 0, 0, 0, 0 };
+			const uint8_t *parts[2] = { icmp, quote };
+			IIP_PKT_LEN_T lengths[2] = { sizeof(icmp), ihl + II_UDP_HDR_LEN };
+			ii_write_uint16(icmp + 2, ii_htons(ii_csum16(parts, lengths, 2, 0)));
+			/* iip owns and frees the received datagram after this callback. */
+			return ii_ipv4_send_ethernet(frame, ii_extract_ipv4_dst_be(ip),
+					frame + 6, ii_extract_ipv4_src_be(ip), 1, 0,
+					parts, lengths, 2, opaque) == IIP_ERR_OK ? 0 : -1;
+		}
+	}
 	/* Count one datagram callback, including payload distributed over fragments. */
 	iip_ops_udp_payload(w, p, opaque);
 	return 0;

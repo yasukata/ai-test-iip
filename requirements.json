@@ -1439,10 +1439,10 @@
       "strength": "SHOULD",
       "profile": "base",
       "applicability": "IPv4; selected integration; base",
-      "responsibility": "iip + documented callbacks",
+      "responsibility": "iip + test-side UDP port binding and ICMP error implementation; not iip alone",
       "oracle": "Assertions in test_udp_port_unreachable; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Single wildcard-address UDP binding; no complete socket API, subnet-directed broadcast model, or exhaustive fragmented UDP and ICMP suppression coverage"
     },
     {
       "id": "TCP-WS-1",

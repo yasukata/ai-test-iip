@@ -393,6 +393,9 @@ struct test_state {
 	uint8_t use_fake_clock;
 	uint8_t defer_payload_consumption;
 	uint8_t quiet_payload;
+	/* Optional test-side UDP socket integration; otherwise deliver all ports. */
+	uint8_t udp_port_filter_enabled;
+	uint16_t udp_bound_port_be;
 	struct {
 		uint8_t auto_close;
 		unsigned int count;
@@ -2091,25 +2094,53 @@ static enum result test_udp_port_unreachable(const char **why)
 
 	if (!fixture_init(&f))
 		return RESULT_FAIL;
+	f.state.udp_port_filter_enabled = 1;
+	f.state.udp_bound_port_be = ii_htons(10000);
+	/* A bound port delivers normally without emitting an ICMP error. */
+	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
+	fixture_deliver(&f, pkt);
+	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_UDP_PAYLOAD) != 1 || f.state.out_cnt) {
+		*why = "a bound UDP port did not deliver exactly once without an error reply";
+		return RESULT_FAIL;
+	}
+	test_event_log_clear(&f.state);
+	f.state.udp_bound_port_be = ii_htons(10001);
+	/* Invalid checksums must be discarded before the port integration runs. */
+	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
+	PB_UDP_PAYLOAD(pkt)[0] ^= 1;
+	fixture_deliver(&f, pkt);
+	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
+			TEST_CALLBACK_UDP_PAYLOAD) || f.state.out_cnt) {
+		*why = "an invalid UDP checksum reached the application or triggered an error reply";
+		return RESULT_FAIL;
+	}
 	pkt = fixture_udp_packet(&f, payload, sizeof(payload));
 	memcpy(quoted, PB_IP4(pkt), sizeof(quoted));
 	fixture_deliver(&f, pkt);
 	if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_UDP_PAYLOAD) != 0) {
-		*why = "the UDP API delivers every datagram to the application; no port is closed";
-		return RESULT_SKIP;
+		*why = "a datagram for an unbound UDP port reached the application";
+		return RESULT_FAIL;
 	}
 	if (output_count_ethertype(&f.state, 0x0800) == 0) {
 		*why = "a datagram for a port with no listener was discarded without ICMP Port Unreachable (SHOULD)";
 		return RESULT_TODO;
 	}
 	reply = output_nth_ethertype(&f.state, 0x0800, 0);
-	if (PB_IP4(reply)->proto != 1 || PB_ICMP(reply)->type != 3 ||
+	if (output_count_ethertype(&f.state, 0x0800) != 1 ||
+			PB_IP4(reply)->proto != 1 ||
+			PB_IP4(reply)->src_be != ii_htonl(f.conn->src_ip[0]) ||
+			PB_IP4(reply)->dst_be != ii_htonl(f.conn->dst_ip[0]) ||
+			!ip4_checksum_valid(reply) || PB_ICMP(reply)->type != 3 ||
 			PB_ICMP(reply)->code != 3 || !icmp_checksum_valid(reply) ||
+			PB_IP4_TOTAL_LEN(reply) < PB_IP4_HDR_LEN(reply) +
+				sizeof(struct iip_icmp_hdr) + sizeof(quoted) ||
 			memcmp(PB_ICMP_DATA(reply), quoted, sizeof(quoted))) {
 		*why = "the response is not a valid ICMP Port Unreachable quoting the datagram";
 		return RESULT_FAIL;
 	}
+	free_output(&f.state);
 	return RESULT_PASS;
 }
 
