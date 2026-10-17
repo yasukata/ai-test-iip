@@ -1,5 +1,11 @@
 /* Included after the packet backend; bindings share the test translation unit. */
 
+static void test_backend_tcp_connect(struct iip_workspace *w, uint32_t conn_id, void *opaque)
+{
+	struct test_state *state = opaque;
+	II_TCP_CONN(conn_id).diffserv = state->connect_diffserv;
+}
+
 static int test_backend_ethernet_header(uint8_t *buf, uint8_t *dst, uint16_t proto, void *opaque)
 {
 	struct test_state *state = opaque;

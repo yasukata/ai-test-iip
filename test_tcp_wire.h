@@ -423,6 +423,26 @@ static enum result test_diffserv(const char **why)
     void *pkt;
     uint32_t initial_rto;
     const uint8_t diffserv = 0xb8; /* DSCP EF (46), ECN Not-ECT. */
+    /* The connect hook must apply the DS field to the first SYN. */
+    for (unsigned variant = 0; variant < 2; variant++) {
+        struct fixture syn;
+        uint8_t expected = variant ? diffserv : 0;
+        TEST_REQUIRE(why, fixture_init(&syn), "DiffServ SYN: fixture initialization failed");
+        syn.state.connect_diffserv = expected;
+        TEST_REQUIRE(why, test_api_connect(syn.ws, syn.local_mac,
+            ii_htonl(syn.conn->src_ip[0]), ii_htons(10001), syn.peer_mac,
+            ii_htonl(syn.conn->dst_ip[0]), ii_htons(20000), &syn.state) == 0,
+            "DiffServ SYN: connect failed");
+        fixture_advance_ms(&syn, 1);
+        TEST_REQUIRE(why, syn.state.out_cnt == 1,
+            "DiffServ SYN: expected one output packet, actual=%u", syn.state.out_cnt);
+        if (!diffserv_packet_matches(syn.state.out[0], expected, "SYN")) {
+            *why = test_failure_detail;
+            return RESULT_FAIL;
+        }
+        free_output(&syn.state);
+        free(syn.ws);
+    }
     TEST_REQUIRE(why, fixture_init(&f), "DiffServ: fixture initialization failed");
 
     /* The default DS field remains zero. */

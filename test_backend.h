@@ -30,6 +30,12 @@ static int test_backend_arp(struct iip_workspace *, void *, void *);
 static void test_event_ip4_negative_advice(void *, void *);
 static void test_event_tcp_icmp_error(void *, void *, uint8_t, uint8_t);
 static void *test_current_opaque;
+static void test_backend_tcp_connect(struct iip_workspace *, uint32_t, void *);
+/* Set the application's DS field before queuing the initial SYN, including TFO. */
+#undef II_HOOK_TCP_IPV4_ETHERNET_CONNECT
+#define II_HOOK_TCP_IPV4_ETHERNET_CONNECT() do { \
+	test_backend_tcp_connect(w, conn_id, opaque); \
+} while (0)
 #define IIP_OPS_PKT_VALID() do { iip_ret_bool = pkt != NULL; } while (0)
 #define IIP_OPS_PKT_ALLOC() do { *pkt = iip_ops_pkt_alloc(opaque); iip_ret_int = *pkt ? 0 : -1; } while (0)
 #define IIP_OPS_PKT_FREE() do { iip_ops_pkt_free(pkt, opaque); iip_ret_int = 0; } while (0)

@@ -386,6 +386,7 @@ static int legacy_malformed_tests_passed;
 struct test_state {
 	uint8_t local_mac[6];
 	uint32_t local_ip4_be;
+	uint8_t connect_diffserv;
 	void *out[TEST_PKT_MAX];
 	unsigned int out_cnt;
 	uint8_t next_payload;

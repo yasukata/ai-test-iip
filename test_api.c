@@ -89,7 +89,7 @@ static uint16_t test_api_connect(struct iip_workspace *w, uint8_t *smac, uint32_
 	test_current_opaque = opaque;
 	test_api_set_time(w, opaque);
 	test_api_set_local_address(opaque, smac, sip);
-	int rc = iip_tcp_ipv4_ethernet_connect(w, smac, sip, sport, dmac, dip, dport, NULL, 0, NULL, 0, 0, opaque);
+	int rc = iip_tcp_ipv4_ethernet_connect(w, smac, sip, sport, dmac, dip, dport, NULL, 0, NULL, 0, opaque);
 	return rc == 0 ? 0 : UINT16_MAX;
 }
 
@@ -98,7 +98,7 @@ static uint16_t test_api_fast_open(struct iip_workspace *w, uint8_t *smac, uint3
 	test_current_opaque = opaque;
 	test_api_set_time(w, opaque);
 	test_api_set_local_address(opaque, smac, sip);
-	return iip_tcp_ipv4_ethernet_connect(w, smac, sip, sport, dmac, dip, dport, &pkt, pkt ? 1 : 0, cookie, len, 0, opaque) == 0 ? 0 : UINT16_MAX;
+	return iip_tcp_ipv4_ethernet_connect(w, smac, sip, sport, dmac, dip, dport, &pkt, pkt ? 1 : 0, cookie, len, opaque) == 0 ? 0 : UINT16_MAX;
 }
 
 static uint16_t test_api_send(struct iip_workspace *w, struct ii_tcp_conn *conn, void *pkt, uint8_t flags, void *opaque)
