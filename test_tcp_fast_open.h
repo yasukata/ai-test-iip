@@ -417,10 +417,25 @@ static enum result test_tcp_fast_open_active_rejection_fallback(
 	spec.ack_seq = client_isn + 1;
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-	fallback = output_nth_ethertype(&f.state, 0x0800, 0);
-	if (!fallback) {
-		fixture_run_timers(&f);
-		fallback = output_nth_ethertype(&f.state, 0x0800, 0);
+	/* A standalone handshake ACK may precede the retransmitted data. */
+	fallback = NULL;
+	for (unsigned int pass = 0; pass < 2 && !fallback; pass++) {
+		if (pass)
+			fixture_run_timers(&f);
+		for (unsigned int i = 0; i < f.state.out_cnt; i++) {
+			void *candidate = f.state.out[i];
+			if (ii_ntohs(iip_ops_l2_ethertype_be(candidate, &f.state)) != 0x0800 ||
+					PB_IP4(candidate)->proto != 6)
+				continue;
+			if (PB_IP4(candidate)->src_be == spec.dst_ip_be &&
+					PB_IP4(candidate)->dst_be == spec.src_ip_be &&
+					PB_TCP(candidate)->src_be == local_port_be &&
+					PB_TCP(candidate)->dst_be == peer_port_be &&
+					PB_TCP_PAYLOAD_LEN(candidate)) {
+				fallback = candidate;
+				break;
+			}
+		}
 	}
 	conn = fixture_find_local_port(&f, local_port_be);
 	if (!conn || conn->state != II_TCP_STATE_ESTABLISHED ||
@@ -430,6 +445,11 @@ static enum result test_tcp_fast_open_active_rejection_fallback(
 			memcmp(PB_TCP_PAYLOAD(fallback), payload, sizeof(payload)) ||
 			!ip4_checksum_valid(fallback) || !checksum_valid(fallback)) {
 		*why = "rejected SYN data was not retransmitted as valid normal data";
+		return RESULT_FAIL;
+	}
+	if (!PB_TCP_HDR_HAS_ACK(fallback) ||
+			ii_ntohl(PB_TCP(fallback)->ack_seq_be) != spec.seq + 1) {
+		*why = "retransmitted SYN data omitted ACK or did not acknowledge the peer SYN";
 		return RESULT_FAIL;
 	}
 	free_output(&f.state);
