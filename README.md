@@ -73,9 +73,7 @@ README):
 
 ```sh
 git clone https://github.com/yasukata/iip.git iip
-git -C iip checkout 93f53b2a97208d8c24dd930ba96763e74cd2c567
 git clone https://github.com/BLAKE2/BLAKE2.git blake2-upstream
-git -C blake2-upstream checkout ed1974ea83433eba7b2d95c5dcd9ac33cb847913
 cp blake2-upstream/ref/blake2.h .
 cp blake2-upstream/ref/blake2-impl.h .
 cp blake2-upstream/ref/blake2s-ref.c .
