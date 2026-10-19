@@ -63,6 +63,38 @@ Primary references already associated with this work include
 [RFC 7413](https://www.rfc-editor.org/rfc/rfc7413.html).
 A comprehensive audit of updates and errata remains outstanding.
 
+## State-machine and sequence-number coverage
+
+`test_tcp_model.h` defines expected input processing independently of target
+transition/comparison helpers. `test_tcp_traces.h` checks actual OPEN/CLOSE paths and control loss;
+`test_tcp_sequence.h` checks six sequence boundaries with wire, callback, and
+explicitly classified internal-buffer observations. All ledger coverage remains
+partial. `phase: 2` and `phase: 3` are additional machine-readable classifications.
+
+The legacy simultaneous-close scenario incorrectly expected FIN without ACK to
+enter CLOSING. RFC 9293 Section 3.10.7.4 drops that input at the ACK-bit check.
+It now transmits a real local FIN and receives FIN+ACK that has not yet ACKed
+that FIN, requiring CLOSING until the local FIN is acknowledged. The SYN-SENT
+reset positive control sends its SYN before accepting the SYN acknowledgment.
+
+Allow PSH on empty control packets, optional passive-reset notifications, and
+the permitted reset/challenge-ACK alternatives. Do not turn target failures
+into successful observations by requiring the wrong control input. Direct
+placement of CLOSING is useful for independent input checks but cannot prove
+that actual simultaneous close reaches it.
+
+The receive-window regression queues the last in-window byte, then supplies a
+segment covering that byte and extending beyond the window. It checks trimming,
+ordered delivery, and receive-buffer accounting. ZERO-WINDOW independently
+checks rejection at a full window and delivery after the application consumes
+buffered data.
+
+SACK fixtures explicitly enable the capability; negotiation is outside those
+cases. Sender SACK observations include the internal scoreboard and retention
+until cumulative ACK, not a requirement to implement one particular loss
+recovery algorithm. Conflicting overlapping data and invalid SACK blocks remain
+separate coverage gaps.
+
 ## Fixture and observation preconditions
 
 ### Timestamp negotiation and virtual time

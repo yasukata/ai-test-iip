@@ -338,11 +338,20 @@ static int tcp_simultaneous_close_scenario(void)
 	struct tcp_packet_spec spec;
 	if (!fixture_init(&f))
 		return 0;
-	f.conn->state = II_TCP_STATE_FIN_WAIT1;
-	test_event_tcp_state_set(&f.state, f.conn, f.conn->state);
+	fixture_prepare_sender(&f);
+	uint32_t fin_seq = f.conn->seq;
+	TEST_CONDITION(test_api_close(f.ws, f.conn, &f.state) == 0,
+			"simultaneous close: local CLOSE failed");
+	fixture_run_timers(&f);
+	TEST_CONDITION(f.state.out_cnt && PB_TCP_HDR_HAS_FIN(f.state.out[0]),
+			"simultaneous close: local FIN was not transmitted");
+	free_output(&f.state);
 	test_event_log_clear(&f.state);
 	fixture_incoming_spec(&f, &spec, 0, NULL, 0);
-	spec.tcp_flags = TEST_TCP_FIN;
+	/* RFC 9293 3.10.7.4: ACK is required; the crossing FIN cannot yet
+	 * acknowledge our FIN. A FIN without ACK must instead be discarded. */
+	spec.tcp_flags = TEST_TCP_FIN | TEST_TCP_ACK;
+	spec.ack_seq = fin_seq;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	TEST_CONDITION(f.conn->state == II_TCP_STATE_CLOSING,
         "simultaneous close after FIN: expected state=%u, actual=%u",
@@ -350,7 +359,7 @@ static int tcp_simultaneous_close_scenario(void)
 	free_output(&f.state);
 	fixture_incoming_spec(&f, &spec, 1, NULL, 0);
 	spec.tcp_flags = TEST_TCP_ACK;
-	spec.ack_seq = f.conn->seq;
+	spec.ack_seq = fin_seq + 1U;
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	TEST_CONDITION(f.conn->state == II_TCP_STATE_TIME_WAIT,
         "simultaneous close after ACK: expected state=%u, actual=%u",
@@ -910,7 +919,15 @@ static int pre_established_syn_rst_scenario(void)
 
 	if (!fixture_init(&syn_sent_ack))
 		return 0;
+	fixture_prepare_sender(&syn_sent_ack);
 	syn_sent_ack.conn->state = II_TCP_STATE_SYN_SENT;
+	test_api_push(syn_sent_ack.ws, syn_sent_ack.conn, NULL,
+			1, 0, 0, 0, 0, NULL, 0, &syn_sent_ack.state);
+	fixture_run_timers(&syn_sent_ack);
+	TEST_CONDITION(syn_sent_ack.state.out_cnt &&
+			PB_TCP_HDR_HAS_SYN(syn_sent_ack.state.out[0]),
+			"SYN-SENT RST control: no transmitted SYN");
+	free_output(&syn_sent_ack.state);
 	test_event_tcp_state_set(&syn_sent_ack.state, syn_sent_ack.conn,
 			syn_sent_ack.conn->state);
 	test_event_log_clear(&syn_sent_ack.state);

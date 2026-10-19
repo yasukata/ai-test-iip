@@ -25,6 +25,9 @@ The following project files are published in this repository:
 - `test_fixture.h` — shared connection fixtures and assertions
 - `test_process.h` — isolated execution, result transport, and timeout handling
 - `test_tcp.h` — includes the `test_tcp_*.h` scenario modules in dependency order
+- `test_tcp_model.h` — independent RFC input model for synchronized states
+- `test_tcp_traces.h` — handshake states and actual open/close traces with control loss
+- `test_tcp_sequence.h` — six sequence boundaries, ACKs, retransmission, windows and SACK
 - `test_ipv4.h` — IPv4 host and ICMP scenarios
 - `test_tcp_extensions.h` — Window Scale, Timestamps, and reset scenarios
 - `test_api.c` and `test_api.h` — adapters and helpers for the current iip API
@@ -244,6 +247,20 @@ cryptographic evaluation, and a complete RFC update/errata audit remain outside
 the established coverage. Multiple cases may cover the same requirement or
 expose the same defect; case counts are not requirement coverage percentages.
 
+State-input models and actual handshake and teardown traces complement
+sequence cases at `00000000`, `00000001`, `7fffffff`, `80000000`, `fffffffe`,
+and `ffffffff`. The ledger records each case's applicability, oracle, and
+coverage limits. Its `phase` field groups state cases as 2 and sequence cases
+as 3; it does not change default profile selection.
+
+For example:
+
+```sh
+./ai-test-iip --case TCP-TRACE-ACTIVE-LOSS --case TCP-TRACE-SIMULTANEOUS-CLOSE
+./ai-test-iip --case TCP-SEQ-FFFFFFFF-ACKS --case TCP-SEQ-FFFFFFFF-RETRANSMIT
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 ./ai-test-iip-asan --case TCP-SEQ-FFFFFFFF-WINDOW
+```
+
 Mutation experiments distinguish target defects, permitted target behavior,
 and synthetic observer counterexamples. Synthetic ACK scheduling checks the
 observer boundary; it is not a modified TCP implementation.
@@ -287,8 +304,10 @@ and FIN across sequence wrap; keep-alive across the 32-bit millisecond clock
 wrap; and an 800 ms initial RTT sample. Sequence and clock tests include matching
 non-wrapping controls. Keep-alive is observed at 999 ms and 1499 ms to account for
 the 500 ms timer evaluation interval. These use white-box fixture placement and
-remain partial coverage: other TCP states, sender ACK wrap, other timers,
-timestamp negotiation, initial RTO and RTT rounding are not established by them.
+remain partial coverage: the newer `TCP-MODEL-*`, `TCP-TRACE-*`, and `TCP-SEQ-*`
+cases separately extend state and sender ACK coverage. Other timers, timestamp
+negotiation, initial RTO and RTT rounding are not established by these original
+regression profiles.
 
 Harness fault checks build in a fresh temporary directory and remove it on exit,
 so independent invocations do not overwrite each other's executables. Isolated

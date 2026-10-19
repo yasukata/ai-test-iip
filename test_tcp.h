@@ -12,3 +12,7 @@
 #include "test_tcp_window.h"
 #include "test_tcp_wire.h"
 #include "test_tcp_options.h"
+
+#include "test_tcp_model.h"
+#include "test_tcp_traces.h"
+#include "test_tcp_sequence.h"
