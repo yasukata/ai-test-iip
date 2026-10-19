@@ -59,7 +59,7 @@ static uint8_t packet_tracked_clone_freed;
 static uint16_t test_pkt_get_capacity(void *pkt, void *opaque)
 {
 	if (!packet_capacity_sequence_count || pkt == packet_capacity_exempt_payload)
-		return 2048;
+		return (uint16_t)((long *)((long *)pkt)[1])[5];
 	if (pkt != packet_capacity_last_pkt) {
 		if (packet_capacity_last_pkt &&
 				packet_capacity_sequence_index + 1 <
@@ -837,19 +837,25 @@ static void fake_clock_use_real_time(struct test_state *state)
 	state->use_fake_clock = 0;
 }
 
-static void *iip_ops_pkt_alloc(void *opaque)
+/* Capacity belongs to the shared backing allocation, including clones.
+ * Exact-size receive buffers expose overreads at the received byte boundary. */
+static void *test_pkt_alloc_capacity(uint16_t capacity)
 {
-	long *pkt = malloc(2048 + 8 * sizeof(long) + 2);
+	long *pkt = malloc((size_t)capacity + 8 * sizeof(long) + 2);
 	assert(pkt);
 	pkt[0] = 1; /* ref */
 	pkt[1] = (long) pkt; /* ptr */
 	pkt[2] = 0; /* len */
 	pkt[3] = 0; /* head */
 	pkt[4] = 0; /* next */
+	pkt[5] = capacity;
 	return (void *) pkt;
-	{ /* unused */
-		(void) opaque;
-	}
+}
+
+static void *iip_ops_pkt_alloc(void *opaque)
+{
+	(void)opaque;
+	return test_pkt_alloc_capacity(2048);
 }
 
 static void iip_ops_pkt_free(void *pkt, void *opaque)
@@ -1170,7 +1176,11 @@ static void iip_ops_udp_payload(void *mem, void *m, void *opaque)
 {
 	struct ii_pb *pb = m;
 	uint16_t payload_len = PB_UDP_PAYLOAD_LEN(pb);
-	uint8_t first = payload_len ? PB_UDP_PAYLOAD(pb)[0] : 0;
+	/* Observe an invalid callback without making the observer itself read
+	 * past a header-only datagram whose UDP length underflowed. */
+	uint16_t available = PB_IP4_TOTAL_LEN(pb) - PB_IP4_HDR_LEN(pb);
+	uint8_t first = payload_len && available > sizeof(struct iip_udp_hdr)
+		? PB_UDP_PAYLOAD(pb)[0] : 0;
 
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_UDP_PAYLOAD,
 			m, ii_ntohs(PB_UDP(pb)->src_be),
@@ -1793,6 +1803,8 @@ static int legacy_test_main(void)
 #include "test_tcp.h"
 
 #include "test_ipv4.h"
+
+#include "test_malformed.h"
 
 #include "test_tcp_extensions.h"
 

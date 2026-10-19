@@ -71,3 +71,13 @@ check-mutations: check-registry
 
 check-conformance: check-registry ai-test-iip
 	$(PYTHON) scripts/capture_run.py --output artifacts/conformance -- ./ai-test-iip --conformance
+
+.PHONY: check-phase4 check-phase4-asan check-phase4-ubsan
+check-phase4: check-registry ai-test-iip
+	$(PYTHON) scripts/run_phase.py --phase 4 --output artifacts/phase4/normal ./ai-test-iip
+
+check-phase4-asan: check-registry ai-test-iip-asan
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 $(PYTHON) scripts/run_phase.py --phase 4 --output artifacts/phase4/asan ./ai-test-iip-asan
+
+check-phase4-ubsan: check-registry ai-test-iip-ubsan
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) scripts/run_phase.py --phase 4 --output artifacts/phase4/ubsan ./ai-test-iip-ubsan

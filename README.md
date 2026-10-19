@@ -28,6 +28,7 @@ The following project files are published in this repository:
 - `test_tcp_model.h` — independent RFC input model for synchronized states
 - `test_tcp_traces.h` — handshake states and actual open/close traces with control loss
 - `test_tcp_sequence.h` — six sequence boundaries, ACKs, retransmission, windows and SACK
+- `test_malformed.h` — exact-size malformed IPv4/TCP/UDP inputs, recovery, and seeded generation
 - `test_ipv4.h` — IPv4 host and ICMP scenarios
 - `test_tcp_extensions.h` — Window Scale, Timestamps, and reset scenarios
 - `test_api.c` and `test_api.h` — adapters and helpers for the current iip API
@@ -280,6 +281,32 @@ IIP_FUZZ_FAILURE_PREFIX=./iip-fuzz-failure \
 When a fuzz case crashes, asserts, or times out, the mutated packet is saved as
 a `.bin` file and its seed, case number, length, and path are saved in a matching
 `.txt` file.
+
+### Malformed input and recovery
+
+```sh
+make check-phase4
+make check-phase4-asan
+make check-phase4-ubsan
+```
+
+These targets select the 134 ledger cases with `phase: 4` and retain evidence
+under `artifacts/phase4/`. Inputs use exact backing allocations, independently
+constructed checksums, all Ethernet/IP/TCP truncation positions, nested TCP/UDP
+header truncation, illegal lengths/options, fragment arithmetic boundaries,
+minimum/maximum headers and 65535-byte reassembled IPv4 datagrams. Malformed
+inputs are followed by valid TCP and UDP packets in the same workspace.
+Seeded cases vary lengths and ESTABLISHED/FIN-WAIT-1/FIN-WAIT-2 state; local FIN
+and its ACK establish the closing states. Failure artifacts include both suite
+and case seeds, input bytes, state and diagnostics.
+
+Illegal TCP options use a drop-or-reset robustness profile. If an option
+resets the connection, recovery uses a fresh tuple in the same workspace.
+Acceptance of a 65535-byte IPv4 datagram is a selected capacity profile, not a
+requirement for every implementation. TCP payload bytes are checked individually;
+UDP observations cover callback count, length and first byte. Leak detection is
+disabled. Success on these finite inputs does not prove memory safety or
+conformance.
 
 ## License
 

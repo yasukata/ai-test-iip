@@ -360,3 +360,27 @@ state/sequence/time wraparound coverage, Timestamp RTT behavior, algorithm
 variants, applicability and SHOULD-deviation analysis, cryptographic assessment,
 and RFC update/errata audit. Keep `NOT_ESTABLISHED` until the evidence and scope
 justify a different claim.
+
+
+## Exact-size malformed input and recovery
+
+The 134 `phase: 4` entries in `requirements.json` map `MAL-*` IDs to RFC 791
+§§3.1–3.2, RFC 768, RFC 1122 §§3.2.1.2/4.1.3.4, and RFC 9293 §§3.1/3.2/3.10.7.4.
+`test_malformed.h` supplies independent byte/checksum builders, exact receive
+allocations, post-input TCP/UDP recovery observations, constrained seeded
+malformed generation, and legal minimum/maximum controls. No input filtering
+adapter is enabled. All entries remain partial coverage and explicitly use a
+robustness/capacity PROFILE; RFC 9293 graceful handling does not mandate the
+particular drop/reset policy selected for illegal options.
+
+UDP cases exercise illegal Length values with checksum zero, including
+header-only datagrams. The observer bounds its payload read without suppressing
+an invalid delivery callback. TCP payload bytes are checked individually; UDP
+observations cover callback count, length and first byte only. Clean FIN-WAIT
+controls distinguish baseline data handling from post-malformed-input recovery.
+
+Illegal options may be dropped or reset under the selected profile. Reset
+recovery uses a fresh tuple in the same workspace. Maximum-size IPv4 input uses
+two fragments to respect the packet API's uint16 Ethernet length. Large-datagram
+acceptance is a selected capacity profile, not a universal RFC requirement.
+See [README.md](README.md#malformed-input-and-recovery) for commands and scope.

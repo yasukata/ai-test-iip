@@ -3,6 +3,10 @@
 #include "../main.c"
 #undef main
 
+#if defined(__SANITIZE_ADDRESS__)
+#include <sanitizer/asan_interface.h>
+#endif
+
 static enum result overflow_case(const char **why)
 {
     (void)why;
@@ -153,6 +157,27 @@ static enum result option_validation_case(const char **why)
 int main(void)
 {
     const char *why = NULL;
+    /* Exact-size packets retain their bytes and real capacity when the
+     * original reference is released before its clone. Include empty input. */
+    for (unsigned n = 0; n <= 55; n++) {
+        uint8_t bytes[55];
+        memset(bytes, 0xa5, sizeof(bytes));
+        void *packet = malformed_exact_packet(bytes, n);
+        void *clone = iip_ops_pkt_clone(packet, NULL);
+        iip_ops_pkt_free(packet, NULL);
+        assert(test_pkt_get_capacity(clone, NULL) == n);
+        assert(iip_ops_pkt_get_len(clone, NULL) == n);
+        assert(!memcmp(iip_ops_pkt_get_data(clone, NULL), bytes, n));
+#if defined(__SANITIZE_ADDRESS__)
+        /* Verify that one byte past the declared receive length really is
+         * inaccessible to ASan, even for zero-byte and cloned packets. */
+        assert(__asan_address_is_poisoned(
+            (uint8_t *)iip_ops_pkt_get_data(clone, NULL) + n));
+        if (n) assert(!__asan_address_is_poisoned(
+            (uint8_t *)iip_ops_pkt_get_data(clone, NULL) + n - 1));
+#endif
+        iip_ops_pkt_free(clone, NULL);
+    }
     assert(run_isolated_test(overflow_case, &why) == RESULT_ERROR);
     assert(why && strstr(why, "overflow"));
     fputs("Option validator negative controls: expected diagnostics follow\n", stderr);
