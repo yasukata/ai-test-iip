@@ -656,3 +656,42 @@ static enum result test_seq_zero_window_fffffffe(const char **why)
 
 static enum result test_seq_zero_window_ffffffff(const char **why)
 { return tcp_seq_window(why, UINT32_C(0xffffffff), 3); }
+
+/* RFC 9293 3.10.7.4 receive processing: a duplicate already covered by
+ * contiguous data must not invalidate packet ownership or duplicate bytes.
+ * Queue retention is not required: either dropping or retaining S+7 is safe. */
+static enum result tcp_rx_pending_covered(const char **why, uint32_t start)
+{
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    const uint8_t data[] = {0,1,2,3,4,5,6,7,8};
+    test_step("pending-covered fixture initialization");
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    tcp_model_receive_at(&f, start);
+    test_step("pending-covered queue byte S+7");
+    fixture_incoming_spec(&f, &spec, start + 7U, data + 7, 1);
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.state.payload_byte_count == 0 && f.conn->seq_next_expected == start,
+        "pending-covered: out-of-order byte delivered before gap");
+    free_output(&f.state);
+    test_step("pending-covered deliver covering bytes S..S+7");
+    fixture_incoming_spec(&f, &spec, start, data, 8);
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.state.payload_byte_count == 8 && f.state.next_payload == 8 &&
+        f.conn->seq_next_expected == start + 8U,
+        "pending-covered: covering segment not delivered exactly once");
+    free_output(&f.state);
+    test_step("pending-covered positive control S+8");
+    fixture_incoming_spec(&f, &spec, start + 8U, data + 8, 1);
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.state.payload_byte_count == 9 && f.state.next_payload == 9 &&
+        f.conn->seq_next_expected == start + 9U && f.conn->state == II_TCP_STATE_ESTABLISHED,
+        "pending-covered: expected exactly nine ordered bytes and RCV.NXT=S+9");
+    free_output(&f.state);
+    return RESULT_PASS;
+}
+
+static enum result test_pending_covered_zero(const char **why)
+{ return tcp_rx_pending_covered(why, 0); }
+static enum result test_pending_covered_wrap(const char **why)
+{ return tcp_rx_pending_covered(why, UINT32_MAX); }

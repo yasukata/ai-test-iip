@@ -365,3 +365,16 @@ cases first emit and verify window=8; failed advertisement is INCONCLUSIVE.
 The reopen positive control also requires an advertisement. Crash reports
 include the exact active step. RFC 9293 §§3.4 and 3.10.7.4 define the exclusive
 right edge as RCV.NXT + RCV.WND.
+
+## Covered pending receive regression
+
+`TCP-RX-PENDING-COVERED-00000000/FFFFFFFF` inject S+7 (one byte), then
+S..S+7 (eight bytes), then the S+8 positive control. They require nine ordered
+bytes and RCV.NXT=S+9 without changing receive capacity. They are robustness
+PROFILE cases grounded in RFC 9293 §3.10.7.4, included in `make check-phase4`
+and `make check-phase4-asan`. To isolate the ASan reproducer:
+
+```sh
+make ai-test-iip-asan
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 ./ai-test-iip-asan --case TCP-RX-PENDING-COVERED-00000000 --case TCP-RX-PENDING-COVERED-FFFFFFFF
+```

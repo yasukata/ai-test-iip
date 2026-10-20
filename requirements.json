@@ -7487,6 +7487,36 @@
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
+    },
+    {
+      "id": "TCP-RX-PENDING-COVERED-00000000",
+      "function": "test_pending_covered_zero",
+      "description": "Covered pending receive segment at S=0x00000000",
+      "requirement_id": "ROBUSTNESS:TCP-RX-PENDING-COVERED",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "ESTABLISHED, original receive capacity, S=00000000",
+      "responsibility": "iip with packet backend and documented application callbacks; no substitute TCP",
+      "oracle": "Deliver S+7 (one byte), S..S+7 (eight bytes), then S+8. No crash; exactly nine ordered bytes, RCV.NXT=S+9.",
+      "coverage": "partial",
+      "gaps": "Finite ownership regression; queue retention is optional. No capacity override. PROFILE denotes a robustness contract, not an uppercase RFC MUST.",
+      "phase": 4
+    },
+    {
+      "id": "TCP-RX-PENDING-COVERED-FFFFFFFF",
+      "function": "test_pending_covered_wrap",
+      "description": "Covered pending receive segment at S=0xFFFFFFFF",
+      "requirement_id": "ROBUSTNESS:TCP-RX-PENDING-COVERED",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "ESTABLISHED, original receive capacity, S=FFFFFFFF",
+      "responsibility": "iip with packet backend and documented application callbacks; no substitute TCP",
+      "oracle": "Deliver S+7 (one byte), S..S+7 (eight bytes), then S+8. No crash; exactly nine ordered bytes, RCV.NXT=S+9.",
+      "coverage": "partial",
+      "gaps": "Finite ownership regression; queue retention is optional. No capacity override. PROFILE denotes a robustness contract, not an uppercase RFC MUST.",
+      "phase": 4
     }
   ]
 }
