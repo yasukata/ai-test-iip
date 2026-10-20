@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from process_support import run_command
 
@@ -35,7 +36,8 @@ class Reporting(HarnessRun, unittest.TestCase):
         self.assertIsNone(j)
 
     def test_strict_api_is_opt_in(self):
-        r,j = self.run_case('--case','ROBUST-6','--case','ROBUST-10')
+        with patch.dict(os.environ, {"IIP_TEST_STRICT_API_CONTRACT": "0"}):
+            r,j = self.run_case('--case','ROBUST-6','--case','ROBUST-10')
         self.assertIsNotNone(j, r.stderr)
         self.assertFalse(j['configuration']['strict_api'])
         self.assertTrue(j['configuration']['blake2'])
@@ -46,6 +48,15 @@ class Reporting(HarnessRun, unittest.TestCase):
         r,j = self.run_case('--case','ROBUST-6','--strict-api')
         self.assertTrue(j['configuration']['strict_api'])
         self.assertNotEqual(j['cases'][0]['status'], 'NOT_APPLICABLE')
+
+    def test_strict_api_environment_selection(self):
+        for value, enabled in [("0", False), ("1", True)]:
+            with self.subTest(value=value), patch.dict(
+                    os.environ, {"IIP_TEST_STRICT_API_CONTRACT": value}):
+                r,j = self.run_case('--case','ROBUST-9')
+                self.assertEqual(j['configuration']['strict_api'], enabled)
+                self.assertEqual(j['cases'][0]['status'] == 'NOT_APPLICABLE',
+                                 not enabled)
 
     def test_disabled_profile_has_reason(self):
         r,j = self.run_case('--case','TFO-2A','--no-tfo')
@@ -103,6 +114,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
             ("TODO", "DEVIATION", 0, "not ok"),
             ("MANDATORY-TODO", "INCONCLUSIVE", 1, "not ok"),
             ("SHOULD-FAIL", "DEVIATION", 0, "not ok"),
+            ("PROTOCOL-FAIL", "FAIL", 1, "not ok"),
             ("INCONCLUSIVE", "INCONCLUSIVE", 1, "not ok"),
             ("ERROR", "ERROR", 2, "not ok"),
             ("SETUP", "ERROR", 2, "not ok"),

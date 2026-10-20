@@ -245,7 +245,7 @@ static enum result tcp_seq_overlap(const char **why, uint32_t start)
     return RESULT_PASS;
 }
 
-static enum result tcp_seq_receive_fin(const char **why, uint32_t start)
+static enum result tcp_seq_receive_fin(const char **why, uint32_t start, int ack_only)
 {
     struct fixture f;
     struct tcp_packet_spec spec;
@@ -254,6 +254,10 @@ static enum result tcp_seq_receive_fin(const char **why, uint32_t start)
     tcp_model_receive_at(&f, start - 2U);
     fixture_incoming_spec(&f, &spec, start - 2U, data, 2);
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    if (ack_only && !(f.state.payload_byte_count == 2 && f.conn->seq_next_expected == start)) {
+        *why = "duplicate FIN ACK precondition: preceding bytes missing";
+        return RESULT_INCONCLUSIVE;
+    }
     TEST_REQUIRE(why, f.state.payload_byte_count == 2 && f.conn->seq_next_expected == start,
         "seq=%08x receive FIN setup: preceding bytes missing", start);
     free_output(&f.state);
@@ -263,10 +267,19 @@ static enum result tcp_seq_receive_fin(const char **why, uint32_t start)
          * throttling interval. Virtual time only; no wall-clock sleep. */
         if (repeat) fixture_advance_ms(&f, 1000);
         fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-        TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_CLOSE_WAIT && f.state.close_wait.count == 1 &&
-            f.state.payload_byte_count == 2 && f.conn->seq_next_expected == start + 1U,
+        int state_ok = f.conn->state == II_TCP_STATE_CLOSE_WAIT && f.state.close_wait.count == 1 &&
+            f.state.payload_byte_count == 2 && f.conn->seq_next_expected == start + 1U;
+        if (ack_only && !state_ok) {
+            *why = "duplicate FIN ACK precondition failed; see corresponding RX-FIN state case";
+            return RESULT_INCONCLUSIVE;
+        }
+        TEST_REQUIRE(why, state_ok,
             "seq=%08x overlap FIN repeat=%u: duplicate delivery or FIN sequence/state mismatch", start, repeat);
-        TEST_REQUIRE(why, tcp_model_has_reply(&f, TEST_TCP_ACK, f.conn->sent_seq, start + 1U),
+        /* First FIN acknowledgment is a protocol action. Only the duplicate
+         * is an unacceptable segment, subject to the lowercase recommendation
+         * quoted in test_tcp_model.h (RFC 9293 3.10.7.4). */
+        if ((!ack_only && !repeat) || (ack_only && repeat))
+            TEST_REQUIRE(why, tcp_model_has_reply(&f, TEST_TCP_ACK, f.conn->sent_seq, start + 1U),
             "seq=%08x overlap FIN repeat=%u: missing ACK=%08x", start, repeat, start + 1U);
         free_output(&f.state);
     }
@@ -275,6 +288,8 @@ static enum result tcp_seq_receive_fin(const char **why, uint32_t start)
 
 static enum result tcp_seq_window(const char **why, uint32_t start, unsigned input)
 {
+    int state_only = input >= 100;
+    input %= 100;
     struct fixture f;
     struct tcp_packet_spec spec;
     const uint8_t data[] = {0,1,2,3,4,5,6,7,8,9};
@@ -298,9 +313,17 @@ static enum result tcp_seq_window(const char **why, uint32_t start, unsigned inp
         unsigned len = input;
         fixture_incoming_spec(&f, &spec, start + 8U, data + 8, len);
         fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
-        TEST_REQUIRE(why, f.conn->seq_next_expected == start && f.state.payload_byte_count == 0 &&
+        int discarded = f.conn->state == II_TCP_STATE_ESTABLISHED &&
+            f.conn->seq_next_expected == start && f.state.payload_byte_count == 0;
+        if (!state_only && !discarded) {
+            *why = "right-edge ACK precondition failed; see corresponding STATE case";
+            return RESULT_INCONCLUSIVE;
+        }
+        TEST_REQUIRE(why, discarded,
+            "seq=%08x right edge len=%u: expected discard without state/sequence change", start, len);
+        if (!state_only) TEST_REQUIRE(why,
             tcp_model_has_reply(&f, TEST_TCP_ACK, f.conn->sent_seq, start),
-            "seq=%08x right edge len=%u: expected discard and ACK", start, len);
+            "seq=%08x right edge len=%u: missing recommended ACK", start, len);
         free_output(&f.state);
         return RESULT_PASS;
     }
@@ -592,7 +615,7 @@ static enum result test_seq_right_data_00000000(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x00000000), 1); }
 
 static enum result test_seq_rx_fin_00000000(const char **why)
-{ return tcp_seq_receive_fin(why, UINT32_C(0x00000000)); }
+{ return tcp_seq_receive_fin(why, UINT32_C(0x00000000), 0); }
 
 static enum result test_seq_right_empty_00000001(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x00000001), 0); }
@@ -601,7 +624,7 @@ static enum result test_seq_right_data_00000001(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x00000001), 1); }
 
 static enum result test_seq_rx_fin_00000001(const char **why)
-{ return tcp_seq_receive_fin(why, UINT32_C(0x00000001)); }
+{ return tcp_seq_receive_fin(why, UINT32_C(0x00000001), 0); }
 
 static enum result test_seq_right_empty_7fffffff(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x7fffffff), 0); }
@@ -610,7 +633,7 @@ static enum result test_seq_right_data_7fffffff(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x7fffffff), 1); }
 
 static enum result test_seq_rx_fin_7fffffff(const char **why)
-{ return tcp_seq_receive_fin(why, UINT32_C(0x7fffffff)); }
+{ return tcp_seq_receive_fin(why, UINT32_C(0x7fffffff), 0); }
 
 static enum result test_seq_right_empty_80000000(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x80000000), 0); }
@@ -619,7 +642,7 @@ static enum result test_seq_right_data_80000000(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x80000000), 1); }
 
 static enum result test_seq_rx_fin_80000000(const char **why)
-{ return tcp_seq_receive_fin(why, UINT32_C(0x80000000)); }
+{ return tcp_seq_receive_fin(why, UINT32_C(0x80000000), 0); }
 
 static enum result test_seq_right_empty_fffffffe(const char **why)
 { return tcp_seq_window(why, UINT32_C(0xfffffffe), 0); }
@@ -628,7 +651,7 @@ static enum result test_seq_right_data_fffffffe(const char **why)
 { return tcp_seq_window(why, UINT32_C(0xfffffffe), 1); }
 
 static enum result test_seq_rx_fin_fffffffe(const char **why)
-{ return tcp_seq_receive_fin(why, UINT32_C(0xfffffffe)); }
+{ return tcp_seq_receive_fin(why, UINT32_C(0xfffffffe), 0); }
 
 static enum result test_seq_right_empty_ffffffff(const char **why)
 { return tcp_seq_window(why, UINT32_C(0xffffffff), 0); }
@@ -637,7 +660,7 @@ static enum result test_seq_right_data_ffffffff(const char **why)
 { return tcp_seq_window(why, UINT32_C(0xffffffff), 1); }
 
 static enum result test_seq_rx_fin_ffffffff(const char **why)
-{ return tcp_seq_receive_fin(why, UINT32_C(0xffffffff)); }
+{ return tcp_seq_receive_fin(why, UINT32_C(0xffffffff), 0); }
 
 static enum result test_seq_zero_window_00000000(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x00000000), 3); }
@@ -695,3 +718,57 @@ static enum result test_pending_covered_zero(const char **why)
 { return tcp_rx_pending_covered(why, 0); }
 static enum result test_pending_covered_wrap(const char **why)
 { return tcp_rx_pending_covered(why, UINT32_MAX); }
+
+static enum result test_seq_right_empty_00000000_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x00000000), 100); }
+
+static enum result test_seq_right_data_00000000_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x00000000), 101); }
+
+static enum result test_seq_rx_fin_00000000_ack(const char **why)
+{ return tcp_seq_receive_fin(why, UINT32_C(0x00000000), 1); }
+
+static enum result test_seq_right_empty_00000001_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x00000001), 100); }
+
+static enum result test_seq_right_data_00000001_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x00000001), 101); }
+
+static enum result test_seq_rx_fin_00000001_ack(const char **why)
+{ return tcp_seq_receive_fin(why, UINT32_C(0x00000001), 1); }
+
+static enum result test_seq_right_empty_7fffffff_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x7fffffff), 100); }
+
+static enum result test_seq_right_data_7fffffff_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x7fffffff), 101); }
+
+static enum result test_seq_rx_fin_7fffffff_ack(const char **why)
+{ return tcp_seq_receive_fin(why, UINT32_C(0x7fffffff), 1); }
+
+static enum result test_seq_right_empty_80000000_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x80000000), 100); }
+
+static enum result test_seq_right_data_80000000_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0x80000000), 101); }
+
+static enum result test_seq_rx_fin_80000000_ack(const char **why)
+{ return tcp_seq_receive_fin(why, UINT32_C(0x80000000), 1); }
+
+static enum result test_seq_right_empty_fffffffe_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0xfffffffe), 100); }
+
+static enum result test_seq_right_data_fffffffe_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0xfffffffe), 101); }
+
+static enum result test_seq_rx_fin_fffffffe_ack(const char **why)
+{ return tcp_seq_receive_fin(why, UINT32_C(0xfffffffe), 1); }
+
+static enum result test_seq_right_empty_ffffffff_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0xffffffff), 100); }
+
+static enum result test_seq_right_data_ffffffff_state(const char **why)
+{ return tcp_seq_window(why, UINT32_C(0xffffffff), 101); }
+
+static enum result test_seq_rx_fin_ffffffff_ack(const char **why)
+{ return tcp_seq_receive_fin(why, UINT32_C(0xffffffff), 1); }

@@ -23,9 +23,11 @@ def generate():
         assert re.fullmatch(r'[A-Z0-9-]+', c['id']) and c['id'] not in ids, c['id']
         ids.add(c['id'])
         assert re.search(r'\b' + re.escape(c['function']) + r'\s*\(', source), c['function']
-        assert c['strength'] in ('MUST', 'SHOULD', 'MAY', 'PROFILE')
+        assert c['strength'] in ('MUST', 'SHOULD', 'MAY', 'PROFILE', 'PROTOCOL')
         assert c['profile'] in ('base', 'tfo', 'strict-api', 'blake2', 'regression')
         assert c['coverage'] in ('partial', 'planned-complete')
+        if c['id'].startswith(('TCP-MODEL-', 'TCP-SEQ-', 'TCP-TRACE-')):
+            assert isinstance(c.get('strength_basis'), str) and c['strength_basis'].strip(), c['id']
         for key in ('requirement_id','source','applicability','responsibility','oracle','gaps'):
             assert isinstance(c[key],str) and c[key].strip(), (c['id'],key)
         fields = [json.dumps(c[k]) for k in ('id','description','requirement_id','source','strength','profile','coverage')]

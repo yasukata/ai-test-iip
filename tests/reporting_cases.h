@@ -133,6 +133,7 @@ static const struct test_case test_cases[] = {
     { synthetic_todo, "TODO", "synthetic TODO", "TEST:TODO", "tests/reporting_cases.h", "SHOULD", "base", "partial" },
     { synthetic_todo, "MANDATORY-TODO", "synthetic MANDATORY-TODO", "TEST:MANDATORY-TODO", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_fail, "SHOULD-FAIL", "synthetic SHOULD-FAIL", "TEST:SHOULD-FAIL", "tests/reporting_cases.h", "SHOULD", "base", "partial" },
+    { synthetic_fail, "PROTOCOL-FAIL", "synthetic protocol failure", "TEST:PROTOCOL-FAIL", "tests/reporting_cases.h", "PROTOCOL", "base", "partial" },
     { synthetic_inconclusive, "INCONCLUSIVE", "synthetic INCONCLUSIVE", "TEST:INCONCLUSIVE", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_error, "ERROR", "synthetic ERROR", "TEST:ERROR", "tests/reporting_cases.h", "MUST", "base", "partial" },
     { synthetic_invalid, "INVALID", "synthetic INVALID", "TEST:INVALID", "tests/reporting_cases.h", "MUST", "base", "partial" },

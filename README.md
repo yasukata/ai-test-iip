@@ -197,7 +197,8 @@ isolation. References include RFCs 9293, 1122, 791, 768, 2018, 6298, 5681, 7323,
 and 7413; per-case references appear in `requirements.json`.
 
 The `base`, `tfo`, `regression`, and `blake2` profiles run by default.
-The undocumented atomicity contracts in `ROBUST-6` and `ROBUST-9` are opt-in:
+The entire `strict-api` profile (11 cases), including undocumented atomicity
+contracts in `ROBUST-6` and `ROBUST-9`, is opt-in:
 use `--strict-api` or `IIP_TEST_STRICT_API_CONTRACT=1`. Otherwise they report
 NOT_APPLICABLE with the selection reason. The runner preserves this environment
 selection and enables the matching in-test guard when the flag is used.
@@ -409,3 +410,31 @@ exceed the previous local sequence maximum; it is not a comparison between
 the incoming SYN SEQ and the previous peer maximum. The case checks that
 local condition and acknowledgment. Old-duplicate rollback remains a coverage
 gap. RFC 9293 §3.10.7.4 retains reset/challenge alternatives.
+
+## Requirement strength and independent ACK observations
+
+The original 204 TCP-MODEL/TCP-SEQ/TCP-TRACE entries (186 MUST and 18 PROFILE)
+were audited against the cited processing text. Each now has `strength_basis`.
+`PROTOCOL` identifies ordinary protocol instructions without claiming an
+unconditional uppercase BCP 14 MUST. Violations remain FAIL. In particular,
+ignoring post-FIN text is an instruction, not an optional action. Exact-RCV.NXT
+RST cases retain MUST; the optional RFC 5961 branch has an explicit MUST to
+reset, and legacy processing has the same outcome. Simultaneous open retains MUST
+under RFC 9293 §3.5 (MUST-10/11).
+
+The lowercase should for unacceptable-segment ACKs in RFC 9293 §3.10.7.4
+is recorded as a recommendation with reporting strength SHOULD. RFC 9293 §2.1
+reserves BCP 14 meaning for capitals: this label does not invent a normative
+uppercase keyword. The general description in §3.5.2 uses lowercase must;
+these cases follow the more specific receive algorithm. State/sequence and
+discard checks are separate -STATE cases; RX-FIN retains original FIN handling
+and has a separate -ACK case for the duplicate. Active/passive loss traces
+likewise separate duplicate SYN/FIN ACKs into recommendation cases. Failed ACK preconditions are
+INCONCLUSIVE, never downgraded protocol failures. Crashes remain FAIL (or ERROR
+for a nonzero child exit, including sanitizer termination).
+
+RFC 5961 §4.2 recommends selecting SYN mitigation (SHOULD) and then requires
+the challenge response (MUST). RFC 9293 §3.10.7.4 retains legacy reset for
+non-adopters. The SYN cases accept the permitted union as PROTOCOL; they do
+not claim that challenge ACK is universally required or demote a broken reset.
+

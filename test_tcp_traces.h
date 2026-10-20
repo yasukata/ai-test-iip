@@ -111,10 +111,14 @@ static enum result tcp_model_unconnected(const char **why, int listen, unsigned 
  * followed by the valid handshake, so silence alone cannot pass a dead fixture. */
 static enum result tcp_model_handshake(const char **why, int passive, unsigned input)
 {
+    int state_only = input >= 100;
+    input %= 100;
+    int ack_only = passive && input == 6 && !state_only;
     struct fixture f;
     struct tcp_packet_spec spec;
     uint32_t iss;
     enum result r = tcp_trace_open(why, &f, passive, &iss);
+    if (ack_only && r == RESULT_FAIL) return RESULT_INCONCLUSIVE;
     if (r != RESULT_PASS) return r;
     uint8_t initial = f.conn->state;
     uint32_t receive = f.conn->seq_next_expected;
@@ -170,8 +174,13 @@ static enum result tcp_model_handshake(const char **why, int passive, unsigned i
             "SYN-RECEIVED FIN+ACK: missing FIN acknowledgment");
         return RESULT_PASS;
     }
-    TEST_REQUIRE(why, f.conn->state == initial && f.conn->seq_next_expected == receive &&
-        f.conn->acked_seq == iss && f.state.payload_byte_count == 0 && f.state.close_wait.count == 0,
+    int discarded = f.conn->state == initial && f.conn->seq_next_expected == receive &&
+        f.conn->acked_seq == iss && f.state.payload_byte_count == 0 && f.state.close_wait.count == 0;
+    if (ack_only && !discarded) {
+        *why = "SYN-RECEIVED ACK precondition failed; see TCP-MODEL-SYN-RECEIVED-DATA-STATE";
+        return RESULT_INCONCLUSIVE;
+    }
+    TEST_REQUIRE(why, discarded,
         "%s input=%u: discard changed state/RCV.NXT/UNA or delivered data: %u/%u/%u/%llu",
         passive ? "SYN-RECEIVED" : "SYN-SENT", input, f.conn->state,
         f.conn->seq_next_expected, f.conn->acked_seq, (unsigned long long)f.state.payload_byte_count);
@@ -183,14 +192,20 @@ static enum result tcp_model_handshake(const char **why, int passive, unsigned i
         TEST_REQUIRE(why, challenge || tcp_model_has_reply(&f, TEST_TCP_RST, spec.ack_seq, 0),
             "handshake invalid ACK=%u: required reset/challenge response missing", spec.ack_seq);
     }
-    else if (passive && input == 6) TEST_REQUIRE(why,
-        tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10001), "SYN-RECEIVED outside-window data: missing ACK");
+    else if (passive && input == 6) {
+        if (ack_only) TEST_REQUIRE(why,
+            tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10001), "SYN-RECEIVED outside-window data: missing ACK");
+    }
     else TEST_REQUIRE(why, f.state.out_cnt == 0, "handshake discarded input=%u emitted %u packets", input, f.state.out_cnt);
     free_output(&f.state);
-    return tcp_trace_establish(why, &f, passive, iss);
+    r = tcp_trace_establish(why, &f, passive, iss);
+    return ack_only && r == RESULT_FAIL ? RESULT_INCONCLUSIVE : r;
 }
 
-static enum result test_trace_active_loss(const char **why)
+/* Duplicate control segments use the same RFC 9293 3.10.7.4 recommendation
+ * as the model rows. Observe their ACKs separately from lifecycle failures. */
+static enum result tcp_trace_active_loss(const char **why, unsigned ack_only,
+        int *ack_failed)
 {
     struct fixture f;
     struct tcp_packet_spec spec;
@@ -208,9 +223,13 @@ static enum result test_trace_active_loss(const char **why)
     spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK; spec.ack_seq = iss + 1U;
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
     TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_ESTABLISHED &&
-        f.conn->seq_next_expected == 10001 && tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10001) &&
+        f.conn->seq_next_expected == 10001 &&
         test_event_count(&f.state, TEST_EVENT_CALLBACK, TEST_CALLBACK_CONNECTED) == 1,
-        "lost handshake ACK: duplicate SYN+ACK changed state, repeated callback or was not ACKed");
+        "lost handshake ACK: duplicate SYN+ACK changed state or repeated callback");
+    if (ack_only == 1) {
+        *ack_failed = !tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10001);
+        TEST_REQUIRE(why, !*ack_failed, "duplicate SYN+ACK: missing recommended ACK");
+    }
     free_output(&f.state);
     TEST_REQUIRE(why, test_api_close(f.ws, f.conn, &f.state) == 0, "active CLOSE failed");
     fixture_run_timers(&f);
@@ -235,13 +254,18 @@ static enum result test_trace_active_loss(const char **why)
     fixture_advance_ms(&f, 1000);
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
     TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_TIME_WAIT &&
-        f.conn->seq_next_expected == 10002 && tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 2U, 10002),
-        "lost FIN ACK: retransmitted FIN consumed twice or not ACKed");
+        f.conn->seq_next_expected == 10002,
+        "lost FIN ACK: retransmitted FIN changed state or consumed twice");
+    if (ack_only == 2) {
+        *ack_failed = !tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 2U, 10002);
+        TEST_REQUIRE(why, !*ack_failed, "duplicate active-close FIN: missing recommended ACK");
+    }
     free_output(&f.state);
     return RESULT_PASS;
 }
 
-static enum result test_trace_passive_loss(const char **why)
+static enum result tcp_trace_passive_loss(const char **why, unsigned ack_only,
+        int *ack_failed)
 {
     struct fixture f;
     struct tcp_packet_spec spec;
@@ -259,8 +283,15 @@ static enum result test_trace_passive_loss(const char **why)
     for (unsigned repeat = 0; repeat < 2; repeat++) {
         fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
         TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_CLOSE_WAIT && f.state.close_wait.count == 1 &&
-            f.conn->seq_next_expected == 10002 && tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10002),
-            "passive FIN repeat=%u: wrong CLOSE-WAIT, callback count or ACK", repeat);
+            f.conn->seq_next_expected == 10002,
+            "passive FIN repeat=%u: wrong CLOSE-WAIT, callback count or sequence", repeat);
+        if (!repeat) TEST_REQUIRE(why,
+            tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10002),
+            "passive FIN: missing first FIN acknowledgment");
+        if (repeat && ack_only) {
+            *ack_failed = !tcp_model_has_reply(&f, TEST_TCP_ACK, iss + 1U, 10002);
+            TEST_REQUIRE(why, !*ack_failed, "duplicate passive-close FIN: missing recommended ACK");
+        }
         free_output(&f.state);
     }
     TEST_REQUIRE(why, test_api_close(f.ws, f.conn, &f.state) == 0, "passive CLOSE failed");
@@ -279,6 +310,36 @@ static enum result test_trace_passive_loss(const char **why)
         !test_ring_end(f.ws, &f.conn->sent_ring, 0), "LAST-ACK completion: state/callback/queue mismatch");
     return RESULT_PASS;
 }
+
+static enum result test_trace_active_loss(const char **why)
+{ return tcp_trace_active_loss(why, 0, NULL); }
+
+static enum result test_trace_passive_loss(const char **why)
+{ return tcp_trace_passive_loss(why, 0, NULL); }
+
+static enum result tcp_trace_loss_ack(const char **why, int passive, unsigned step)
+{
+    int ack_failed = 0;
+    enum result r = passive ? tcp_trace_passive_loss(why, step, &ack_failed) :
+        tcp_trace_active_loss(why, step, &ack_failed);
+    if (r == RESULT_FAIL && !ack_failed) {
+        char detail[sizeof(test_failure_detail)];
+        snprintf(detail, sizeof(detail), "%s", *why ? *why : "lifecycle mismatch");
+        snprintf(test_failure_detail, sizeof(test_failure_detail),
+            "ACK precondition failed; see TCP-TRACE-%s-LOSS: %.400s",
+            passive ? "PASSIVE" : "ACTIVE", detail);
+        *why = test_failure_detail;
+        return RESULT_INCONCLUSIVE;
+    }
+    return r;
+}
+
+static enum result test_trace_active_syn_ack(const char **why)
+{ return tcp_trace_loss_ack(why, 0, 1); }
+static enum result test_trace_active_fin_ack(const char **why)
+{ return tcp_trace_loss_ack(why, 0, 2); }
+static enum result test_trace_passive_fin_ack(const char **why)
+{ return tcp_trace_loss_ack(why, 1, 1); }
 
 static enum result test_trace_simultaneous_open(const char **why)
 {
@@ -454,3 +515,6 @@ static enum result test_handshake_1_6(const char **why)
 
 static enum result test_handshake_1_7(const char **why)
 { return tcp_model_handshake(why, 1, 7); }
+
+static enum result test_handshake_1_6_state(const char **why)
+{ return tcp_model_handshake(why, 1, 106); }

@@ -66,6 +66,10 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
     int peer_closed = initial == II_TCP_STATE_CLOSE_WAIT ||
         initial == II_TCP_STATE_CLOSING || initial == II_TCP_STATE_LAST_ACK ||
         initial == II_TCP_STATE_TIME_WAIT;
+    unsigned mode = stimulus / 100;
+    stimulus %= 100;
+    int ack_only = mode == 2 || (stimulus == 7 && mode == 0);
+    int state_only = mode == 1 || (stimulus == 8 && peer_closed && mode == 0);
     /* The peer's FIN occupied 10000 in these placed states. */
     const uint32_t receive = peer_closed ? 10001 : 10000;
     uint8_t expected = initial;
@@ -86,11 +90,21 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
     if (initial == II_TCP_STATE_FIN_WAIT1 || initial == II_TCP_STATE_FIN_WAIT2 ||
         initial == II_TCP_STATE_CLOSING || initial == II_TCP_STATE_LAST_ACK ||
         initial == II_TCP_STATE_TIME_WAIT) {
-        TEST_REQUIRE(why, test_api_close(f.ws, f.conn, &f.state) == 0,
+        int closed = test_api_close(f.ws, f.conn, &f.state) == 0;
+        if (ack_only && !closed) {
+            *why = "ACK observation setup: local close failed";
+            return RESULT_INCONCLUSIVE;
+        }
+        TEST_REQUIRE(why, closed,
             "%s setup: local close failed", name);
         fixture_run_timers(&f);
-        TEST_REQUIRE(why, tcp_model_has_reply(&f, TEST_TCP_FIN | TEST_TCP_ACK,
-            f.conn->acked_seq, receive), "%s setup: local FIN missing", name);
+        int fin_sent = tcp_model_has_reply(&f, TEST_TCP_FIN | TEST_TCP_ACK,
+            f.conn->acked_seq, receive);
+        if (ack_only && !fin_sent) {
+            *why = "ACK observation setup: local FIN missing";
+            return RESULT_INCONCLUSIVE;
+        }
+        TEST_REQUIRE(why, fin_sent, "%s setup: local FIN missing", name);
         free_output(&f.state);
         if (initial == II_TCP_STATE_FIN_WAIT2 || initial == II_TCP_STATE_TIME_WAIT) {
             fixture_incoming_spec(&f, &spec, receive, NULL, 0);
@@ -179,6 +193,9 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
     }
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
     if (stimulus == 10) {
+        /* RFC 5961 4.2: "TCP MUST send an ACK" within its recommended
+         * mitigation. RFC 9293 3.10.7.4 also retains legacy reset processing
+         * for non-adopters; accepting both is not an unconditional MUST ACK. */
         int reset = f.conn->state == II_TCP_STATE_CLOSED &&
             tcp_model_has_reply(&f, TEST_TCP_RST, spec.ack_seq, 0);
         int challenge = f.conn->state == initial &&
@@ -204,6 +221,13 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
         free_output(&f.state);
         return RESULT_PASS;
     }
+    if (ack_only && !(f.conn->state == expected &&
+        f.state.payload_byte_count == bytes && f.state.close_wait.count == fin_notifications &&
+        f.conn->seq_next_expected == next && f.conn->acked_seq == una &&
+        test_event_count(&f.state, TEST_EVENT_CALLBACK, TEST_CALLBACK_CLOSED) == 0)) {
+        *why = "ACK observation precondition failed; see corresponding state case";
+        return RESULT_INCONCLUSIVE;
+    }
     TEST_REQUIRE(why, f.conn->state == expected &&
         f.state.payload_byte_count == bytes && f.state.close_wait.count == fin_notifications,
         "%s input=%u: expected state=%u bytes=%u FIN callbacks=%u; actual=%u/%llu/%u",
@@ -221,7 +245,12 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
             !test_ring_end(f.ws, &f.conn->sent_ring, 0),
             "%s input=%u: expected one CLOSED callback and drained retransmission queue", name, stimulus);
     }
-    if (need_ack) {
+    if (need_ack && !state_only) {
+        /* RFC 9293 3.10.7.4: "an acknowledgment should be sent".
+         * Lowercase recommendation, not BCP 14 MUST. The ledger uses SHOULD
+         * for reporting this ACK alone; state/discard has its own case.
+         * Post-FIN text: "Ignore the segment text" is a protocol instruction,
+         * not an uppercase MUST; its separate PROTOCOL case still fails. */
         /* Permit delayed ACK for data. Control/error replies are observed
          * without advancing timers that might retransmit the local FIN. */
         if (stimulus == 4 && !f.state.out_cnt) fixture_advance_ms(&f, 400);
@@ -507,3 +536,36 @@ static enum result test_model_last_ack_12(const char **why)
 
 static enum result test_model_time_wait_12(const char **why)
 { return tcp_model_input(why, II_TCP_STATE_TIME_WAIT, "TIME-WAIT", 12); }
+
+static enum result test_model_established_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_ESTABLISHED, "ESTABLISHED", 107); }
+
+static enum result test_model_fin_wait1_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_FIN_WAIT1, "FIN-WAIT-1", 107); }
+
+static enum result test_model_fin_wait2_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_FIN_WAIT2, "FIN-WAIT-2", 107); }
+
+static enum result test_model_close_wait_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_CLOSE_WAIT, "CLOSE-WAIT", 107); }
+
+static enum result test_model_close_wait_8_ack(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_CLOSE_WAIT, "CLOSE-WAIT", 208); }
+
+static enum result test_model_closing_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_CLOSING, "CLOSING", 107); }
+
+static enum result test_model_closing_8_ack(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_CLOSING, "CLOSING", 208); }
+
+static enum result test_model_last_ack_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_LAST_ACK, "LAST-ACK", 107); }
+
+static enum result test_model_last_ack_8_ack(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_LAST_ACK, "LAST-ACK", 208); }
+
+static enum result test_model_time_wait_7_state(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_TIME_WAIT, "TIME-WAIT", 107); }
+
+static enum result test_model_time_wait_8_ack(const char **why)
+{ return tcp_model_input(why, II_TCP_STATE_TIME_WAIT, "TIME-WAIT", 208); }
