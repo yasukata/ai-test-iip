@@ -63,7 +63,11 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
     struct fixture f;
     struct tcp_packet_spec spec;
     const uint8_t data[] = { 0, 1 };
-    const uint32_t receive = 10000;
+    int peer_closed = initial == II_TCP_STATE_CLOSE_WAIT ||
+        initial == II_TCP_STATE_CLOSING || initial == II_TCP_STATE_LAST_ACK ||
+        initial == II_TCP_STATE_TIME_WAIT;
+    /* The peer's FIN occupied 10000 in these placed states. */
+    const uint32_t receive = peer_closed ? 10001 : 10000;
     uint8_t expected = initial;
     uint32_t next = receive, bytes = 0, fin_notifications = 0;
     int need_ack = 0, silent = 0;
@@ -79,14 +83,26 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
     }
     /* Give FIN states a real outstanding local FIN. The state itself is
      * placed independently so a broken predecessor does not mask this row. */
-    if (initial == II_TCP_STATE_FIN_WAIT1 || initial == II_TCP_STATE_CLOSING ||
-        initial == II_TCP_STATE_LAST_ACK) {
+    if (initial == II_TCP_STATE_FIN_WAIT1 || initial == II_TCP_STATE_FIN_WAIT2 ||
+        initial == II_TCP_STATE_CLOSING || initial == II_TCP_STATE_LAST_ACK ||
+        initial == II_TCP_STATE_TIME_WAIT) {
         TEST_REQUIRE(why, test_api_close(f.ws, f.conn, &f.state) == 0,
             "%s setup: local close failed", name);
         fixture_run_timers(&f);
         TEST_REQUIRE(why, tcp_model_has_reply(&f, TEST_TCP_FIN | TEST_TCP_ACK,
             f.conn->acked_seq, receive), "%s setup: local FIN missing", name);
         free_output(&f.state);
+        if (initial == II_TCP_STATE_FIN_WAIT2 || initial == II_TCP_STATE_TIME_WAIT) {
+            fixture_incoming_spec(&f, &spec, receive, NULL, 0);
+            spec.ack_seq = f.conn->sent_seq;
+            fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+            if (f.conn->acked_seq != f.conn->sent_seq ||
+                test_ring_end(f.ws, &f.conn->sent_ring, 0)) {
+                *why = "model setup: transmitted local FIN not acknowledged";
+                return RESULT_INCONCLUSIVE;
+            }
+            free_output(&f.state);
+        }
     }
     f.conn->state = initial;
     f.conn->time_wait_ts_ms = f.ws->now_ms;

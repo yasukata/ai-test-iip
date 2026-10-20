@@ -392,3 +392,11 @@ FAIL takes precedence over INCONCLUSIVE within a fuzz batch. The FIN-WAIT
 delivery gap is reported by the clean controls, not counted as malformed damage.
 This refines a test-defined recovery profile; RFC 9293 §3.10.7.4 and RFC 768
 packet-validation expectations are unchanged.
+
+## Consistent placed closing states
+
+CLOSE-WAIT/CLOSING/LAST-ACK/TIME-WAIT place RCV.NXT after the peer FIN
+(10001, with FIN at 10000). All locally closed states transmit a real FIN;
+FIN-WAIT-2/TIME-WAIT acknowledge it before placement. TCP-TRACE-* separately
+checks reachability. This follows FIN sequence consumption in RFC 9293
+§§3.4 and 3.10.7.4; placement alone is not a transition test.
