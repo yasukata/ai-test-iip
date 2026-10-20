@@ -279,11 +279,22 @@ static enum result tcp_seq_window(const char **why, uint32_t start, unsigned inp
     struct tcp_packet_spec spec;
     const uint8_t data[] = {0,1,2,3,4,5,6,7,8,9};
     if (!fixture_init(&f)) return RESULT_ERROR;
+    test_step("window setup: advertise capacity 8");
+    fixture_prepare_sender(&f);
     tcp_model_receive_at(&f, start);
     f.conn->buf.capacity = 8; f.state.defer_payload_consumption = 1;
+    uint32_t window = 0;
+    if (!tcp_model_advertise_window(&f, &window) || window != 8) {
+        test_condition_failed(__func__, __LINE__,
+            "seq=%08x window setup: expected advertised window=8, observed=%u",
+            start, window);
+        *why = test_failure_detail;
+        return RESULT_INCONCLUSIVE;
+    }
     /* Separate registry cases keep an edge-response failure from hiding
      * trimming, zero-window and reopening observations. */
     if (input < 2) {
+        test_step("window right-edge discard and ACK");
         unsigned len = input;
         fixture_incoming_spec(&f, &spec, start + 8U, data + 8, len);
         fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
@@ -294,6 +305,7 @@ static enum result tcp_seq_window(const char **why, uint32_t start, unsigned inp
         return RESULT_PASS;
     }
     if (input == 2) {
+        test_step("window queue last in-window byte");
         /* Last in-window byte, then a segment straddling the right edge. */
         fixture_incoming_spec(&f, &spec, start + 7U, data + 7, 1);
         fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
@@ -303,6 +315,7 @@ static enum result tcp_seq_window(const char **why, uint32_t start, unsigned inp
     /* The independent zero-window row uses an in-order, exactly fitting
      * segment, so the overlapping trim regression cannot mask it. */
     fixture_incoming_spec(&f, &spec, start, data, input == 2 ? sizeof(data) : 8);
+    test_step("window deliver covering segment");
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
     TEST_REQUIRE(why, f.state.payload_byte_count == 8 && f.conn->seq_next_expected == start + 8U &&
         f.conn->buf.used == 8 && f.state.deferred_payload_len == 8,
@@ -311,12 +324,19 @@ static enum result tcp_seq_window(const char **why, uint32_t start, unsigned inp
     free_output(&f.state);
     /* At zero window, neither data nor FIN may consume sequence space. */
     fixture_incoming_spec(&f, &spec, start + 8U, data + 8, 1); spec.tcp_flags |= TEST_TCP_FIN;
+    test_step("window reject data and FIN at zero window");
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
     TEST_REQUIRE(why, f.conn->state == II_TCP_STATE_ESTABLISHED && f.conn->seq_next_expected == start + 8U &&
         f.state.payload_byte_count == 8 && f.state.close_wait.count == 0,
         "seq=%08x zero window: consumed data/FIN", start);
     free_output(&f.state);
     TEST_REQUIRE(why, test_api_consumed(f.ws, f.conn, 8, &f.state) == 0, "consume failed");
+    test_step("window advertise reopened capacity");
+    if (!tcp_model_advertise_window(&f, &window) || window != 8) {
+        *why = "window reopen setup: expected advertised window=8";
+        return RESULT_INCONCLUSIVE;
+    }
+    test_step("window reopened positive control");
     spec.tcp_flags = TEST_TCP_ACK;
     fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
     TEST_REQUIRE(why, f.state.payload_byte_count == 9 && f.conn->seq_next_expected == start + 9U,

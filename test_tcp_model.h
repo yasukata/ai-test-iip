@@ -34,6 +34,27 @@ static void tcp_model_receive_at(struct fixture *f, uint32_t seq)
     f->conn->ack_seq_pushed = seq;
 }
 
+/* Advertise through the stack's normal output path; decode only wire bytes.
+ * These placed fixtures explicitly use a zero window-scale shift. */
+static int tcp_model_advertise_window(struct fixture *f, uint32_t *window)
+{
+    free_output(&f->state);
+    test_api_push(f->ws, f->conn, NULL, 0, 1, 0, 0, 0, NULL, 0, &f->state);
+    fixture_run_timers(f);
+    int found = 0;
+    for (unsigned i = 0; i < f->state.out_cnt; i++) {
+        void *p = f->state.out[i];
+        if (PB_IP4(p)->proto == 6 && PB_TCP_HDR_HAS_ACK(p) &&
+            ii_ntohl(PB_TCP(p)->ack_seq_be) == f->conn->seq_next_expected &&
+            checksum_valid(p) && ip4_checksum_valid(p)) {
+            *window = (uint32_t)ii_ntohs(PB_TCP(p)->win_be) << 0;
+            found = 1;
+        }
+    }
+    free_output(&f->state);
+    return found;
+}
+
 /* One input per isolated registry case, so a failure does not hide other rows.
  * 0..3 retain the IDs from the initial working-tree implementation. */
 static enum result tcp_model_input(const char **why, uint8_t initial,
@@ -51,6 +72,11 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
     if (!fixture_init(&f)) return RESULT_ERROR;
     fixture_prepare_sender(&f);
     tcp_model_receive_at(&f, receive);
+    uint32_t window;
+    if (!tcp_model_advertise_window(&f, &window) || !window) {
+        *why = "model setup: missing nonzero advertised receive window (scale=0)";
+        return RESULT_INCONCLUSIVE;
+    }
     /* Give FIN states a real outstanding local FIN. The state itself is
      * placed independently so a broken predecessor does not mask this row. */
     if (initial == II_TCP_STATE_FIN_WAIT1 || initial == II_TCP_STATE_CLOSING ||
@@ -77,7 +103,7 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
         silent = 1;
         break;
     case 2:
-        spec.seq = receive + 0x100000U;
+        spec.seq = receive + window;
         spec.tcp_flags = TEST_TCP_RST | TEST_TCP_ACK;
         silent = 1;
         break;
@@ -106,7 +132,7 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
         spec.ack_seq = una - 1U;
         break;
     case 7:
-        spec.seq = receive + 0x100000U;
+        spec.seq = receive + window;
         spec.payload = data; spec.payload_len = sizeof(data);
         need_ack = 1;
         break;

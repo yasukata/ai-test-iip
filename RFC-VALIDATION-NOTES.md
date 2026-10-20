@@ -390,3 +390,12 @@ See [README.md](README.md#malformed-input-and-recovery) for commands and scope.
 ROBUST-6/9 assert undocumented internal allocation-failure atomicity, not an RFC
 TCP contract. They run only with `--strict-api` or
 `IIP_TEST_STRICT_API_CONTRACT=1`; unselected cases are NOT_APPLICABLE.
+
+## Advertised receive-window preconditions
+
+Placed TCP model inputs derive the right edge from an emitted TCP window field
+with scale zero, not the internal receive-buffer capacity. Sequence window
+cases first emit and verify window=8; failed advertisement is INCONCLUSIVE.
+The reopen positive control also requires an advertisement. Crash reports
+include the exact active step. RFC 9293 §§3.4 and 3.10.7.4 define the exclusive
+right edge as RCV.NXT + RCV.WND.
