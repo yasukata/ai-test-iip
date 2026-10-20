@@ -80,6 +80,52 @@ static unsigned malformed_udp_count(struct fixture *f)
             TEST_CALLBACK_UDP_PAYLOAD);
 }
 
+static int malformed_state_init(struct fixture *f, unsigned state);
+
+struct malformed_recovery {
+    uint64_t bytes;
+    unsigned chunks, udp_count, udp_len, udp_first;
+    uint32_t seq_delta;
+    uint8_t state;
+};
+
+static struct malformed_recovery malformed_probe(struct fixture *f)
+{
+    struct malformed_recovery r = {0};
+    unsigned chunks = f->state.payload_chunk_count, udp = malformed_udp_count(f);
+    uint64_t bytes = f->state.payload_byte_count;
+    uint32_t seq = f->conn->seq_next_expected;
+    uint8_t valid[80];
+    unsigned len = malformed_frame(f, valid, 6, 20, 20, 4);
+    fixture_deliver(f, malformed_exact_packet(valid, len));
+    r.chunks = f->state.payload_chunk_count - chunks;
+    r.bytes = f->state.payload_byte_count - bytes;
+    r.seq_delta = f->conn->seq_next_expected - seq;
+    r.state = f->conn->state;
+    len = malformed_frame(f, valid, 17, 20, 8, 4);
+    fixture_deliver(f, malformed_exact_packet(valid, len));
+    const struct test_event *e = test_event_nth(&f->state,
+        TEST_EVENT_CALLBACK, TEST_CALLBACK_UDP_PAYLOAD, udp);
+    r.udp_count = malformed_udp_count(f) - udp;
+    if (e) {
+        r.udp_len = e->value[2];
+        r.udp_first = (uint8_t)(e->value[3] - f->state.next_payload);
+    }
+    return r;
+}
+
+static bool malformed_control_ok(struct malformed_recovery r)
+{
+    return r.bytes == 4 && r.chunks == 1 && r.seq_delta == 4 &&
+        r.udp_count == 1 && r.udp_len == 4 && !r.udp_first;
+}
+
+static const char *malformed_control_id(unsigned state)
+{
+    return state == II_TCP_STATE_FIN_WAIT1 ? "MAL-VALID-FIN-WAIT1" :
+        state == II_TCP_STATE_FIN_WAIT2 ? "MAL-VALID-FIN-WAIT2" : "MAL-VALID-ESTABLISHED";
+}
+
 /* Always try recovery after a nonfatal mismatch as well. Short-circuiting on
  * unwanted delivery would conceal whether the next valid packet survived. */
 static enum result malformed_observe(struct fixture *f, const uint8_t *p,
@@ -87,13 +133,18 @@ static enum result malformed_observe(struct fixture *f, const uint8_t *p,
 {
     uint32_t original_seq = f->conn->seq_next_expected;
     uint8_t original_state = f->conn->state;
+    struct fixture clean;
+    if (!malformed_state_init(&clean, original_state)) return RESULT_ERROR;
+    struct malformed_recovery control = malformed_probe(&clean);
+    free_output(&clean.state);
+    free(clean.ws);
+    fprintf(stderr, "clean control %s: bytes=%llu chunks=%u seq_delta=%u state=%u UDP=%u/%u/%u valid=%u\n",
+        malformed_control_id(original_state), (unsigned long long)control.bytes,
+        control.chunks, control.seq_delta, control.state, control.udp_count,
+        control.udp_len, control.udp_first, malformed_control_ok(control));
     fixture_deliver(f, malformed_exact_packet(p, n));
     bool rejected = f->state.payload_chunk_count == 0 && !malformed_udp_count(f);
     bool silence = !silent || f->state.out_cnt == 0;
-    unsigned tcp_before = f->state.payload_chunk_count;
-    unsigned udp_before = malformed_udp_count(f);
-    uint64_t bytes_before = f->state.payload_byte_count;
-    uint32_t seq_before = f->conn->seq_next_expected;
     /* RFC 9293 MUST-7 permits graceful handling; SHOULD-7 recommends reset.
      * A reset is allowed for illegal options, with recovery on a fresh tuple
      * in the SAME workspace. Other malformed families must preserve TCP. */
@@ -109,24 +160,29 @@ static enum result malformed_observe(struct fixture *f, const uint8_t *p,
             ii_htons(10001), f->peer_mac, ii_htonl(0xc6336402U),
             ii_htons(20001), II_TCP_STATE_ESTABLISHED, &f->state);
         f->conn->flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
-        seq_before = f->conn->seq_next_expected;
     }
-    uint8_t valid[80];
-    unsigned len = malformed_frame(f, valid, 6, 20, 20, 4);
-    fixture_deliver(f, malformed_exact_packet(valid, len));
-    bool tcp_ok = f->state.payload_chunk_count == tcp_before + 1 &&
-        f->state.payload_byte_count == bytes_before + 4 &&
-        f->conn->seq_next_expected == seq_before + 4;
-    len = malformed_frame(f, valid, 17, 20, 8, 4);
-    fixture_deliver(f, malformed_exact_packet(valid, len));
-    const struct test_event *e = test_event_nth(&f->state,
-        TEST_EVENT_CALLBACK, TEST_CALLBACK_UDP_PAYLOAD, udp_before);
-    bool udp_ok = malformed_udp_count(f) == udp_before + 1 && e &&
-        e->value[2] == 4 && e->value[3] == f->state.next_payload;
-    TEST_REQUIRE(why, rejected && silence && state_ok && tcp_ok && udp_ok,
+    struct malformed_recovery actual = malformed_probe(f);
+    bool equal = actual.bytes == control.bytes && actual.chunks == control.chunks &&
+        actual.seq_delta == control.seq_delta && actual.state == control.state &&
+        actual.udp_count == control.udp_count && actual.udp_len == control.udp_len &&
+        actual.udp_first == control.udp_first;
+    /* RFC 9293 3.10.7.4 describes per-state processing; the robustness
+     * recovery profile compares like states. A broken clean fixture is not
+     * evidence that malformed input damaged it. Keep input violations FAIL. */
+    TEST_REQUIRE(why, rejected && silence && state_ok && equal,
         "frame=%u: no unexpected delivery=%u silent=%u state preserved=%u; "
-        "subsequent TCP=%u UDP=%u (TCP callbacks before=%u UDP=%u)",
-        n, rejected, silence, state_ok, tcp_ok, udp_ok, tcp_before, udp_before);
+        "recovery equals clean=%u; clean %s valid=%u TCP=%llu/%u/%u UDP=%u/%u",
+        n, rejected, silence, state_ok, equal, malformed_control_id(original_state),
+        malformed_control_ok(control), (unsigned long long)control.bytes,
+        control.chunks, control.seq_delta, control.udp_count, control.udp_len);
+    if (!malformed_control_ok(control)) {
+        snprintf(test_failure_detail, sizeof(test_failure_detail),
+            "recovery equals clean control, but %s fails: TCP bytes=%llu chunks=%u seq_delta=%u UDP=%u/%u",
+            malformed_control_id(original_state), (unsigned long long)control.bytes,
+            control.chunks, control.seq_delta, control.udp_count, control.udp_len);
+        *why = test_failure_detail;
+        return RESULT_INCONCLUSIVE;
+    }
     return RESULT_PASS;
 }
 
@@ -328,15 +384,23 @@ static enum result malformed_fuzz(unsigned proto, const char **why)
     }
     config.failure_prefix = prefix;
     uint64_t random = config.seed;
-    unsigned failures = 0;
+    unsigned failures = 0, inconclusive = 0, errors = 0;
     static const uint8_t states[] = { II_TCP_STATE_ESTABLISHED,
         II_TCP_STATE_FIN_WAIT1, II_TCP_STATE_FIN_WAIT2 };
     static struct fixture fixtures[ARRAY_LENGTH(states)];
-    for (unsigned i = 0; i < ARRAY_LENGTH(states); i++)
+    struct malformed_recovery controls[ARRAY_LENGTH(states)];
+    for (unsigned i = 0; i < ARRAY_LENGTH(states); i++) {
         if (!malformed_state_init(&fixtures[i], states[i])) return RESULT_ERROR;
+        struct fixture clean;
+        if (!malformed_state_init(&clean, states[i])) return RESULT_ERROR;
+        controls[i] = malformed_probe(&clean);
+        free_output(&clean.state);
+        free(clean.ws);
+    }
     for (unsigned i = 0; i < config.cases; i++) {
         uint64_t seed = fuzz_random(&random), r = seed;
-        struct fixture *f = &fixtures[fuzz_random(&r) % ARRAY_LENGTH(states)];
+        unsigned state_index = fuzz_random(&r) % ARRAY_LENGTH(states);
+        struct fixture *f = &fixtures[state_index];
         malformed_fuzz_fixture = f;
         unsigned thl = proto == 6 ? 20 + 4 * (fuzz_random(&r) % 11) : 8;
         unsigned ihl = 20 + 4 * (fuzz_random(&r) % 11);
@@ -382,25 +446,48 @@ static enum result malformed_fuzz(unsigned proto, const char **why)
                     ? fopen(path, "a") : NULL;
                 if (!metadata) saved = false;
                 else {
+                    struct malformed_recovery c = controls[state_index];
                     if (fprintf(metadata, "suite_seed=0x%016llx\nproto=%u\n"
-                            "tcp_state=%u\nresult=%s\n",
+                            "tcp_state=%u\nresult=%s\nclean_control=%s\nclean_valid=%u\n"
+                            "clean_tcp_bytes=%llu\nclean_tcp_chunks=%u\nclean_seq_delta=%u\n"
+                            "clean_state=%u\nclean_udp_count=%u\nclean_udp_len=%u\nclean_udp_first=%u\n",
                             (unsigned long long)config.seed, proto,
-                            f->conn->state, detail ? detail : "no diagnostic") < 0)
+                            f->conn->state, detail ? detail : "no diagnostic",
+                            malformed_control_id(states[state_index]), malformed_control_ok(c),
+                            (unsigned long long)c.bytes, c.chunks, c.seq_delta, c.state,
+                            c.udp_count, c.udp_len, c.udp_first) < 0)
                         saved = false;
                     if (fclose(metadata)) saved = false;
                 }
             }
             fprintf(stderr, "phase4 fuzz failure: %s; artifact saved=%u\n",
                 detail ? detail : "no diagnostic", saved);
-            failures++;
+            if (result == RESULT_INCONCLUSIVE) inconclusive++;
+            else if (result == RESULT_ERROR && !test_process_failed) errors++;
+            else failures++;
             if (!saved) { *why = "could not save Phase 4 failure packet"; return RESULT_ERROR; }
         }
+    }
+    if (errors) {
+        *why = "Phase 4 infrastructure error; see per-input diagnostics";
+        return RESULT_ERROR;
     }
     TEST_REQUIRE(why, !failures, "Phase 4 proto=%u seed=0x%016llx: %u/%u cases failed; "
         "see per-input diagnostics and saved packets", proto,
         (unsigned long long)config.seed, failures, config.cases);
+    if (inconclusive) {
+        snprintf(test_failure_detail, sizeof(test_failure_detail),
+            "Phase 4 proto=%u: %u/%u inputs inconclusive; recovery equals failing clean controls "
+            "MAL-VALID-FIN-WAIT1/MAL-VALID-FIN-WAIT2; see per-input diagnostics",
+            proto, inconclusive, config.cases);
+        *why = test_failure_detail;
+        return RESULT_INCONCLUSIVE;
+    }
     return RESULT_PASS;
 }
+
+static enum result test_mal_valid_established(const char **why)
+{ return malformed_state_control(II_TCP_STATE_ESTABLISHED, why); }
 
 static enum result test_mal_tcp_cut_00(const char **why)
 {

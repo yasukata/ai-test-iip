@@ -5355,7 +5355,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5371,7 +5371,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5387,7 +5387,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5403,7 +5403,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5419,7 +5419,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5435,7 +5435,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5451,7 +5451,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5467,7 +5467,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5483,7 +5483,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5499,7 +5499,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5515,7 +5515,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5531,7 +5531,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5547,7 +5547,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5563,7 +5563,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5579,7 +5579,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5595,7 +5595,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5611,7 +5611,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5627,7 +5627,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5643,7 +5643,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5659,7 +5659,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5675,7 +5675,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5691,7 +5691,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5707,7 +5707,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5723,7 +5723,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5739,7 +5739,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5755,7 +5755,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5771,7 +5771,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5787,7 +5787,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5803,7 +5803,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5819,7 +5819,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5835,7 +5835,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5851,7 +5851,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5867,7 +5867,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5883,7 +5883,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5899,7 +5899,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5915,7 +5915,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5931,7 +5931,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5947,7 +5947,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5963,7 +5963,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5979,7 +5979,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -5995,7 +5995,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6011,7 +6011,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6027,7 +6027,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6043,7 +6043,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6059,7 +6059,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6075,7 +6075,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6091,7 +6091,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6107,7 +6107,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6123,7 +6123,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6139,7 +6139,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6155,7 +6155,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6171,7 +6171,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6187,7 +6187,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6203,7 +6203,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6219,7 +6219,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6235,7 +6235,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6251,7 +6251,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6267,7 +6267,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6283,7 +6283,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6299,7 +6299,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6315,7 +6315,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6331,7 +6331,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6347,7 +6347,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6363,7 +6363,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6379,7 +6379,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6395,7 +6395,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6411,7 +6411,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6427,7 +6427,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6443,7 +6443,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6459,7 +6459,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6475,7 +6475,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6491,7 +6491,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6507,7 +6507,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6523,7 +6523,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6539,7 +6539,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6555,7 +6555,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6571,7 +6571,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6587,7 +6587,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6603,7 +6603,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6619,7 +6619,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6635,7 +6635,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6651,7 +6651,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6667,7 +6667,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6683,7 +6683,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6699,7 +6699,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6715,7 +6715,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6731,7 +6731,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6747,7 +6747,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6763,7 +6763,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6779,7 +6779,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6795,7 +6795,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6811,7 +6811,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6827,7 +6827,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6843,7 +6843,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -6859,7 +6859,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6875,7 +6875,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6891,7 +6891,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6907,7 +6907,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6923,7 +6923,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -6939,7 +6939,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6955,7 +6955,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6971,7 +6971,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -6987,7 +6987,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -7003,7 +7003,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -7019,7 +7019,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -7035,7 +7035,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7051,7 +7051,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -7067,7 +7067,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -7083,7 +7083,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7099,7 +7099,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7115,7 +7115,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7131,7 +7131,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7147,7 +7147,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7163,7 +7163,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7179,7 +7179,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7195,7 +7195,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7211,7 +7211,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7227,7 +7227,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7243,7 +7243,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Drop or reset with no text delivery is the selected malformed-option profile, not the only possible graceful-handling policy. Reset recovery uses a fresh tuple in the same workspace. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7339,7 +7339,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture; FIN-WAIT states reached by local close and, for FIN-WAIT-2, valid peer ACK",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "Seeded constrained generation of known-invalid inputs with independent per-input isolation, exact buffers, no delivery, TCP/UDP recovery, and failure packet artifacts. TCP state selected from ESTABLISHED, FIN-WAIT-1 and FIN-WAIT-2.",
+      "oracle": "Seeded constrained generation of known-invalid inputs with independent per-input isolation, exact buffers, no delivery, TCP/UDP recovery, and failure packet artifacts. TCP state selected from ESTABLISHED, FIN-WAIT-1 and FIN-WAIT-2. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "TCP base header, Data Offset, options and checksum must describe an available segment. Illegal option lengths must be handled gracefully (MUST-7); reset is recommended, not required. Exact-buffer safety and recovery are robustness properties."
@@ -7371,7 +7371,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture; FIN-WAIT states reached by local close and, for FIN-WAIT-2, valid peer ACK",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "Seeded constrained generation of known-invalid inputs with independent per-input isolation, exact buffers, no delivery, TCP/UDP recovery, and failure packet artifacts. TCP state selected from ESTABLISHED, FIN-WAIT-1 and FIN-WAIT-2.",
+      "oracle": "Seeded constrained generation of known-invalid inputs with independent per-input isolation, exact buffers, no delivery, TCP/UDP recovery, and failure packet artifacts. TCP state selected from ESTABLISHED, FIN-WAIT-1 and FIN-WAIT-2. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -7387,7 +7387,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -7403,7 +7403,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes.",
+      "oracle": "No application delivery from malformed input, no sanitizer error, then valid TCP bytes and UDP length/first byte in the same workspace. Each case isolated; diagnostics identify physical length and recovery outcomes. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "IPv4 IHL, Total Length, checksum and fragment offsets must describe available bytes and a representable datagram. Exact-buffer safety and recovery are robustness properties; accepting 65535-byte datagrams is a selected capacity profile."
@@ -7451,7 +7451,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "Reject illegal UDP Length without application callback; bounded observer does not read nonexistent payload; valid TCP and UDP still work.",
+      "oracle": "Reject illegal UDP Length without application callback; bounded observer does not read nonexistent payload; valid TCP and UDP still work. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -7467,7 +7467,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "Reject illegal UDP Length without application callback; bounded observer does not read nonexistent payload; valid TCP and UDP still work.",
+      "oracle": "Reject illegal UDP Length without application callback; bounded observer does not read nonexistent payload; valid TCP and UDP still work. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -7483,7 +7483,7 @@
       "phase": 4,
       "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
       "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
-      "oracle": "Reject illegal UDP Length without application callback; bounded observer does not read nonexistent payload; valid TCP and UDP still work.",
+      "oracle": "Reject illegal UDP Length without application callback; bounded observer does not read nonexistent payload; valid TCP and UDP still work. Recovery is compared with a fresh same-state clean TCP/UDP control. A matching recovery with a failing clean control is INCONCLUSIVE and names MAL-VALID-*; malformed delivery/state/silence violations and differential recovery remain FAIL.",
       "coverage": "partial",
       "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
       "requirement": "UDP header and payload length must be representable within the received IPv4 datagram; UDP checksum validation is required when present, and checksum zero is legal for IPv4. Exact-buffer safety and recovery are selected robustness properties."
@@ -7517,6 +7517,22 @@
       "coverage": "partial",
       "gaps": "Finite ownership regression; queue retention is optional. No capacity override. PROFILE denotes a robustness contract, not an uppercase RFC MUST.",
       "phase": 4
+    },
+    {
+      "id": "MAL-VALID-ESTABLISHED",
+      "function": "test_mal_valid_established",
+      "description": "Clean ESTABLISHED TCP delivery control",
+      "requirement_id": "PHASE4:MAL-VALID-ESTABLISHED",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "phase": 4,
+      "applicability": "IPv4 over Ethernet; native input path; exact-size receive allocation; fabricated TCP fixture",
+      "responsibility": "iip + packet backend and payload observation callbacks; no input-filter substitute",
+      "oracle": "Deliver four valid TCP bytes without preceding malformed input in ESTABLISHED.",
+      "coverage": "partial",
+      "gaps": "Finite input set; ASan/UBSan success is not a proof of memory safety. No leak assertion. See README.md#malformed-input-and-recovery for reset policy, maximum lengths and callback limits.",
+      "requirement": "Receive text in FIN-WAIT-1 and FIN-WAIT-2 until the peer FIN closes the receive side."
     }
   ]
 }

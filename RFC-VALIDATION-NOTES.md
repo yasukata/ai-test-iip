@@ -412,3 +412,17 @@ and `make check-phase4-asan`. To isolate the ASan reproducer:
 make ai-test-iip-asan
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 ./ai-test-iip-asan --case TCP-RX-PENDING-COVERED-00000000 --case TCP-RX-PENDING-COVERED-FFFFFFFF
 ```
+
+## Same-state malformed recovery controls
+
+Recovery compares TCP bytes/callbacks/sequence/state and UDP callback/length/data
+with a fresh clean fixture in the same state. If the control cannot deliver
+valid data but recovery matches it, the result is INCONCLUSIVE and references
+`MAL-VALID-ESTABLISHED`, `MAL-VALID-FIN-WAIT1`, or `MAL-VALID-FIN-WAIT2`.
+Unexpected malformed delivery, forbidden output, state corruption, crashes,
+and differences from the control remain failures even if that control fails.
+Fuzzing retains every non-PASS packet and the clean result in its metadata;
+FAIL takes precedence over INCONCLUSIVE within a fuzz batch. The FIN-WAIT
+delivery gap is reported by the clean controls, not counted as malformed damage.
+This refines a test-defined recovery profile; RFC 9293 §3.10.7.4 and RFC 768
+packet-validation expectations are unchanged.
