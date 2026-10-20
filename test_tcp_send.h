@@ -15,7 +15,7 @@ static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
 
 	if (!fixture_init(&f)) {
 		*why = "fixture initialization failed";
-		return RESULT_FAIL;
+		return RESULT_ERROR;
 	}
 	f.conn->mss = mss;
 	if (timestamps)
@@ -110,7 +110,7 @@ static enum result test_tcp_capacity_failure_is_atomic(const char **why)
 
 	if (!fixture_init(&f)) {
 		*why = "fixture initialization failed";
-		return RESULT_FAIL;
+		return RESULT_ERROR;
 	}
 	payload = fixture_oversized_tcp_payload(&f);
 	if (!payload || test_api_send(f.ws, f.conn, payload, 0, &f.state)) {
@@ -152,7 +152,7 @@ static enum result test_tcp_payload_capacity_failure_frees_clone(
 
 	if (!fixture_init(&f)) {
 		*why = "fixture initialization failed";
-		return RESULT_FAIL;
+		return RESULT_ERROR;
 	}
 	payload = fixture_oversized_tcp_payload(&f);
 	if (!payload) {
@@ -217,7 +217,7 @@ static enum result test_tcp_capacity_failure_preserves_existing_queue(
 
 	if (!fixture_init(&f)) {
 		*why = "fixture initialization failed";
-		return RESULT_FAIL;
+		return RESULT_ERROR;
 	}
 	if (!fixture_queue_data_at_zero_window(&f)) {
 		*why = "failed to prepare an existing queued segment";
