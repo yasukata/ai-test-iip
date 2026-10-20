@@ -384,3 +384,9 @@ recovery uses a fresh tuple in the same workspace. Maximum-size IPv4 input uses
 two fragments to respect the packet API's uint16 Ethernet length. Large-datagram
 acceptance is a selected capacity profile, not a universal RFC requirement.
 See [README.md](README.md#malformed-input-and-recovery) for commands and scope.
+
+## Strict API applicability
+
+ROBUST-6/9 assert undocumented internal allocation-failure atomicity, not an RFC
+TCP contract. They run only with `--strict-api` or
+`IIP_TEST_STRICT_API_CONTRACT=1`; unselected cases are NOT_APPLICABLE.

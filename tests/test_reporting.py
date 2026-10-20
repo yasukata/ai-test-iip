@@ -34,14 +34,18 @@ class Reporting(HarnessRun, unittest.TestCase):
         self.assertEqual(r.returncode,2)
         self.assertIsNone(j)
 
-    def test_additional_profiles_run_by_default(self):
+    def test_strict_api_is_opt_in(self):
         r,j = self.run_case('--case','ROBUST-6','--case','ROBUST-10')
         self.assertIsNotNone(j, r.stderr)
-        self.assertTrue(j['configuration']['strict_api'])
+        self.assertFalse(j['configuration']['strict_api'])
         self.assertTrue(j['configuration']['blake2'])
         self.assertEqual(len(j['cases']), 2)
-        for case in j['cases']:
-            self.assertNotEqual(case['status'], 'NOT_APPLICABLE', case)
+        self.assertEqual(j['cases'][0]['status'], 'NOT_APPLICABLE')
+        self.assertIn('--strict-api', j['cases'][0]['reason'])
+        self.assertNotEqual(j['cases'][1]['status'], 'NOT_APPLICABLE')
+        r,j = self.run_case('--case','ROBUST-6','--strict-api')
+        self.assertTrue(j['configuration']['strict_api'])
+        self.assertNotEqual(j['cases'][0]['status'], 'NOT_APPLICABLE')
 
     def test_disabled_profile_has_reason(self):
         r,j = self.run_case('--case','TFO-2A','--no-tfo')

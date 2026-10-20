@@ -31,12 +31,12 @@ int main(int argc, char **argv)
     const char *selection[256], *json_path = NULL;
     size_t selected = 0, count = 0, emitted = 0;
     int list = 0, tfo = 1, only_tfo = 0, conformance = 0;
-    int strict = 1, blake = 1;
+    const char *strict_env = getenv("IIP_TEST_STRICT_API_CONTRACT");
+    int strict = strict_env && !strcmp(strict_env, "1"), blake = 1;
     unsigned failed = 0, incomplete = 0, errors = 0, passed = 0, deviations = 0, skipped = 0;
     FILE *json = NULL;
     /* Keep runner selection and in-test profile guards enabled together. */
-    if (setenv("IIP_TEST_STRICT_API_CONTRACT", "1", 1) ||
-        setenv("IIP_TEST_BLAKE2_PROFILE", "1", 1)) {
+    if (setenv("IIP_TEST_BLAKE2_PROFILE", "1", 1)) {
         perror("setenv");
         return 2;
     }
@@ -78,7 +78,10 @@ int main(int argc, char **argv)
         const char *why = NULL;
         enum result r;
         if ((!tfo && !strncmp(c->id, "TFO-", 4)) || !profile_enabled(c->profile, tfo, strict, blake)) {
-            r = RESULT_SKIP; why = "explicitly disabled optional profile";
+            r = RESULT_SKIP;
+            why = !strcmp(c->profile, "strict-api")
+                ? "strict-api not selected; use --strict-api or IIP_TEST_STRICT_API_CONTRACT=1"
+                : "explicitly disabled optional profile";
         } else r = run_isolated_test(c->run, &why);
         if (r == RESULT_FAIL && !strcmp(c->strength, "SHOULD") && !test_process_failed) r = RESULT_TODO;
         if (r == RESULT_TODO && strcmp(c->strength, "SHOULD")) {
