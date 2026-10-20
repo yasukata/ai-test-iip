@@ -719,6 +719,92 @@ static enum result test_pending_covered_zero(const char **why)
 static enum result test_pending_covered_wrap(const char **why)
 { return tcp_rx_pending_covered(why, UINT32_MAX); }
 
+/* Acceptability Table 6, RFC 9293 3.10.7.4. The last acceptable byte is
+ * observed after filling its gap (SHLD-31 recommends retaining it). Do not
+ * require immediate processing of an out-of-order empty ACK. */
+static enum result tcp_advertised_edge(const char **why, unsigned mode)
+{
+    int outside = mode == 1, state_only = mode == 2;
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    tcp_seq_sender_at(&f, 20000);
+    tcp_model_receive_at(&f, 10000);
+    TEST_REQUIRE(why, tcp_seq_send(&f, 0, 1), "edge setup: transmit byte failed");
+    uint32_t window = 0;
+    for (unsigned i = 0; i < f.state.out_cnt; i++) {
+        void *p = f.state.out[i];
+        if (PB_IP4(p)->proto == 6 && PB_TCP_HDR_HAS_ACK(p) &&
+            checksum_valid(p) && ip4_checksum_valid(p))
+            window = (uint32_t)ii_ntohs(PB_TCP(p)->win_be) << 0;
+    }
+    if (!window) {
+        *why = "edge setup: no nonzero window advertisement";
+        return RESULT_INCONCLUSIVE;
+    }
+    free_output(&f.state);
+    if (!outside) {
+        f.state.quiet_payload = 1;
+        uint8_t last = (uint8_t)(window - 1);
+        fixture_incoming_spec(&f, &spec, 10000U + window - 1, &last, 1);
+        test_step("advertised edge: queue last acceptable byte");
+        fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+        if (f.state.payload_byte_count || f.conn->seq_next_expected != 10000) {
+            if (state_only) TEST_REQUIRE(why, 0,
+                "last acceptable byte: premature out-of-order delivery or sequence advancement");
+            *why = "last-byte retention precondition failed; see TCP-MODEL-WINDOW-LAST-ACCEPTABLE-STATE";
+            return RESULT_INCONCLUSIVE;
+        }
+        free_output(&f.state);
+        for (uint32_t offset = 0; offset < window - 1;) {
+            uint8_t bytes[1024];
+            unsigned len = window - 1 - offset;
+            if (len > sizeof(bytes)) len = sizeof(bytes);
+            for (unsigned i = 0; i < len; i++) bytes[i] = (uint8_t)(offset + i);
+            fixture_incoming_spec(&f, &spec, 10000U + offset, bytes, len);
+            test_step("advertised edge: fill gap before queued last byte");
+            fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+            offset += len;
+            /* Retaining the queued byte is recommended, but extra delivery
+             * or inconsistent RCV.NXT is a separate protocol failure. */
+            int progress = f.state.payload_byte_count >= offset &&
+                f.state.payload_byte_count <= offset + (offset == window - 1) &&
+                f.conn->seq_next_expected == 10000U + f.state.payload_byte_count &&
+                f.conn->state == II_TCP_STATE_ESTABLISHED;
+            if (!progress) {
+                if (state_only) TEST_REQUIRE(why, 0,
+                    "last acceptable byte gap=%u: expected bytes=%u..%u and matching RCV.NXT; actual bytes=%llu RCV.NXT=%u",
+                    offset, offset, offset + (offset == window - 1),
+                    (unsigned long long)f.state.payload_byte_count, f.conn->seq_next_expected);
+                *why = "last-byte retention precondition failed; see TCP-MODEL-WINDOW-LAST-ACCEPTABLE-STATE";
+                return RESULT_INCONCLUSIVE;
+            }
+            free_output(&f.state);
+        }
+        if (!state_only) TEST_REQUIRE(why, f.state.payload_byte_count == window &&
+            f.conn->seq_next_expected == 10000U + window,
+            "advertised window=%u: last acceptable byte was not retained; bytes=%llu",
+            window, (unsigned long long)f.state.payload_byte_count);
+        return RESULT_PASS;
+    }
+    fixture_incoming_spec(&f, &spec, 10000U + window, NULL, 0);
+    spec.ack_seq = 20001;
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.conn->acked_seq == 20000U &&
+        f.conn->seq_next_expected == 10000 && f.state.payload_byte_count == 0 &&
+        f.conn->state == II_TCP_STATE_ESTABLISHED,
+        "advertised window=%u exclusive edge: expected UNA=20000 actual=%u",
+        window,
+        f.conn->acked_seq);
+    return RESULT_PASS;
+}
+static enum result test_advertised_last(const char **why)
+{ return tcp_advertised_edge(why, 0); }
+static enum result test_advertised_outside(const char **why)
+{ return tcp_advertised_edge(why, 1); }
+static enum result test_advertised_last_state(const char **why)
+{ return tcp_advertised_edge(why, 2); }
+
 static enum result test_seq_right_empty_00000000_state(const char **why)
 { return tcp_seq_window(why, UINT32_C(0x00000000), 100); }
 

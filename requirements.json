@@ -8219,6 +8219,38 @@
       "strength_basis": "RFC 9293 3.10.7.4 first sequence check uses lowercase should for the reply to an unacceptable segment. SHOULD is a reporting category for that recommendation, not a claim of uppercase BCP 14 wording. State/discard is tested separately."
     },
     {
+      "id": "TCP-MODEL-WINDOW-LAST-ACCEPTABLE",
+      "function": "test_advertised_last",
+      "description": "TCP-MODEL-WINDOW-LAST-ACCEPTABLE",
+      "requirement_id": "RFC9293:TCP-MODEL-WINDOW-LAST-ACCEPTABLE",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "SHOULD",
+      "profile": "base",
+      "applicability": "IPv4; direct ESTABLISHED fixture; boundary 0x00000000; base TCP",
+      "responsibility": "iip with packet backend and documented application callbacks; no substitute TCP",
+      "oracle": "Decode the emitted window (scale=0). Send the last acceptable byte at RCV.NXT+RCV.WND-1, fill the preceding gap with in-order data, and observe the retained byte delivered once. Gap-fill failure is INCONCLUSIVE.",
+      "coverage": "partial",
+      "gaps": "One placed ESTABLISHED fixture; buffering recommendation only, not universal buffering capacity. Incorrect delivery/sequence during gap filling is checked separately by TCP-MODEL-WINDOW-LAST-ACCEPTABLE-STATE.",
+      "phase": 3,
+      "strength_basis": "RFC 9293 3.10.7.4 Table 6 defines acceptability; SHLD-31 explicitly recommends retaining out-of-order segments. No immediate processing of an out-of-order ACK is required."
+    },
+    {
+      "id": "TCP-MODEL-WINDOW-FIRST-UNACCEPTABLE",
+      "function": "test_advertised_outside",
+      "description": "TCP-MODEL-WINDOW-FIRST-UNACCEPTABLE",
+      "requirement_id": "RFC9293:TCP-MODEL-WINDOW-FIRST-UNACCEPTABLE",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "profile": "base",
+      "applicability": "IPv4; direct ESTABLISHED fixture; boundary 0x00000000; base TCP",
+      "responsibility": "iip with packet backend and documented application callbacks; no substitute TCP",
+      "oracle": "Decode emitted window (scale=0); empty ACK at RCV.NXT+RCV.WND must not acknowledge an outstanding byte or change receive state.",
+      "coverage": "partial",
+      "gaps": "One placed ESTABLISHED fixture and an empty segment; ACK response is tested separately.",
+      "phase": 3,
+      "strength_basis": "The cited RFC 9293 processing algorithm specifies segment acceptability, trimming and receive-window sequence limits. PROTOCOL records the ordinary protocol instructions without asserting an uppercase BCP 14 MUST; violations remain FAIL."
+    },
+    {
       "id": "TCP-TRACE-ACTIVE-LOSS-SYN-ACK",
       "function": "test_trace_active_syn_ack",
       "description": "active lifecycle: recommended ACK for duplicate SYN",
@@ -8265,6 +8297,22 @@
       "gaps": "One deterministic loss trace; no ACK throttling stress or general loss patterns.",
       "phase": 2,
       "strength_basis": "RFC 9293 3.10.7.4 first sequence check uses lowercase should for the reply to an unacceptable segment. SHOULD is a reporting category for that recommendation, not a claim of uppercase BCP 14 wording. State/discard is tested separately."
+    },
+    {
+      "id": "TCP-MODEL-WINDOW-LAST-ACCEPTABLE-STATE",
+      "function": "test_advertised_last_state",
+      "description": "Advertised last-byte boundary: ordered delivery and consistent receive sequence",
+      "requirement_id": "RFC9293:TCP-MODEL-WINDOW-LAST-ACCEPTABLE-STATE",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "profile": "base",
+      "applicability": "IPv4; direct ESTABLISHED fixture; boundary 0x00000000; base TCP",
+      "responsibility": "iip with packet backend and documented application callbacks; no substitute TCP",
+      "oracle": "Queue the last advertised byte and fill its gap. Reject premature, excess or missing in-order delivery and inconsistent RCV.NXT. Either retention or discard of the queued byte is accepted here; retention is tested separately as SHOULD.",
+      "coverage": "partial",
+      "gaps": "Single ESTABLISHED unscaled window; same packet sequence as the independent retention observation.",
+      "phase": 3,
+      "strength_basis": "RFC 9293 3.10.7.4 first/seventh steps define ordered delivery and RCV.NXT advancement. The optional retention of the out-of-order byte is excluded from this protocol check."
     }
   ]
 }

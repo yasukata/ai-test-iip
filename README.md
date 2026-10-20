@@ -438,3 +438,9 @@ the challenge response (MUST). RFC 9293 §3.10.7.4 retains legacy reset for
 non-adopters. The SYN cases accept the permitted union as PROTOCOL; they do
 not claim that challenge ACK is universally required or demote a broken reset.
 
+TCP-MODEL-WINDOW-LAST-ACCEPTABLE sends the last advertised byte and fills the
+gap to observe retention (SHLD-31). Its -STATE companion checks ordered
+delivery and RCV.NXT separately; invalid gap filling makes the recommendation
+INCONCLUSIVE while the protocol case fails. FIRST-UNACCEPTABLE checks that an ACK at
+the exclusive edge cannot acknowledge an outstanding byte. Processing of an
+acceptable but out-of-order empty ACK need not be immediate.
