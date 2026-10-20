@@ -434,3 +434,12 @@ CLOSE-WAIT/CLOSING/LAST-ACK/TIME-WAIT place RCV.NXT after the peer FIN
 FIN-WAIT-2/TIME-WAIT acknowledge it before placement. TCP-TRACE-* separately
 checks reachability. This follows FIN sequence consumption in RFC 9293
 §§3.4 and 3.10.7.4; placement alone is not a transition test.
+
+## TIME-WAIT SYN alternatives
+
+TCP-MODEL-TIME-WAIT-SYN accepts reset, challenge ACK, or a valid SYN-ACK
+with a SYN-RECEIVED child. Under RFC 1122 §4.2.2.13 the new **local ISS** must
+exceed the previous local sequence maximum; it is not a comparison between
+the incoming SYN SEQ and the previous peer maximum. The case checks that
+local condition and acknowledgment. Old-duplicate rollback remains a coverage
+gap. RFC 9293 §3.10.7.4 retains reset/challenge alternatives.

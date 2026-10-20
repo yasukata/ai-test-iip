@@ -172,7 +172,7 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
         break;
     case 12: /* Pure duplicate ACK must not acknowledge an outstanding FIN. */
         break;
-    case 10: /* In-window SYN: allow RFC 793 reset OR RFC 5961 challenge ACK. */
+    case 10: /* RFC 793 reset, RFC 5961 challenge, or TIME-WAIT reopen. */
         spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
         break;
     default: *why = "unknown state-model input"; return RESULT_ERROR;
@@ -184,8 +184,22 @@ static enum result tcp_model_input(const char **why, uint8_t initial,
         int challenge = f.conn->state == initial &&
             f.conn->seq_next_expected == receive &&
             tcp_model_has_reply(&f, TEST_TCP_ACK, snd_nxt, receive);
-        TEST_REQUIRE(why, (reset || challenge) && f.state.payload_byte_count == 0,
-            "%s SYN: expected reset or challenge ACK; state=%u RCV.NXT=%u packets=%u",
+        /* RFC 1122 4.2.2.13: "MAY accept a new SYN". The larger sequence
+         * condition concerns our new ISS, not the incoming SYN's SEQ.
+         * This probe checks the new SYN-ACK/child, not old-duplicate rollback. */
+        int reopen = 0;
+        if (initial == II_TCP_STATE_TIME_WAIT) {
+            struct ii_tcp_conn *child = fixture_find_peer_port(&f, spec.src_port_be);
+            if (child && child->state == II_TCP_STATE_SYN_RECVD &&
+                child->seq_next_expected == spec.seq + 1U) {
+                uint32_t distance = child->iss - (snd_nxt - 1U);
+                reopen = distance && distance < UINT32_C(0x80000000) &&
+                    tcp_model_has_reply(&f, TEST_TCP_SYN | TEST_TCP_ACK,
+                        child->iss, spec.seq + 1U);
+            }
+        }
+        TEST_REQUIRE(why, (reset || challenge || reopen) && f.state.payload_byte_count == 0,
+            "%s SYN: expected reset, challenge ACK, or valid TIME-WAIT reopen; state=%u RCV.NXT=%u packets=%u",
             name, f.conn->state, f.conn->seq_next_expected, f.state.out_cnt);
         free_output(&f.state);
         return RESULT_PASS;

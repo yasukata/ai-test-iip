@@ -3519,14 +3519,14 @@
       "function": "test_model_time_wait_10",
       "description": "TIME-WAIT: in-window SYN accepts reset or challenge ACK",
       "requirement_id": "RFC9293:TCP-MODEL-TIME-WAIT-SYN",
-      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4; https://www.rfc-editor.org/rfc/rfc1122.html#section-4.2.2.13",
       "strength": "MUST",
       "profile": "base",
       "applicability": "IPv4; placed synchronized state; no timestamps; RFC9293 reset processing",
       "responsibility": "iip with packet backend and documented application callbacks; no substitute TCP",
-      "oracle": "Independent RFC input model: state, RCV.NXT/SND.UNA, application byte/FIN/close callbacks; required wire replies and checksums. Outstanding local FIN is actually transmitted.",
+      "oracle": "Independent RFC input model: state, RCV.NXT/SND.UNA, application byte/FIN/close callbacks; required wire replies and checksums. Outstanding local FIN is actually transmitted. Also allow SYN-ACK and SYN-RECEIVED child with new local ISS greater (serial arithmetic) than the previous local maximum; this is the RFC 1122 TIME-WAIT reopen alternative.",
       "coverage": "partial",
-      "gaps": "Direct state placement; no proof of reachability. Single sequence and unscaled window; SYN permits both RFC793 reset and RFC5961 challenge ACK. State placement uses RCV.NXT=10001 after peer FIN at 10000; local FIN is transmitted and, for FIN-WAIT-2/TIME-WAIT, acknowledged. Reachability is covered separately by TCP-TRACE-*.",
+      "gaps": "Direct state placement; no proof of reachability. Single sequence and unscaled window; SYN permits both RFC793 reset and RFC5961 challenge ACK. State placement uses RCV.NXT=10001 after peer FIN at 10000; local FIN is transmitted and, for FIN-WAIT-2/TIME-WAIT, acknowledged. Reachability is covered separately by TCP-TRACE-*. Reopen old-duplicate rollback is not exercised. This probe does not infer remote freshness merely from incoming SEQ.",
       "phase": 2
     },
     {
