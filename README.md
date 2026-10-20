@@ -55,7 +55,9 @@ report expected and actual values in diagnostics and TAP/JSON. Boolean helpers
 can use `TEST_CONDITION` or `TEST_ACCUMULATE`; their detail is used when a failed
 scenario does not supply its own reason. `make check-harness` also builds a
 separate synthetic registry to check reporting statuses and exit codes without
-depending on failures in the target implementation. The runner self-checks also
+depending on failures in the target implementation. Multi-step boundary cases
+record the active step in shared memory, so crash/sanitizer diagnostics in
+TAP and JSON include the step name. The runner self-checks also
 exercise option validation against malformed lengths and padding using exact-size
 buffers, so sanitizer runs can detect reads beyond the declared option area.
 TAP descriptions and reasons escape control characters, backslashes, and `#` so

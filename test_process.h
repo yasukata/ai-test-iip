@@ -1,5 +1,6 @@
 /* Shared isolated execution for protocol cases and harness self-tests. */
 #include <fcntl.h>
+#include <sys/mman.h>
 
 /*
  * RESULT_TODO is a recommendation deviation only when the ledger declares
@@ -11,6 +12,14 @@ enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP, RESULT_TODO, RESULT_INCONCL
 static int test_process_failed;
 static const char *test_setup_error;
 static char test_failure_detail[512];
+static char *test_step_detail;
+
+/* Shared with the parent so a signal or sanitizer exit retains the last step.
+ * Nested isolated runs get their own mapping. */
+static void test_step(const char *name)
+{
+    if (test_step_detail) snprintf(test_step_detail, 128, "%s", name);
+}
 
 static volatile sig_atomic_t isolated_group;
 static void interrupt_isolated_group(int signum)
@@ -83,6 +92,13 @@ static enum result run_isolated(enum result (*run)(const char **),
         *why = "cannot configure result pipe";
         return RESULT_ERROR;
     }
+    char *step = mmap(NULL, 128, PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (step == MAP_FAILED) {
+        close(channel[0]); close(channel[1]);
+        *why = "cannot allocate shared test step";
+        return RESULT_ERROR;
+    }
     sigset_t blocked, previous_mask;
     struct sigaction action = { 0 }, previous_int, previous_term;
     sigemptyset(&blocked);
@@ -97,8 +113,10 @@ static enum result run_isolated(enum result (*run)(const char **),
     if (child < 0) {
         sigaction(SIGINT, &previous_int, NULL); sigaction(SIGTERM, &previous_term, NULL);
         sigprocmask(SIG_SETMASK, &previous_mask, NULL);
+        munmap(step, 128);
         close(channel[0]); close(channel[1]); *why = "cannot fork test"; return RESULT_ERROR; }
     if (!child) {
+        test_step_detail = step;
         close(channel[0]);
         if (setpgid(0, 0)) _exit(125);
         sigaction(SIGINT, &previous_int, NULL); sigaction(SIGTERM, &previous_term, NULL);
@@ -137,6 +155,7 @@ static enum result run_isolated(enum result (*run)(const char **),
     sigprocmask(SIG_SETMASK, &previous_mask, NULL);
     if (!waited) {
         close(channel[0]);
+        munmap(step, 128);
         *why = "cannot wait for test process";
         return RESULT_ERROR;
     }
@@ -149,10 +168,16 @@ static enum result run_isolated(enum result (*run)(const char **),
                 timeout_seconds, timeout_seconds == 1 ? "" : "s");
         else
             snprintf(reason, sizeof(reason), "test process failed (signal=%d, exit=%d)", WIFSIGNALED(status) ? WTERMSIG(status) : 0, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        if (step[0]) {
+            size_t used = strlen(reason);
+            snprintf(reason + used, sizeof(reason) - used, "; step=%s", step);
+        }
+        munmap(step, 128);
         *why = reason;
         test_process_failed = 1;
         return WIFSIGNALED(status) ? RESULT_FAIL : RESULT_ERROR;
     }
+    munmap(step, 128);
     if (report.result < RESULT_PASS || report.result > RESULT_ERROR) { *why = "invalid child result"; return RESULT_ERROR; }
     snprintf(reason, sizeof(reason), "%s", report.why);
     *why = reason[0] ? reason : NULL;

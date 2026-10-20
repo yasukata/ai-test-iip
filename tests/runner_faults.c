@@ -31,7 +31,7 @@ static void overflow_self_test(void)
 
 static void exiting_self_test(void) { _exit(7); }
 static void missing_report_self_test(void) { _exit(0); }
-static void signaled_self_test(void) { raise(SIGKILL); }
+static void signaled_self_test(void) { test_step("signal control"); raise(SIGKILL); }
 static void hanging_self_test(void) { for (;;) pause(); }
 static void ignored_alarm_self_test(void)
 {
@@ -93,7 +93,7 @@ static void isolated_self_test_checks(void)
         { overflow_self_test, RESULT_ERROR, "overflow", 0 },
         { exiting_self_test, RESULT_ERROR, "exit=7", 1 },
         { missing_report_self_test, RESULT_ERROR, "exit=0", 1 },
-        { signaled_self_test, RESULT_FAIL, "signal=", 1 },
+        { signaled_self_test, RESULT_FAIL, "step=signal control", 1 },
         { hanging_self_test, RESULT_FAIL, "timed out after 1 second", 1 },
         { ignored_alarm_self_test, RESULT_FAIL, "timed out after 1 second", 1 },
     };
