@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 from audit_oracles import validate as validate_oracles
+from report_coverage import validate as validate_coverage
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -13,6 +14,7 @@ def generate():
     raw = (ROOT / 'requirements.json').read_bytes()
     ledger = json.loads(raw)
     validate_oracles(ledger)
+    validate_coverage(ledger)
     cases = ledger['cases']
     # Scan implementation headers as well as the entry point, but never the
     # generated registry: its references cannot prove a function exists.
@@ -28,7 +30,7 @@ def generate():
         assert re.search(r'\b' + re.escape(c['function']) + r'\s*\(', source), c['function']
         assert c['strength'] in ('MUST', 'SHOULD', 'MAY', 'PROFILE', 'PROTOCOL')
         assert c['profile'] in ('base', 'tfo', 'strict-api', 'blake2', 'regression')
-        assert c['coverage'] in ('partial', 'planned-complete')
+        assert c['coverage'] in ('partial', 'fully-tested')
         if c['id'].startswith(('TCP-MODEL-', 'TCP-SEQ-', 'TCP-TRACE-')):
             assert isinstance(c.get('strength_basis'), str) and c['strength_basis'].strip(), c['id']
         for key in ('requirement_id','source','applicability','responsibility','oracle','gaps'):

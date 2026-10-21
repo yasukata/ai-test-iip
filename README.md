@@ -244,12 +244,37 @@ Agreement does not establish RFC compliance. The ledger's `oracle_review` and
 
 The ledger records requirement strength in `strength` and, for applicable cases, `strength_basis`. `PROTOCOL` denotes a protocol processing instruction, while `PROFILE` denotes a selected test condition; violations of either are reported as `FAIL`. Some cases separate recommended ACK observations from state and delivery conditions. See each entry's `applicability`, `oracle`, and `gaps` for its preconditions and limits.
 
+## Coverage reports
+
+[`RFC-COVERAGE.md`](RFC-COVERAGE.md) lists all registered cases and explicit
+coverage gaps, grouped by requirement. The schema 2 ledger records RFC numbers
+and sections, requirement summaries, applicability, methodology, oracle provenance,
+and limitations. Local profiles and harness contracts are classified separately.
+Legacy summaries are marked as requiring further normative review.
+
+```sh
+make coverage-doc       # regenerate the static inventory and machine-readable JSON
+make check-coverage     # validate the ledger and detect stale documentation
+python3 scripts/report_coverage.py --results artifacts/my-run/results.json --output artifacts/my-run/coverage
+```
+
+Coverage states are `fully-tested` within an explicit bounded scope, `partial`,
+`not-tested`, `not-applicable`, and `not-supported`. All current implemented
+cases remain partial. Static reports contain no execution claims. Reports with
+results distinguish implemented, reported, executed, passed and unreported
+cases, and require a matching ledger hash. A PASS never upgrades coverage;
+a disabled profile does not imply the implementation lacks the capability.
+Run capture also emits `coverage.json` and `coverage.md` automatically.
+See [RFC validation notes](RFC-VALIDATION-NOTES.md#coverage-inventory-and-execution-evidence)
+for schema semantics and remaining audit limitations. Testing does not prove
+RFC compliance; `conformance: NOT_ESTABLISHED` remains the reporting policy.
+
 ## Adding or updating cases
 
 1. Add or update the test in the appropriate scenario header.
 2. Update its definition, references, oracle, and limits in `requirements.json`.
-3. Generate `test_cases.h` with `make registry`.
-4. Check that the ledger and generated registry match with `make check-registry`.
+3. Generate `test_cases.h` with `make registry` and the inventory with `make coverage-doc`.
+4. Check the generated files with `make check-registry check-coverage`.
 
 Do not edit `test_cases.h` directly. The ledger's `phase` field selects cases for phase-specific runs; it does not change the default profile selection. Scenarios can use `TEST_REQUIRE`, and Boolean helpers can use `TEST_CONDITION` or `TEST_ACCUMULATE`, to include expected and observed values in diagnostics.
 

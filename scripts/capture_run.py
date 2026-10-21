@@ -9,6 +9,7 @@ import platform
 import subprocess
 import sys
 import tarfile
+from report_coverage import build_report, markdown
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -26,6 +27,9 @@ def main():
     if not cmd: p.error('test command required')
     dest = Path(a.output).resolve()
     dest.mkdir(parents=True, exist_ok=True)
+    # Reusing an output directory must not attach a previous run's evidence.
+    for name in ('results.json', 'coverage.json', 'coverage.md', 'requirements-report.json'):
+        (dest / name).unlink(missing_ok=True)
     cmd += ['--json', str(dest / 'results.json')]
     files = (list(ROOT.glob('*.c')) + list(ROOT.glob('*.h')) + list(ROOT.glob('*.md'))
         + list((ROOT/'scripts').glob('*.py')) + list((ROOT/'tests').glob('*.*'))
@@ -46,7 +50,11 @@ def main():
     (dest/'exit-code.txt').write_text(str(r.returncode)+'\n')
     if (dest/'results.json').exists():
         result = json.loads((dest/'results.json').read_text())
-        ledger = {c['id']:c for c in json.loads((ROOT/'requirements.json').read_text())['cases']}
+        ledger_raw = (ROOT/'requirements.json').read_bytes()
+        coverage = build_report(json.loads(ledger_raw), hashlib.sha256(ledger_raw).hexdigest(), result)
+        (dest/'coverage.json').write_text(json.dumps(coverage, indent=2)+'\n')
+        (dest/'coverage.md').write_text(markdown(coverage))
+        ledger = {c['id']:c for c in json.loads(ledger_raw)['cases']}
         groups = {}
         oracle_summary = {}
         for c in result['cases']:

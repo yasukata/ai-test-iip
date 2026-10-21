@@ -560,3 +560,62 @@ implementations, then compares normalized observations. It does not compare
 packet traces or establish direct interoperability. Linux unavailability leaves
 the case INCONCLUSIVE after native checks; Linux success cannot mask native FAIL.
 Transport differences outside these selected observations remain untested.
+
+## Coverage inventory and execution evidence
+
+[RFC-COVERAGE.md](RFC-COVERAGE.md) is the generated, complete case inventory
+for the current ledger. It includes every registered case and explicit scope
+exclusions and uncovered conditions. It groups cases by `requirement_id` without
+counting shared functions or duplicate observations as independent requirements.
+The inventory itself contains no test execution evidence.
+
+Ledger schema 2 adds `rfc_references` (RFC number and section), `requirement`
+(a paraphrase), `requirement_basis`, and `requirement_kind` to every case.
+Existing applicability, oracle methodology, provenance, and gaps remain part of
+the mapping. RFC 768 has unnumbered headings: its entries use `Fields (unnumbered)`;
+the old empty `#section-` link was removed. Entries with only a local README
+reference explicitly have no normative RFC reference. `implementation-profile`
+and `harness-contract` do not acquire normative force from an associated RFC.
+Legacy descriptions promoted to `requirement` are marked `legacy-summary`;
+these summaries are navigation aids, not a new line-by-line normative audit.
+The RFC references and existing `strength_basis` must be consulted before
+extending any claim. Comprehensive errata and requirement extraction remain open.
+
+The five coverage states are `fully-tested`, `partial`, `not-tested`,
+`not-applicable`, and `not-supported`. `fully-tested` requires an explicit
+`bounded_scope` and `completeness_basis`; no current case makes that claim.
+All 586 implemented cases remain `partial`. `coverage_gaps` also records
+conflicting overlaps (not tested), IPv6 evaluation and no-TCB window comparisons
+(not applicable under the stated conditions), and exact Reno recovery
+(not supported by the inspected implementation).
+This list is not an exhaustive inventory of every requirement in every RFC.
+A missing algorithm support claim is not enough to call an algorithm unsupported.
+
+Coverage is independent of runtime status. A disabled profile's
+`NOT_APPLICABLE` result does not change a case's implemented coverage.
+Likewise a failure does not erase the fact that the behavior is tested, and PASS
+cannot upgrade partial coverage. An existing FAIL may identify a defect in the
+stack, the integration or the test; the inventory makes no automatic attribution.
+
+`make coverage-doc` regenerates the static Markdown and JSON under
+`artifacts/coverage/`; `make check-coverage` detects stale documentation.
+`scripts/report_coverage.py --results PATH --output DIR` attaches one harness
+JSON run only when its ledger SHA256 matches the current ledger. Unknown or
+duplicate IDs, inconsistent case metadata, missing execution classifications,
+and PASS without normal execution are rejected. Rebuild and recapture after
+ledger changes; reports from earlier ledger versions remain historical evidence
+and cannot supply observations for the current ledger. `scripts/capture_run.py` now writes `coverage.json` and
+`coverage.md` alongside its existing artifacts and requirement report.
+
+Execution counts distinguish registered/implemented, reported, executed
+(`execution != not-run`), passed (`PASS` with normal execution), and unreported
+cases. Signal and timeout executions count as attempted executions, not PASS.
+Outcome and execution histograms preserve those differences. A selected subset
+leaves other cases unreported; it does not mark them skipped or passed.
+The generator validates coverage fields as part of `make check-registry`.
+
+Finite tests and mutation sensitivity do not establish formal compliance or
+memory safety. `conformance: NOT_ESTABLISHED` remains unconditional. Sanitizer,
+mutation, external-oracle and interoperability evidence must retain their
+actual execution conditions; the static coverage inventory does not imply any
+of those checks was executed or passed.

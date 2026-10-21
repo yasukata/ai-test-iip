@@ -143,3 +143,13 @@ check-phase9-ubsan: check-registry ai-test-iip-ubsan
 
 check-phase9-mutations: check-registry
 	$(PYTHON) scripts/check_mutations.py --phase9 --output artifacts/phase9/mutations
+
+.PHONY: coverage coverage-doc check-coverage
+coverage: check-registry
+	$(PYTHON) scripts/report_coverage.py
+
+coverage-doc: coverage
+	cp artifacts/coverage/coverage.md RFC-COVERAGE.md
+
+check-coverage: check-registry
+	$(PYTHON) scripts/report_coverage.py --check
