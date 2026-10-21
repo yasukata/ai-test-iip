@@ -14,7 +14,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_window_unsigned; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-2",
@@ -238,7 +239,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_disable_nagle (control bound through IIP_EX_TCP_SET_NAGLE_DISABLED / II_TCP_CONN_FLAGS_NAGLE_DISABLED); see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Default state, per-connection toggling and two one-octet writes with Nagle disabled; setting the control at connect time is not exercised"
+      "gaps": "Default state, per-connection toggling and two one-octet writes with Nagle disabled; setting the control at connect time is not exercised",
+      "phase": 6
     },
     {
       "id": "SHLD-7",
@@ -252,7 +254,8 @@
       "responsibility": "iip",
       "oracle": "Assertions in test_nagle_algorithm; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Two one-octet writes with one segment outstanding; hold and release on ACK only. Control segments behind held data: NAGLE-ACK-1, NAGLE-DUPACK-1, NAGLE-FIN-1. PSH, sender SWS and full-sized segments not exercised"
+      "gaps": "Two one-octet writes with one segment outstanding; hold and release on ACK only. Control segments behind held data: NAGLE-ACK-1, NAGLE-DUPACK-1, NAGLE-FIN-1. PSH, sender SWS and full-sized segments not exercised",
+      "phase": 6
     },
     {
       "id": "NAGLE-ACK-1",
@@ -266,7 +269,8 @@
       "responsibility": "iip",
       "oracle": "Assertions in test_nagle_does_not_hold_ack; NOT_APPLICABLE unless Nagle holds a small write (see SHLD-7); see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "One in-order data segment from the peer while one octet is outstanding and one is held; RTO pushed out; observed in 50 ms steps up to 450 ms"
+      "gaps": "One in-order data segment from the peer while one octet is outstanding and one is held; RTO pushed out; observed in 50 ms steps up to 450 ms",
+      "phase": 6
     },
     {
       "id": "NAGLE-DUPACK-1",
@@ -280,7 +284,8 @@
       "responsibility": "iip",
       "oracle": "Assertions in test_nagle_does_not_hold_dupack; NOT_APPLICABLE unless Nagle holds a small write (see SHLD-7); see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "One out-of-order segment; requires a data-less ACK for RCV.NXT in the same processing step"
+      "gaps": "One out-of-order segment; requires a data-less ACK for RCV.NXT in the same processing step",
+      "phase": 6
     },
     {
       "id": "NAGLE-FIN-1",
@@ -294,7 +299,8 @@
       "responsibility": "iip",
       "oracle": "Assertions in test_nagle_does_not_hold_fin; NOT_APPLICABLE unless Nagle holds a small write (see SHLD-7); see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "No RFC requirement; close with one octet held, observed up to 200 ms with RTO pushed out"
+      "gaps": "No RFC requirement; close with one octet held, observed up to 200 ms with RTO pushed out",
+      "phase": 6
     },
     {
       "id": "MUST-18",
@@ -322,7 +328,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_retransmission_and_congestion; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-20",
@@ -532,7 +539,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_window_shrink_robustness; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-35",
@@ -546,7 +554,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_standard_window_probing; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-36",
@@ -560,7 +569,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_zero_window_probe; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-37",
@@ -574,7 +584,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_indefinite_zero_window_connection; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-38",
@@ -588,7 +599,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_sender_sws_avoidance; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite tiny-window/full-window scenarios only; arbitrary alternative algorithms and long-term progress need separate evidence"
+      "gaps": "Finite tiny-window/full-window scenarios only; arbitrary alternative algorithms and long-term progress need separate evidence",
+      "phase": 6
     },
     {
       "id": "MUST-39",
@@ -602,7 +614,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Compare observed wire right edges under explicit unscaled fixture, before/after deferred one-byte consumption; exact accounting is a separate profile",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-40",
@@ -616,7 +629,8 @@
       "responsibility": "iip + documented callbacks",
       "oracle": "Assertions in test_delayed_ack_limit; see README.md#evaluation-scope and the coverage gaps for limitations",
       "coverage": "partial",
-      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed"
+      "gaps": "Finite scenarios only; full state, sequence-wrap and algorithm coverage not claimed",
+      "phase": 6
     },
     {
       "id": "MUST-41",
@@ -8313,6 +8327,330 @@
       "gaps": "Single ESTABLISHED unscaled window; same packet sequence as the independent retention observation.",
       "phase": 3,
       "strength_basis": "RFC 9293 3.10.7.4 first/seventh steps define ordered delivery and RCV.NXT advancement. The optional retention of the out-of-order byte is excluded from this protocol check."
+    },
+    {
+      "id": "TCP-FLOW-CWND-LIMIT",
+      "function": "test_flow_cwnd_limit",
+      "description": "Congestion window limits emitted flight",
+      "requirement_id": "RFC5681:FLOW-CWND-LIMIT",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-3.1",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Placed cwnd=2 MSS, rwnd=256; queue 128 bytes; require exactly 64 on wire and silence without ACK.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-RWND-LIMIT",
+      "function": "test_flow_rwnd_limit",
+      "description": "Peer receive window limits emitted flight",
+      "requirement_id": "RFC9293:FLOW-RWND-LIMIT",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Placed cwnd=8 MSS; advertise rwnd=64; queue 128 bytes; require exactly 64 on wire.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-UPDATE-STALE-SEQ",
+      "function": "test_flow_update_stale_seq",
+      "description": "Reject older in-window SEG.SEQ window update across wrap",
+      "requirement_id": "RFC9293:FLOW-UPDATE-STALE-SEQ",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "strength_basis": "RFC 9293 section 3.10.7.4; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Advertise receive window; accept update at SEQ=8; older SEQ=0 with same ACK must not expand send window. Verify actual emitted flight.",
+      "coverage": "partial",
+      "gaps": "Older in-window SEQ ordering is INCONCLUSIVE if the prerequisite higher-SEQ ACK is deferred, which RFC 9293 permits. This is a coverage limitation, not a defect. No direct setting of target WL1/WL2."
+    },
+    {
+      "id": "TCP-FLOW-UPDATE-FUTURE-ACK",
+      "function": "test_flow_update_future_ack",
+      "description": "Future ACK cannot expand send window",
+      "requirement_id": "RFC9293:FLOW-UPDATE-FUTURE-ACK",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "strength_basis": "RFC 9293 section 3.10.7.4; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "SEG.ACK=SND.NXT+1 update must not expand send window or release queued data.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-UPDATE-STALE-ACK",
+      "function": "test_flow_update_stale_ack",
+      "description": "ACK below SND.UNA cannot expand send window",
+      "requirement_id": "RFC9293:FLOW-UPDATE-STALE-ACK",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "strength_basis": "RFC 9293 section 3.10.7.4; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "SEG.ACK=SND.UNA-1 update must not expand send window.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-UPDATE-EQUAL",
+      "function": "test_flow_update_equal",
+      "description": "Accept equal SEG.SEQ and SEG.ACK window update",
+      "requirement_id": "RFC9293:FLOW-UPDATE-EQUAL",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "strength_basis": "RFC 9293 section 3.10.7.4; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Equal SEQ/ACK update opens window from 64 to 128; require complete queued flight.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-UPDATE-NEW-SEQ",
+      "function": "test_flow_update_new_seq",
+      "description": "Accept newer in-window SEG.SEQ window update",
+      "requirement_id": "RFC9293:FLOW-UPDATE-NEW-SEQ",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "strength": "PROTOCOL",
+      "strength_basis": "RFC 9293 section 3.10.7.4; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Start with accepted SEQ=RCV.NXT window=64, deliver 28 bytes across receive sequence wrap, then update at new RCV.NXT with unchanged ACK; require window/flight=128. No immediate processing of out-of-order ACK is required.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-PROBE-REOPEN",
+      "function": "test_flow_probe_reopen",
+      "description": "Repeated zero-window probes and recovery after lost window update",
+      "requirement_id": "RFC9293:FLOW-PROBE-REOPEN",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6.1",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Two probes validated byte-for-byte at SND.UNA; respond zero then reopen; verify 32-byte stream and final buffer release.",
+      "coverage": "partial",
+      "gaps": "Selected one-data-octet probe profile and finite 120-second deadline; not all legal probe formats. Reopening loss is modeled by withholding the update; receiver is a scripted peer."
+    },
+    {
+      "id": "TCP-FLOW-RX-EXHAUSTION",
+      "function": "test_flow_receive_exhaustion",
+      "description": "Receive-buffer exhaustion, zero window, consumption and recovery",
+      "requirement_id": "RFC9293:FLOW-RX-EXHAUSTION",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Four 16-byte deliveries fill advertised 64-byte buffer; reject three probes; consume 32; validate wire reopening and ordered application bytes.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-RECEIVER-SWS",
+      "function": "test_flow_receiver_sws",
+      "description": "One-byte consumption remains suppressed until half-buffer threshold",
+      "requirement_id": "RFC9293:FLOW-RECEIVER-SWS",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6.2.2",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Fill real receive buffer, consume one byte at a time; wire window stays zero below 32, opens at 32.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-ADVERTISEMENT",
+      "function": "test_flow_advertised_boundaries",
+      "description": "Unscaled advertisement boundaries and unsigned saturation",
+      "requirement_id": "RFC9293:FLOW-ADVERTISEMENT",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.1",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Actual ACK window field for capacity 0,1,32767,32768,65534,65535,65536,UINT32_MAX; independent saturation oracle.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-ACK-PAIR",
+      "function": "test_flow_delayed_ack_pair",
+      "description": "Cumulative ACK of two full receive segments and delayed tail ACK",
+      "requirement_id": "RFC5681:FLOW-ACK-PAIR",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-4.2",
+      "strength": "SHOULD",
+      "strength_basis": "RFC 5681 section 4.2; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Two 1460-byte segments require cumulative ACK; small tail ACK before 500 virtual ms; immediate ACK accepted.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-NAGLE-FULL",
+      "function": "test_flow_nagle_full_segment",
+      "description": "Nagle permits full segment then releases small tail on ACK",
+      "requirement_id": "RFC9293:FLOW-NAGLE-FULL",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.7.4",
+      "strength": "SHOULD",
+      "strength_basis": "RFC 9293 section 3.7.4; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Unacknowledged byte followed by full MSS and small tail; full segment allowed, tail held then released.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-SLOW-START",
+      "function": "test_flow_slow_start",
+      "description": "Classic slow-start growth opens larger wire flight",
+      "requirement_id": "RFC5681:FLOW-SLOW-START",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-3.1",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Queue three MSS at cwnd=1; full-MSS ACK should permit two MSS; state supplement checks cwnd=2.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-CA-GROWTH",
+      "function": "test_flow_congestion_avoidance",
+      "description": "Byte-counting congestion avoidance over four cumulative ACK rounds",
+      "requirement_id": "RFC5681:FLOW-CA-GROWTH",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-3.1",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Start cwnd=4 above threshold; independently expect one MSS growth per full flight, validate bytes and buffer release.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-FAST-RETRANSMIT",
+      "function": "test_flow_fast_retransmit",
+      "description": "Third duplicate ACK retransmits head before RTO",
+      "requirement_id": "RFC5681:FLOW-FAST-RETRANSMIT",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-3.2",
+      "strength": "SHOULD",
+      "strength_basis": "RFC 5681 section 3.2; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Eight-MSS flight: zero retransmissions for first two duplicate ACKs, head retransmission on third at unchanged virtual time; conservative cwnd allowed.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-RTO-RESPONSE",
+      "function": "test_flow_rto_response",
+      "description": "Eight-segment flight RTO reduces congestion window",
+      "requirement_id": "RFC5681:FLOW-RTO-RESPONSE",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-3.1",
+      "strength": "MUST",
+      "strength_basis": "RFC 5681 section 3.1; recommendations remain SHOULD and processing rules PROTOCOL.",
+      "profile": "base",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Eight-MSS loss: at RTO only first MSS retransmitted; cwnd<=1, ssthresh<=FlightSize/2; no new burst before ACK.",
+      "coverage": "partial",
+      "gaps": "Finite deterministic trace; no alternative CC algorithms, negotiated scaling, ECN, pacing or network throughput claims."
+    },
+    {
+      "id": "TCP-FLOW-RECOVERY",
+      "function": "test_flow_single_loss_recovery",
+      "description": "Conservative iip single-loss recovery and subsequent send progress",
+      "requirement_id": "RFC5681:FLOW-RECOVERY",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-3.2",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Independent peer byte map drops first segment, cumulatively ACKs actual retransmissions, requires completion and fresh data within 20 virtual seconds.",
+      "coverage": "partial",
+      "gaps": "Scripted receiving peer, no second native stack; 20-second progress deadline is a selected regression profile. SACK, NewReno partial-ACK fast recovery, Reno inflation and throughput not established. RTO fallback is permitted."
+    },
+    {
+      "id": "TCP-FLOW-MULTIPLE-LOSS",
+      "function": "test_flow_multiple_loss_recovery",
+      "description": "Two losses in one flight recover with cumulative ACK and RTO fallback",
+      "requirement_id": "RFC5681:FLOW-MULTIPLE-LOSS",
+      "source": "https://www.rfc-editor.org/rfc/rfc5681.html#section-4.3",
+      "strength": "PROFILE",
+      "strength_basis": "Selected iip fixture/progress profile; exact growth, window policy and deadlines are not universal RFC requirements.",
+      "profile": "regression",
+      "phase": 6,
+      "applicability": "IPv4 ESTABLISHED placed fixture; unscaled windows; no timestamps or SACK; iip classic loss-based congestion control.",
+      "responsibility": "Native iip with packet backend and API binding; direct state placement is setup only.",
+      "oracle": "Peer drops segments 0 and 3; retain other bytes; ACK only contiguous observed bytes; require complete stream, buffer release and fresh send.",
+      "coverage": "partial",
+      "gaps": "Scripted receiving peer, no second native stack; 20-second progress deadline is a selected regression profile. SACK, NewReno partial-ACK fast recovery, Reno inflation and throughput not established. RTO fallback is permitted."
     }
-  ]
+  ],
+  "phase6_scope": {
+    "congestion_control": "Native iip loss-based control observed in ii_tcp_loss_detected, ii_tcp_conn_update_info and ii_tcp_release_acked. No named Reno/NewReno/CUBIC support declaration found in the local README.",
+    "unsupported_or_unestablished": [
+      {
+        "property": "RFC 5681 Reno fast recovery window inflation/deflation",
+        "status": "not_supported_by_inspected_implementation",
+        "evidence": "ii_tcp_loss_detected sets cc.win=1 for duplicate-ACK loss and timeout; no Reno +3 inflation path. Recovery tests permit this conservative strategy."
+      },
+      {
+        "property": "NewReno, CUBIC, BBR, ECN and pacing",
+        "status": "not_tested",
+        "reason": "No support claim used by this phase; avoid imposing foreign algorithm profiles."
+      },
+      {
+        "property": "Negotiated asymmetric window scaling and SACK multiple-loss recovery",
+        "status": "not_tested_in_phase6",
+        "reason": "Phase 6 uses an explicit unscaled non-SACK fixture; existing sequence/SACK cases remain separate."
+      }
+    ]
+  }
 }

@@ -477,3 +477,34 @@ delivery and RCV.NXT separately; invalid gap filling makes the recommendation
 INCONCLUSIVE while the protocol case fails. FIRST-UNACCEPTABLE checks that an ACK at
 the exclusive edge cannot acknowledge an outstanding byte. Processing of an
 acceptable but out-of-order empty ACK need not be immediate.
+
+## Flow and congestion control scenarios
+
+`TCP-FLOW-*` uses actual wire data and independently tracked stream offsets,
+with direct connection-state placement documented as a fixture precondition.
+The ledger groups these scenarios and related cases with `phase: 6`.
+
+- RFC 9293 §3.10.7.4: window updates distinguish equal/newer SEQ, stale SEQ,
+  and ACKs outside `[SND.UNA,SND.NXT]`. Both SEQs in the stale-order scenario
+  are inside an observed receive window. Deferring the prerequisite higher-SEQ
+  ACK is permitted; stale ordering is then `INCONCLUSIVE`. The newer-SEQ
+  acceptance test first fills the receive gap before requiring an update.
+- RFC 9293 §3.8.6: receiver exhaustion uses actual delivered bytes with
+  deferred application consumption. Exact 64-byte window accounting, a
+  half-buffer SWS threshold, probe format and recovery deadlines are selected
+  profiles. The native receive callback checks byte order and content.
+- RFC 5681 §3.1: emitted flight limits supplement internal cwnd assertions.
+  Exact slow-start/byte-counting growth is a `PROFILE`, allowing conservative
+  alternatives to remain distinct from mandatory bounds. The RTO case uses
+  an eight-segment flight and the one-SMSS loss-window bound.
+- RFC 5681 §3.2/§4.3: fast retransmit is `SHOULD`. Native iip uses a
+  conservative loss response; no named Reno/NewReno support claim was found.
+  Do not require Reno inflation/deflation. Single/two-loss recovery allows
+  timeout fallback and checks the complete stream plus fresh post-recovery
+  data; this does not establish Reno fast recovery or SACK recovery.
+- Immediate ACKs satisfy the delayed-ACK tests. Nagle full-segment/tail
+  interaction supplements the existing ACK, duplicate-ACK and FIN cases.
+
+Mutation experiments cover flight-limit, growth and RTO regression detection.
+Passing these finite scenarios and sanitizer runs is not a compliance or memory
+safety proof; the full conformance status remains `NOT_ESTABLISHED`.

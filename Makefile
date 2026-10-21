@@ -81,3 +81,19 @@ check-phase4-asan: check-registry ai-test-iip-asan
 
 check-phase4-ubsan: check-registry ai-test-iip-ubsan
 	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) scripts/run_phase.py --phase 4 --output artifacts/phase4/ubsan ./ai-test-iip-ubsan
+
+.PHONY: check-phase6 check-phase6-asan check-phase6-ubsan
+check-phase6: check-registry ai-test-iip
+	$(PYTHON) scripts/run_phase.py --phase 6 --output artifacts/phase6/normal ./ai-test-iip
+
+check-phase6-asan: check-registry ai-test-iip-asan
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 $(PYTHON) scripts/run_phase.py --phase 6 --output artifacts/phase6/asan ./ai-test-iip-asan
+
+check-phase6-ubsan: check-registry ai-test-iip-ubsan
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) scripts/run_phase.py --phase 6 --output artifacts/phase6/ubsan ./ai-test-iip-ubsan
+
+.PHONY: check-phase6-mutations
+check-phase6-mutations: check-registry
+	$(PYTHON) scripts/check_mutations.py --output artifacts/phase6/mutations \
+		--experiment flow_rwnd_unlimited --experiment flow_cwnd_unlimited \
+		--experiment flow_ca_frozen --experiment flow_loss_window_two

@@ -24,6 +24,18 @@ def mutate(dst, name):
     if name=='timewait_equal': s=replace_once(s,timer,timer.replace(' < ',' <= '))
     elif name=='timewait_early': s=replace_once(s,timer,timer.replace('* 2 <','* 1 <'))
     elif name=='rtt_frozen': s=replace_once(s,'II_TCP_CONN(conn_id).rtt.srtt = nticks;','II_TCP_CONN(conn_id).rtt.srtt = 0; /* injected defect */')
+    elif name=='flow_rwnd_unlimited':
+        s=replace_once(s,'uint32_t flow_win = (uint32_t) II_TCP_CONN(conn_id).peer_win << II_TCP_CONN(conn_id).ws;',
+                       'uint32_t flow_win = UINT32_MAX; /* injected defect */')
+    elif name=='flow_cwnd_unlimited':
+        s=replace_once(s,'uint32_t cc_win = (uint32_t) II_TCP_CONN(conn_id).cc.win * II_TCP_CONN(conn_id).mss;',
+                       'uint32_t cc_win = UINT32_MAX; /* injected defect */')
+    elif name=='flow_ca_frozen':
+        s=replace_once(s,'II_TCP_CONN(conn_id).cc.win = (II_TCP_CONN(conn_id).cc.win < 65535U ? II_TCP_CONN(conn_id).cc.win + 1 : 65535U);',
+                       '/* injected defect: no congestion avoidance growth */')
+    elif name=='flow_loss_window_two':
+        s=replace_once(s,'II_TCP_CONN(conn_id).cc.win = 1;\n\tII_TCP_CONN(conn_id).cc.acked_bytes = 0;',
+                       'II_TCP_CONN(conn_id).cc.win = 2; /* injected defect */\n\tII_TCP_CONN(conn_id).cc.acked_bytes = 0;')
     elif name=='checksum_disabled':
         a=s.index('static enum iip_rc ii_tcp_rx_csum_check');b=s.index('\n}',a)
         chunk=s[a:b];s=s[:a]+replace_once(chunk,'return ii_ipv4_l4_input__csum_with_pseudo(w, pb_id, opaque);','return IIP_ERR_OK; /* injected defect */')+s[b:]
@@ -53,6 +65,10 @@ EXPERIMENTS=[
  ('ack_495','MUST-40','PASS','observer-counterexample'),
  ('ack_499','MUST-40','PASS','observer-counterexample'),
  ('ack_500','MUST-40','FAIL','observer-counterexample'),
+ ('flow_rwnd_unlimited','TCP-FLOW-RWND-LIMIT','FAIL','target-defect'),
+ ('flow_cwnd_unlimited','TCP-FLOW-CWND-LIMIT','FAIL','target-defect'),
+ ('flow_ca_frozen','TCP-FLOW-CA-GROWTH','FAIL','target-defect'),
+ ('flow_loss_window_two','TCP-FLOW-RTO-RESPONSE','FAIL','target-defect'),
 ]
 
 def run(dst,out,label,case):
@@ -68,10 +84,15 @@ def run(dst,out,label,case):
     return j['cases'][0]['status'],r.returncode
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--output',default='artifacts/mutations');args=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('--output',default='artifacts/mutations')
+    ap.add_argument('--experiment', action='append', choices=[e[0] for e in EXPERIMENTS],
+                    help='select an experiment; repeat to select several (default: all)')
+    args=ap.parse_args()
     out=Path(args.output).resolve();out.mkdir(parents=True,exist_ok=True)
     results=[]
     for name,case,expected,kind in EXPERIMENTS:
+        if args.experiment and name not in args.experiment:
+            continue
         stage = 'baseline'
         try:
             with tempfile.TemporaryDirectory(prefix='iip-mutation-') as tmp:
