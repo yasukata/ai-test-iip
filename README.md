@@ -97,6 +97,9 @@ Each protocol case runs in a child process with a 30-second timeout. Self-tests 
 | `make check-phase4-asan` / `make check-phase4-ubsan` | Run the same phase under each sanitizer |
 | `make check-phase6` | Run flow and congestion control cases marked `phase: 6` in the ledger |
 | `make check-phase6-asan` / `make check-phase6-ubsan` | Run phase 6 under each sanitizer |
+| `make check-phase7` | Run lifecycle and resource safety cases marked `phase: 7` in the ledger |
+| `make check-phase7-asan` / `make check-phase7-ubsan` | Run phase 7 under each sanitizer |
+| `make check-phase7-mutations` | Check lifecycle defects in isolated source copies |
 | `make check-phase6-mutations` | Check four flow/congestion defects in isolated source copies |
 | `make check-mutations` | Run mutation experiments |
 | `make check-conformance` | Run with `--conformance` and capture the sources and run artifacts |
@@ -136,7 +139,7 @@ python3 scripts/capture_run.py --output artifacts/my-run -- ./ai-test-iip --no-t
 
 The capture includes source snapshots, hashes, revisions, diffs, environment settings, TAP, JSON, diagnostics, the exit code, and a report grouped by requirement. `make check-conformance` writes to `artifacts/conformance/`. The phase 4 targets write to `normal/`, `asan/`, or `ubsan/` under `artifacts/phase4/`. Reusing an output directory overwrites its files.
 
-The phase 6 targets write equivalent run artifacts under `artifacts/phase6/`.
+The phase 6 and 7 targets write equivalent run artifacts under `artifacts/phase6/` and `artifacts/phase7/`.
 
 ## Reproducible fuzzing and malformed inputs
 
@@ -167,6 +170,16 @@ The evaluated system combines iip over IPv4 with this repository's callbacks, pa
   Exact growth and progress deadlines are labelled `PROFILE`; Reno fast-recovery
   inflation is not imposed on iip's conservative loss response. A scripted peer
   tracks actual retransmitted bytes for the recovery cases.
+- `TCP-LIFE-*` uses actual native handshakes for close with outstanding data,
+  RST/FIN around RTO, repeated teardown, delayed old packets, context reuse,
+  simultaneous connections, and connection/descriptor exhaustion and recovery.
+  The integration profile checks callbacks by connection and verifies live packet
+  backing/clone counts and descriptor/connection pool balance after native teardown.
+  Descriptor exhaustion reserves unused pool slots; cleanup releases only those
+  reservations. Application ABORT is `INCONCLUSIVE` until a native API exists.
+  Fixed-pool use after release needs state/data checks because ASan alone cannot
+  detect logical reuse of a slot within a live workspace. LeakSanitizer is disabled
+  for the suite; the counters measure packet resources, not arbitrary allocations.
 - Dedicated scenarios cover malformed inputs, recovery, receive reordering and duplication, and clock and sequence-number wraparound.
 
 Cases that place a state directly and traces that reach it through transitions provide different observations. Receive-window boundary cases use an emitted advertised window as a precondition rather than relying only on internal buffer capacity. If a required precondition cannot be observed, the case is `INCONCLUSIVE`.

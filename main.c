@@ -55,6 +55,11 @@ static void *packet_capacity_exempt_payload;
 static uint8_t packet_clone_tracking;
 static void *packet_tracked_clone;
 static uint8_t packet_tracked_clone_freed;
+/* Count actual heap objects, not references: a backing may outlive its
+ * original packet handle while clones still refer to it. Lifecycle cases
+ * compare snapshots only after native teardown and output consumption. */
+static uint64_t test_packet_backings_live;
+static uint64_t test_packet_clones_live;
 
 static uint16_t test_pkt_get_capacity(void *pkt, void *opaque)
 {
@@ -843,6 +848,7 @@ static void *test_pkt_alloc_capacity(uint16_t capacity)
 {
 	long *pkt = malloc((size_t)capacity + 8 * sizeof(long) + 2);
 	assert(pkt);
+	test_packet_backings_live++;
 	pkt[0] = 1; /* ref */
 	pkt[1] = (long) pkt; /* ptr */
 	pkt[2] = 0; /* len */
@@ -864,10 +870,15 @@ static void iip_ops_pkt_free(void *pkt, void *opaque)
 		long *buf = (long *)((long *) pkt)[1];
 		if (packet_clone_tracking && pkt == packet_tracked_clone)
 			packet_tracked_clone_freed = 1;
-		if (--buf[0] == 0)
+		if (--buf[0] == 0) {
+			assert(test_packet_backings_live);
+			test_packet_backings_live--;
 			free(buf);
+		}
 		if (buf != pkt) { /* cloned */
 			assert(!((long *) pkt)[0]);
+			assert(test_packet_clones_live);
+			test_packet_clones_live--;
 			free(pkt);
 		}
 	}
@@ -914,6 +925,7 @@ static void *iip_ops_pkt_clone(void *pkt, void *opaque)
 	long *buf = (long *)((long *) pkt)[1];
 	long *cloned_pkt = malloc(64);
 	assert(cloned_pkt);
+	test_packet_clones_live++;
 	cloned_pkt[0] = 0; /* ref */
 	cloned_pkt[1] = (long) buf; /* ptr */
 	cloned_pkt[2] = ((long *) pkt)[2]; /* len */
@@ -1216,12 +1228,25 @@ static void buffer_shortage_self_test(void)
 	assert(ws->pbs.used_cnt == before);
 	assert(ii_free_pb(&ws->pbs, before - 1) == IIP_ERR_OK);
 	assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_OK && id == before - 1);
+	uint64_t backing_base = test_packet_backings_live, clone_base = test_packet_clones_live;
 	/* Packet cloning remains independent of descriptor exhaustion. */
 	void *pkt = iip_ops_pkt_alloc(&state);
 	void *clone = iip_ops_pkt_clone(pkt, &state);
 	assert(pkt && clone && pkt != clone);
 	iip_ops_pkt_free(clone, &state);
 	iip_ops_pkt_free(pkt, &state);
+	assert(test_packet_backings_live == backing_base && test_packet_clones_live == clone_base);
+	/* Shared storage survives freeing its original handle before two clones. */
+	pkt = iip_ops_pkt_alloc(&state);
+	clone = iip_ops_pkt_clone(pkt, &state);
+	void *second_clone = iip_ops_pkt_clone(pkt, &state);
+	assert(test_packet_backings_live == backing_base + 1 && test_packet_clones_live == clone_base + 2);
+	iip_ops_pkt_free(pkt, &state);
+	assert(test_packet_backings_live == backing_base + 1);
+	iip_ops_pkt_free(second_clone, &state);
+	assert(test_packet_backings_live == backing_base + 1 && test_packet_clones_live == clone_base + 1);
+	iip_ops_pkt_free(clone, &state);
+	assert(test_packet_backings_live == backing_base && test_packet_clones_live == clone_base);
 	for (uint32_t i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++)
 		assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_OK && id == i);
 	before = ws->tcp_conns.used_cnt;

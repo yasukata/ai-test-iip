@@ -17,3 +17,4 @@
 #include "test_tcp_traces.h"
 #include "test_tcp_sequence.h"
 #include "test_tcp_flow.h"
+#include "test_tcp_lifecycle.h"

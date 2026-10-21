@@ -97,3 +97,19 @@ check-phase6-mutations: check-registry
 	$(PYTHON) scripts/check_mutations.py --output artifacts/phase6/mutations \
 		--experiment flow_rwnd_unlimited --experiment flow_cwnd_unlimited \
 		--experiment flow_ca_frozen --experiment flow_loss_window_two
+
+.PHONY: check-phase7 check-phase7-asan check-phase7-ubsan
+check-phase7: check-registry ai-test-iip
+	$(PYTHON) scripts/run_phase.py --phase 7 --output artifacts/phase7/normal ./ai-test-iip
+
+check-phase7-asan: check-registry ai-test-iip-asan
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 $(PYTHON) scripts/run_phase.py --phase 7 --output artifacts/phase7/asan ./ai-test-iip-asan
+
+check-phase7-ubsan: check-registry ai-test-iip-ubsan
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) scripts/run_phase.py --phase 7 --output artifacts/phase7/ubsan ./ai-test-iip-ubsan
+
+.PHONY: check-phase7-mutations
+check-phase7-mutations: check-registry
+	$(PYTHON) scripts/check_mutations.py --output artifacts/phase7/mutations \
+		--experiment life_missing_close_callback --experiment life_retained_connection \
+		--experiment life_retained_sent

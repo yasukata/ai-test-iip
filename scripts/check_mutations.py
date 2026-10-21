@@ -36,6 +36,18 @@ def mutate(dst, name):
     elif name=='flow_loss_window_two':
         s=replace_once(s,'II_TCP_CONN(conn_id).cc.win = 1;\n\tII_TCP_CONN(conn_id).cc.acked_bytes = 0;',
                        'II_TCP_CONN(conn_id).cc.win = 2; /* injected defect */\n\tII_TCP_CONN(conn_id).cc.acked_bytes = 0;')
+    elif name.startswith('life_'):
+        a=s.index('static enum iip_rc ii_tcp_conn_close_check(')
+        b=s.index('\n}',a)
+        chunk=s[a:b]
+        if name=='life_missing_close_callback':
+            chunk=replace_once(chunk,'IIP_OPS_TCP_CLOSED();','iip_ret_int = 0; /* injected defect */')
+        elif name=='life_retained_connection':
+            chunk=replace_once(chunk,'ii_free_tcp_conn(&w->tcp_conns, conn_id);','/* injected defect: retained connection slot */')
+        elif name=='life_retained_sent':
+            chunk=replace_once(chunk,'for (i = 0; i < cnt; i++) {','for (i = 0; i < cnt; i++) {\n                            if (j == 2) continue; /* injected defect */')
+        else: raise ValueError(name)
+        s=s[:a]+chunk+s[b:]
     elif name=='checksum_disabled':
         a=s.index('static enum iip_rc ii_tcp_rx_csum_check');b=s.index('\n}',a)
         chunk=s[a:b];s=s[:a]+replace_once(chunk,'return ii_ipv4_l4_input__csum_with_pseudo(w, pb_id, opaque);','return IIP_ERR_OK; /* injected defect */')+s[b:]
@@ -57,6 +69,9 @@ def mutate(dst, name):
     p.write_text(s)
 
 EXPERIMENTS=[
+ ('life_missing_close_callback','TCP-LIFE-RST-AFTER-RTO','FAIL','target-defect'),
+ ('life_retained_connection','TCP-LIFE-REPEAT-RESET','FAIL','target-defect'),
+ ('life_retained_sent','TCP-LIFE-RST-AFTER-RTO','FAIL','target-defect'),
  ('timewait_equal','MUST-13','PASS','target-permitted'),
  ('timewait_early','MUST-13','FAIL','target-defect'),
  ('rtt_frozen','TCP-RTT-1','FAIL','target-defect'),
