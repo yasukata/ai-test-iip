@@ -317,8 +317,20 @@ each variant. A compile failure is not successful defect detection. Mutation
 patches depend on target source anchors; review an anchor mismatch rather than
 weakening matching or silently skipping the experiment.
 
-Additional target mutations for SACK ordering, missing termination information,
-and invalid TFO-cookie acceptance remain to be implemented.
+Phase 9 adds ten representative defects and two regression cases for prior
+survivors; the ledger links each mutation to its detecting test.
+`MUTATION-SACK-INVALID` uses RFC 2018 section 3's block edge definitions and an
+explicit robustness profile: reversed/empty blocks add no scoreboard entry,
+retain unacknowledged data, and permit subsequent valid SACK/retransmission.
+It includes white-box scoreboard checks and does not prescribe a loss algorithm.
+`MUTATION-EOF-CALLBACK` checks RFC 9293 section 3.10.7.4 FIN user notification
+through the documented callback ABI, using native handshake, bytes, wire ACK,
+EOF exactly once and duplicate FIN. No Linux reference is needed.
+The ledger's `mutation_experiments` associates every Phase 9 mutation with its
+expected detecting test. These finite mutations establish sensitivity to the
+injected defect under the recorded preconditions, not conformance certification.
+Invalid TFO-cookie acceptance, missing SACK termination information, arbitrary
+SACK ranges outside the sent flight and broader compound mutations remain gaps.
 
 ## Workflow for subsequent changes
 

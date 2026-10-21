@@ -10,6 +10,18 @@ enum result { RESULT_PASS, RESULT_FAIL, RESULT_SKIP, RESULT_TODO, RESULT_INCONCL
 
 /* A stack assertion or hang is a failed test, and must not hide later tests. */
 static int test_process_failed;
+/* Separate process completion from protocol verdicts. Sticky within one case
+ * so nested isolated runs cannot hide an earlier timeout or signal. */
+enum test_execution_kind {
+    TEST_EXEC_NORMAL, TEST_EXEC_TIMEOUT, TEST_EXEC_SIGNAL,
+    TEST_EXEC_EXIT_ERROR, TEST_EXEC_MISSING_REPORT, TEST_EXEC_ERROR,
+    TEST_EXEC_NOT_RUN
+};
+static enum test_execution_kind test_execution;
+static void test_execution_failed(enum test_execution_kind kind)
+{
+    if (test_execution == TEST_EXEC_NORMAL) test_execution = kind;
+}
 static const char *test_setup_error;
 static char test_failure_detail[512];
 static char *test_step_detail;
@@ -78,26 +90,26 @@ static int wait_isolated_child(pid_t child, unsigned timeout_seconds,
 static enum result run_isolated(enum result (*run)(const char **),
         void (*self_test)(void), const char **why, unsigned timeout_seconds)
 {
-    struct child_result { enum result result; char why[512]; } report = { RESULT_FAIL, { 0 } };
+    struct child_result { enum result result; char why[512]; enum test_execution_kind execution; } report = { RESULT_FAIL, { 0 }, TEST_EXEC_NORMAL };
     static char reason[512];
     assert((run != NULL) != (self_test != NULL));
     assert(timeout_seconds > 0);
     test_process_failed = 0;
     int channel[2], status;
     fflush(NULL);
-    if (pipe(channel)) { *why = "cannot create result pipe"; return RESULT_ERROR; }
+    if (pipe(channel)) { *why = "cannot create result pipe"; test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR; }
     /* A missing report must not block if a descendant inherited the pipe. */
     if (fcntl(channel[0], F_SETFL, O_NONBLOCK) < 0) {
         close(channel[0]); close(channel[1]);
         *why = "cannot configure result pipe";
-        return RESULT_ERROR;
+        test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR;
     }
     char *step = mmap(NULL, 128, PROT_READ | PROT_WRITE,
         MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (step == MAP_FAILED) {
         close(channel[0]); close(channel[1]);
         *why = "cannot allocate shared test step";
-        return RESULT_ERROR;
+        test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR;
     }
     sigset_t blocked, previous_mask;
     struct sigaction action = { 0 }, previous_int, previous_term;
@@ -114,7 +126,7 @@ static enum result run_isolated(enum result (*run)(const char **),
         sigaction(SIGINT, &previous_int, NULL); sigaction(SIGTERM, &previous_term, NULL);
         sigprocmask(SIG_SETMASK, &previous_mask, NULL);
         munmap(step, 128);
-        close(channel[0]); close(channel[1]); *why = "cannot fork test"; return RESULT_ERROR; }
+        close(channel[0]); close(channel[1]); *why = "cannot fork test"; test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR; }
     if (!child) {
         test_step_detail = step;
         close(channel[0]);
@@ -135,6 +147,7 @@ static enum result run_isolated(enum result (*run)(const char **),
             detail = test_failure_detail;
         if (test_setup_error) { report.result = RESULT_ERROR; detail = test_setup_error; }
         if (harness_event_overflow) { report.result = RESULT_ERROR; detail = "event log overflow; observations incomplete"; }
+        report.execution = test_execution;
         if (detail) snprintf(report.why, sizeof(report.why), "%s", detail);
         fflush(NULL);
         ssize_t n = write(channel[1], &report, sizeof(report));
@@ -157,17 +170,21 @@ static enum result run_isolated(enum result (*run)(const char **),
         close(channel[0]);
         munmap(step, 128);
         *why = "cannot wait for test process";
-        return RESULT_ERROR;
+        test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR;
     }
     ssize_t n;
     do { n = read(channel[0], &report, sizeof(report)); } while (n < 0 && errno == EINTR);
     close(channel[0]);
     if (!WIFEXITED(status) || WEXITSTATUS(status) || n != sizeof(report)) {
-        if (timed_out || (WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM))
+        if (timed_out || (WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM)) {
+            test_execution_failed(TEST_EXEC_TIMEOUT);
             snprintf(reason, sizeof(reason), "test process timed out after %u second%s",
                 timeout_seconds, timeout_seconds == 1 ? "" : "s");
-        else
+        } else {
+            test_execution_failed(WIFSIGNALED(status) ? TEST_EXEC_SIGNAL :
+                WIFEXITED(status) && WEXITSTATUS(status) ? TEST_EXEC_EXIT_ERROR : TEST_EXEC_MISSING_REPORT);
             snprintf(reason, sizeof(reason), "test process failed (signal=%d, exit=%d)", WIFSIGNALED(status) ? WTERMSIG(status) : 0, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        }
         if (step[0]) {
             size_t used = strlen(reason);
             snprintf(reason + used, sizeof(reason) - used, "; step=%s", step);
@@ -178,7 +195,12 @@ static enum result run_isolated(enum result (*run)(const char **),
         return WIFSIGNALED(status) ? RESULT_FAIL : RESULT_ERROR;
     }
     munmap(step, 128);
-    if (report.result < RESULT_PASS || report.result > RESULT_ERROR) { *why = "invalid child result"; return RESULT_ERROR; }
+    if (report.result < RESULT_PASS || report.result > RESULT_ERROR) { *why = "invalid child result"; test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR; }
+    if (report.execution < TEST_EXEC_NORMAL || report.execution > TEST_EXEC_NOT_RUN) {
+        *why = "invalid child execution kind";
+        test_execution_failed(TEST_EXEC_ERROR); return RESULT_ERROR;
+    }
+    if (report.execution != TEST_EXEC_NORMAL) test_execution_failed(report.execution);
     snprintf(reason, sizeof(reason), "%s", report.why);
     *why = reason[0] ? reason : NULL;
     return report.result;

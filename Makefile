@@ -130,3 +130,16 @@ check-phase8-ubsan: check-oracles ai-test-iip-ubsan
 check-phase8-mutations: check-registry
 	$(PYTHON) scripts/check_mutations.py --output artifacts/phase8/mutations \
 		--experiment oracle_checksum_disabled --experiment oracle_payload_suppressed
+
+.PHONY: check-phase9 check-phase9-asan check-phase9-ubsan check-phase9-mutations
+check-phase9: check-registry ai-test-iip
+	$(PYTHON) scripts/run_phase.py --phase 9 --output artifacts/phase9/normal ./ai-test-iip
+
+check-phase9-asan: check-registry ai-test-iip-asan
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 $(PYTHON) scripts/run_phase.py --phase 9 --output artifacts/phase9/asan ./ai-test-iip-asan
+
+check-phase9-ubsan: check-registry ai-test-iip-ubsan
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) scripts/run_phase.py --phase 9 --output artifacts/phase9/ubsan ./ai-test-iip-ubsan
+
+check-phase9-mutations: check-registry
+	$(PYTHON) scripts/check_mutations.py --phase9 --output artifacts/phase9/mutations

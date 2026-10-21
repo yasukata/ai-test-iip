@@ -473,7 +473,10 @@
         "legacy-fixture",
         "derived-events"
       ],
-      "oracle_review": "White-box scope includes scenario setup, internal helper calls and/or internal observations; retain useful wire/callback checks without claiming a native black-box oracle. See the case oracle and source inventory for the actual predicates."
+      "oracle_review": "White-box scope includes scenario setup, internal helper calls and/or internal observations; retain useful wire/callback checks without claiming a native black-box oracle. See the case oracle and source inventory for the actual predicates.",
+      "mutation_experiments": [
+        "p9_rto_backoff"
+      ]
     },
     {
       "id": "MUST-20",
@@ -6135,7 +6138,11 @@
         "packet-clock-abi",
         "legacy-fixture"
       ],
-      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace."
+      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace.",
+      "mutation_experiments": [
+        "p9_invalid_ack",
+        "p9_release_partial"
+      ]
     },
     {
       "id": "TCP-SEQ-00000001-FUTURE-ACK",
@@ -6795,7 +6802,10 @@
         "packet-clock-abi",
         "legacy-fixture"
       ],
-      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace."
+      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace.",
+      "mutation_experiments": [
+        "p9_seq_unsigned"
+      ]
     },
     {
       "id": "TCP-SEQ-FFFFFFFE-FIN",
@@ -7015,7 +7025,10 @@
         "packet-clock-abi",
         "legacy-fixture"
       ],
-      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace."
+      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace.",
+      "mutation_experiments": [
+        "p9_fin_sequence"
+      ]
     },
     {
       "id": "TCP-SEQ-FFFFFFFF-OVERLAP",
@@ -7697,7 +7710,10 @@
         "packet-clock-abi",
         "legacy-fixture"
       ],
-      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace."
+      "oracle_review": "Placed sequence/window fixture; packet and delivered-byte checks supplemented by internal sequence/buffer observations. Does not establish a complete native handshake trace.",
+      "mutation_experiments": [
+        "p9_zero_window"
+      ]
     },
     {
       "id": "TCP-SEQ-7FFFFFFF-ZERO-WINDOW",
@@ -10249,7 +10265,10 @@
         "packet-clock-abi",
         "legacy-fixture"
       ],
-      "oracle_review": "Byte-built malformed input; placed TCP state and same-state clean control compare wire, callbacks and internal state. UDP callbacks observe length/first byte, not a complete application stream. No option-error adapter enabled."
+      "oracle_review": "Byte-built malformed input; placed TCP state and same-state clean control compare wire, callbacks and internal state. UDP callbacks observe length/first byte, not a complete application stream. No option-error adapter enabled.",
+      "mutation_experiments": [
+        "p9_option_overrun"
+      ]
     },
     {
       "id": "MAL-TCP-OPTION-255",
@@ -12550,7 +12569,10 @@
         "packet-clock-abi",
         "scripted-wire-peer"
       ],
-      "oracle_review": "Native OPEN/SEND/CLOSE/RUN, callback ID/bytes/EOF and byte-decoded wire output. Inputs and expectations never use connection state, timer or sequence fields. ISN hook is installed but its value is learned only from SYN output."
+      "oracle_review": "Native OPEN/SEND/CLOSE/RUN, callback ID/bytes/EOF and byte-decoded wire output. Inputs and expectations never use connection state, timer or sequence fields. ISN hook is installed but its value is learned only from SYN output.",
+      "mutation_experiments": [
+        "p9_duplicate_delivery"
+      ]
     },
     {
       "id": "ORACLE-TCP-CHECKSUM",
@@ -12594,6 +12616,56 @@
         "linux-reference"
       ],
       "oracle_review": "Native OPEN/SEND/CLOSE/RUN, callback ID/bytes/EOF and byte-decoded wire output. Inputs and expectations never use connection state, timer or sequence fields. ISN hook is installed but its value is learned only from SYN output."
+    },
+    {
+      "strength": "PROFILE",
+      "profile": "regression",
+      "phase": 9,
+      "coverage": "partial",
+      "responsibility": "native iip + packet/clock/callback ABI; no protocol substitute",
+      "oracle_dependencies": [
+        "packet-clock-abi",
+        "legacy-fixture"
+      ],
+      "gaps": "Finite scenarios; mutation detection does not prove RFC compliance or memory safety.",
+      "id": "MUTATION-SACK-INVALID",
+      "function": "test_mutation_invalid_sack",
+      "description": "Reject reversed/empty SACK blocks with valid-block and retransmission controls",
+      "requirement_id": "RFC2018:INVALID-BLOCK-PROFILE",
+      "source": "https://www.rfc-editor.org/rfc/rfc2018.html#section-3",
+      "applicability": "Placed ESTABLISHED IPv4 fixture; SACK enabled; 24-byte flight at sequence 4096.",
+      "requirement": "SACK left edge denotes first byte received and right edge the byte immediately following the block. Selected robustness profile: reversed/empty blocks cannot add scoreboard entries or free unacknowledged bytes.",
+      "oracle": "Inspect scoreboard and retained buffers after reversed/empty blocks; valid block positive control; wire retransmission of first hole with known bytes/checksum.",
+      "oracle_class": "white-box",
+      "oracle_review": "Placed sender state and internal scoreboard/buffer checks; wire recovery supplement. Does not require a particular congestion recovery algorithm.",
+      "mutation_experiments": [
+        "p9_invalid_sack"
+      ]
+    },
+    {
+      "strength": "PROFILE",
+      "profile": "regression",
+      "phase": 9,
+      "coverage": "partial",
+      "responsibility": "native iip + packet/clock/callback ABI; no protocol substitute",
+      "oracle_dependencies": [
+        "packet-clock-abi",
+        "scripted-wire-peer"
+      ],
+      "gaps": "Finite scenarios; mutation detection does not prove RFC compliance or memory safety.",
+      "id": "MUTATION-EOF-CALLBACK",
+      "function": "test_mutation_eof_callback",
+      "description": "Native FIN reports EOF exactly once, including duplicate FIN",
+      "requirement_id": "RFC9293:RECEIVE-EOF",
+      "source": "https://www.rfc-editor.org/rfc/rfc9293.html#section-3.9.1.3; https://www.rfc-editor.org/rfc/rfc9293.html#section-3.10.7.4",
+      "applicability": "Native active IPv4 handshake; peer sends three bytes then FIN; no Linux dependency.",
+      "requirement": "Receive processing signals the user when the peer closes its sending direction. Callback ABI maps this notification to CLOSE_WAIT; duplicate FIN must not duplicate that notification.",
+      "oracle": "Independent peer sequence and wire ACK; exact application bytes, EOF=0 before FIN and EOF=1 after FIN and duplicate FIN; native reset CLOSED control.",
+      "oracle_class": "external",
+      "oracle_review": "Native OPEN/RUN and byte-built peer; no target connection state, queues or sequence helpers for expected results. Uses shared documented callback ABI.",
+      "mutation_experiments": [
+        "p9_missing_callback"
+      ]
     }
   ],
   "phase6_scope": {

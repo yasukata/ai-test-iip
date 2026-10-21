@@ -65,6 +65,19 @@ static void report_tap_case(const struct test_case *c, enum result result,
     fflush(stdout);
 }
 
+static const char *test_execution_name(void)
+{
+    switch (test_execution) {
+    case TEST_EXEC_NORMAL: return "normal";
+    case TEST_EXEC_TIMEOUT: return "timeout";
+    case TEST_EXEC_SIGNAL: return "signal";
+    case TEST_EXEC_EXIT_ERROR: return "exit-error";
+    case TEST_EXEC_MISSING_REPORT: return "missing-report";
+    case TEST_EXEC_NOT_RUN: return "not-run";
+    default: return "infrastructure-error";
+    }
+}
+
 static void report_json_case(FILE *json, const struct test_case *c,
         enum result result, const char *why, size_t number)
 {
@@ -75,6 +88,7 @@ static void report_json_case(FILE *json, const struct test_case *c,
     fputs(",\"strength\":", json); json_string(json, c->strength);
     fputs(",\"profile\":", json); json_string(json, c->profile);
     fputs(",\"status\":", json); json_string(json, result_name(result));
+    fputs(",\"execution\":", json); json_string(json, test_execution_name());
     fputs(",\"coverage\":", json); json_string(json, c->coverage);
     fputs(",\"oracle_class\":", json); json_string(json, c->oracle_class);
     fputs(",\"reason\":", json); json_string(json, why);

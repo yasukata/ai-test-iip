@@ -182,6 +182,30 @@ static enum result test_oracle_receive(const char **why, int mode)
 }
 static enum result test_oracle_stream(const char **why)
 { return test_oracle_receive(why, 0); }
+/* Phase 9 survivor: stream-only traces have no FIN and cannot detect a
+ * missing EOF callback. Track peer sequence exclusively from wire input. */
+static enum result test_mutation_eof_callback(const char **why)
+{
+    struct oracle_peer p;
+    const uint8_t bytes[] = {0, 1, 2};
+    TEST_REQUIRE(why, oracle_open(&p), "EOF native handshake failed");
+    TEST_REQUIRE(why, oracle_input(&p, p.rx, 0x10, bytes, sizeof(bytes), 0) &&
+        oracle_received(&p, bytes, sizeof(bytes)) && p.state.oracle.eof == 0,
+        "EOF data positive control failed or premature EOF");
+    p.rx += sizeof(bytes);
+    TEST_REQUIRE(why, oracle_input(&p, p.rx, 0x11, NULL, 0, 0), "EOF FIN input failed");
+    p.rx++;
+    TEST_REQUIRE(why, p.state.oracle.eof == 1 && oracle_received(&p, bytes, sizeof(bytes)) &&
+        oracle_control(&p, 0x10),
+        "FIN: expected one EOF callback, intact bytes and ACK of FIN; actual EOF=%u",
+        p.state.oracle.eof);
+    TEST_REQUIRE(why, oracle_input(&p, p.rx - 1, 0x11, NULL, 0, 0) &&
+        p.state.oracle.eof == 1 && oracle_received(&p, bytes, sizeof(bytes)),
+        "duplicate FIN: repeated EOF or data corruption");
+    TEST_REQUIRE(why, oracle_reset(&p), "EOF native reset cleanup failed");
+    return RESULT_PASS;
+}
+
 static enum result test_oracle_duplicate(const char **why)
 { return test_oracle_receive(why, 1); }
 static enum result test_oracle_checksum(const char **why)

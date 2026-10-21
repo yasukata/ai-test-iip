@@ -858,3 +858,53 @@ static enum result test_seq_right_data_ffffffff_state(const char **why)
 
 static enum result test_seq_rx_fin_ffffffff_ack(const char **why)
 { return tcp_seq_receive_fin(why, UINT32_C(0xffffffff), 1); }
+
+/* Phase 9 survivor: valid SACK blocks alone cannot exercise the ordering
+ * gate. SACK is advisory; scoreboard inspection is a white-box supplement,
+ * not a requirement to select a particular loss-recovery algorithm. */
+static enum result test_mutation_invalid_sack(const char **why)
+{
+    struct fixture f;
+    struct tcp_packet_spec spec;
+    const uint32_t base = 4096;
+    uint8_t option[12] = {5, 10, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1};
+    if (!II_CONF_TCP_OPT_SACK_OK) {
+        *why = "SACK disabled by II_CONF_TCP_OPT_SACK_OK";
+        return RESULT_SKIP;
+    }
+    if (!fixture_init(&f)) return RESULT_ERROR;
+    tcp_seq_sender_at(&f, base);
+    f.conn->flags |= II_TCP_CONN_FLAGS_SACK_OK;
+    for (unsigned i = 0; i < 3; i++)
+        TEST_REQUIRE(why, tcp_seq_send(&f, i * 8, 8), "invalid SACK setup send failed");
+    TEST_REQUIRE(why, tcp_seq_wire_bytes(&f, base, 0, 24), "invalid SACK setup incomplete flight");
+    free_output(&f.state);
+    /* Reversed and empty blocks may not add selectively received bytes. */
+    for (unsigned row = 0; row < 2; row++) {
+        uint32_t left = ii_htonl(base + 16), right = ii_htonl(base + (row ? 16 : 8));
+        memcpy(option + 2, &left, 4); memcpy(option + 6, &right, 4);
+        fixture_incoming_spec(&f, &spec, 0, NULL, 0);
+        spec.ack_seq = base;
+        tcp_packet_add_raw_option(&spec, option, sizeof(option));
+        fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+        TEST_REQUIRE(why, f.conn->sack.cnt == 0 && f.conn->acked_seq == base &&
+            tcp_seq_buffers(&f, base, 0, 24),
+            "invalid SACK row=%u: expected empty scoreboard/retained flight; actual blocks=%u UNA=%u",
+            row, f.conn->sack.cnt, f.conn->acked_seq);
+        free_output(&f.state);
+    }
+    /* Positive control: same format with a legitimate range must work. */
+    uint32_t left = ii_htonl(base + 8), right = ii_htonl(base + 24);
+    memcpy(option + 2, &left, 4); memcpy(option + 6, &right, 4);
+    fixture_incoming_spec(&f, &spec, 0, NULL, 0); spec.ack_seq = base;
+    tcp_packet_add_raw_option(&spec, option, sizeof(option));
+    fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
+    TEST_REQUIRE(why, f.conn->sack.cnt == 1 && f.conn->sack.extent[0].v == base + 8 &&
+        f.conn->sack.extent[0].l == 16 && tcp_seq_buffers(&f, base, 0, 24),
+        "valid SACK positive control: expected [4104,4120) and retained flight");
+    free_output(&f.state);
+    fixture_advance_ms(&f, (uint64_t)f.conn->rto_ms + 501);
+    TEST_REQUIRE(why, tcp_seq_wire_range(&f, base, 0, 8, 24),
+        "invalid/valid SACK recovery: missing intact first hole retransmission");
+    return RESULT_PASS;
+}

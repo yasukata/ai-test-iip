@@ -90,6 +90,30 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
                        str(ROOT / "tests/reporting_harness.c")], check=True,
                        capture_output=True, text=True)
 
+    def test_mutation_runner_rejects_real_abnormal_children(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import check_mutations as mutations
+        for case, execution in [('TIMEOUT', 'timeout'), ('WATCHDOG', 'timeout'),
+                                ('SIGNAL', 'signal'), ('EXIT', 'exit-error'),
+                                ('LEGACY-TIMEOUT', 'timeout'), ('LEGACY-SIGNAL', 'signal'),
+                                ('MISSING', 'missing-report'), ('FAIL', 'normal')]:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                out = Path(temp)
+                if execution == 'normal':
+                    self.assertEqual(mutations.run_case(self.binary, out, 'run', case), ('FAIL', 1))
+                else:
+                    with self.assertRaisesRegex(ValueError, 'execution=' + execution):
+                        mutations.run_case(self.binary, out, 'run', case)
+                report = json.loads((out / 'run.json').read_text())
+                self.assertEqual(report['cases'][0]['execution'], execution)
+                if execution in ('signal', 'timeout'):
+                    self.assertEqual(report['cases'][0]['status'], 'FAIL')
+                    self.assertEqual(report['exit_code'], 1)
+        # The next top-level case starts with a clean execution classification.
+        _, report = self.run_case('--case', 'SIGNAL', '--case', 'PASS')
+        self.assertEqual({c['id']: c['execution'] for c in report['cases']},
+                         {'SIGNAL': 'signal', 'PASS': 'normal'})
+
     def test_stdout_write_failure_is_recorded_in_json(self):
         for identifier, status in [("PASS", "PASS"), ("FAIL", "FAIL"), ("ERROR", "ERROR")]:
             with self.subTest(case=identifier), tempfile.TemporaryDirectory() as temp:

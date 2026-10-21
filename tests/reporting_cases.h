@@ -64,6 +64,57 @@ static enum result synthetic_signal(const char **why)
     return RESULT_PASS;
 }
 
+static enum result synthetic_timeout(const char **why)
+{
+    (void)why;
+    alarm(1); /* Exercise the production SIGALRM path without a 30s wait. */
+    for (;;) pause();
+}
+
+static enum result synthetic_exit(const char **why)
+{
+    (void)why;
+    _exit(7);
+}
+
+static enum result synthetic_missing_report(const char **why)
+{
+    (void)why;
+    _exit(0);
+}
+
+static enum result synthetic_watchdog_child(const char **why)
+{
+    (void)why;
+    signal(SIGALRM, SIG_IGN);
+    for (;;) pause();
+}
+
+static enum result synthetic_watchdog(const char **why)
+{
+    enum result result = run_isolated(synthetic_watchdog_child, NULL, why, 1);
+    /* A later normal nested run must not erase the earlier process failure. */
+    const char *ignored = NULL;
+    (void)run_isolated(synthetic_pass, NULL, &ignored, 1);
+    return result;
+}
+
+static enum result synthetic_legacy_child(const char **why, int hang)
+{
+    (void)why;
+    pid_t child = fork();
+    assert(child >= 0);
+    if (!child) {
+        if (!hang) raise(SIGKILL);
+        for (;;) pause();
+    }
+    return wait_test_child(child, 100) ? RESULT_PASS : RESULT_FAIL;
+}
+static enum result synthetic_legacy_timeout(const char **why)
+{ return synthetic_legacy_child(why, 1); }
+static enum result synthetic_legacy_signal(const char **why)
+{ return synthetic_legacy_child(why, 0); }
+
 static enum result synthetic_condition(const char **why)
 {
     (void)why;
@@ -126,6 +177,12 @@ static enum result synthetic_status_inconclusive(const char **why)
 }
 
 static const struct test_case test_cases[] = {
+    { synthetic_legacy_timeout, "LEGACY-TIMEOUT", "legacy child timeout", "TEST:LEGACY-TIMEOUT", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
+    { synthetic_legacy_signal, "LEGACY-SIGNAL", "legacy child signal", "TEST:LEGACY-SIGNAL", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
+    { synthetic_timeout, "TIMEOUT", "synthetic timeout", "TEST:TIMEOUT", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
+    { synthetic_watchdog, "WATCHDOG", "nested parent watchdog", "TEST:WATCHDOG", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
+    { synthetic_exit, "EXIT", "synthetic exit", "TEST:EXIT", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
+    { synthetic_missing_report, "MISSING", "synthetic missing report", "TEST:MISSING", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
     { synthetic_setup_failure, "SETUP", "synthetic setup error", "TEST:SETUP", "tests/reporting_cases.h", "SHOULD", "base", "partial", "harness" },
     { synthetic_pass, "PASS", "synthetic PASS", "TEST:PASS", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },
     { synthetic_fail, "FAIL", "synthetic FAIL", "TEST:FAIL", "tests/reporting_cases.h", "MUST", "base", "partial", "harness" },

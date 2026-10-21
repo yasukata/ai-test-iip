@@ -78,8 +78,10 @@ int main(int argc, char **argv)
         const struct test_case *c = &test_cases[i];
         const char *why = NULL;
         enum result r;
+        test_execution = TEST_EXEC_NORMAL;
         if ((!tfo && !strncmp(c->id, "TFO-", 4)) || !profile_enabled(c->profile, tfo, strict, blake)) {
             r = RESULT_SKIP;
+            test_execution = TEST_EXEC_NOT_RUN;
             why = !strcmp(c->profile, "strict-api")
                 ? "strict-api not selected; use --strict-api or IIP_TEST_STRICT_API_CONTRACT=1"
                 : "explicitly disabled optional profile";

@@ -351,6 +351,10 @@ static int wait_test_child(pid_t child, unsigned int timeout_ms)
 			if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
 				return 1;
 			if (WIFSIGNALED(status))
+				test_execution_failed(WTERMSIG(status) == SIGALRM ? TEST_EXEC_TIMEOUT : TEST_EXEC_SIGNAL);
+			else if (WIFEXITED(status) && WEXITSTATUS(status) > 1)
+				test_execution_failed(TEST_EXEC_EXIT_ERROR);
+			if (WIFSIGNALED(status))
 				fprintf(stderr,
 					"FAILED CHILD: pid=%ld terminated by signal=%d\n",
 					(long)child, WTERMSIG(status));
@@ -366,6 +370,7 @@ static int wait_test_child(pid_t child, unsigned int timeout_ms)
 		}
 		usleep(10 * 1000);
 	}
+	test_execution_failed(TEST_EXEC_TIMEOUT);
 	fprintf(stderr, "FAILED CHILD: pid=%ld timed out after %u ms\n",
 			(long)child, timeout_ms);
 	kill(child, SIGKILL);
