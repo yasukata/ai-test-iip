@@ -200,6 +200,15 @@ static int test_backend_tcp_payload(struct iip_workspace *w,
 
 static int test_backend_callback(struct iip_workspace *w, uint32_t id, uint32_t pb_id, enum test_backend_callback_type type, void *opaque)
 {
+	struct test_state *state = opaque;
+	if (state->oracle.enabled) {
+		if (type == TEST_BACKEND_CONNECTED) {
+			state->oracle.conn_id = id;
+			state->oracle.connected++;
+		}
+		if (type == TEST_BACKEND_CLOSE_WAIT) state->oracle.eof++;
+		if (type == TEST_BACKEND_CLOSED) state->oracle.closed++;
+	}
 	struct ii_tcp_conn *conn = &w->tcp_conns.array[id];
 	struct ii_pb *p = &w->pbs.array[pb_id];
 	test_event_tcp_state_set(opaque, conn, conn->state);

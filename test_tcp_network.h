@@ -8,21 +8,33 @@ static enum result test_invalid_open_destination(const char **why)
 		0x00000000U, 0xe0000001U, 0xffffffffU,
 	};
 	unsigned int i;
+	int ok = 1;
 	(void)why;
 	for (i = 0; i < sizeof(invalid_destinations) /
 			sizeof(invalid_destinations[0]); i++) {
 		struct fixture f;
 		if (!fixture_init(&f))
 			return RESULT_FAIL;
-		test_event_log_clear(&f.state);
-		test_api_connect(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
+		/* Positive control proves OPEN/RUN reaches native wire output. The
+		 * connect adapter does not emit state-transition events. */
+		TEST_REQUIRE(why, test_api_connect(f.ws, f.local_mac, ii_htonl(0xc0000201U),
+				ii_htons(12000), f.peer_mac, ii_htonl(0xc6336402U),
+				ii_htons(22000), &f.state) == 0, "valid OPEN control rejected");
+		fixture_run_timers(&f);
+		TEST_REQUIRE(why, f.state.out_cnt && PB_TCP_HDR_HAS_SYN(f.state.out[0]),
+				"valid OPEN control produced no SYN");
+		free_output(&f.state);
+		uint16_t rc = test_api_connect(f.ws, f.local_mac, ii_htonl(f.conn->src_ip[0]),
 				ii_htons(11000 + i), f.peer_mac,
 				ii_htonl(invalid_destinations[i]),
 				ii_htons(22000), &f.state);
-		if (test_event_count(&f.state, TEST_EVENT_STATE_TRANSITION, 0) != 0)
-			return RESULT_FAIL;
+		fixture_run_timers(&f);
+		TEST_ACCUMULATE(ok, rc == UINT16_MAX && f.state.out_cnt == 0,
+				"invalid destination %08x: expected OPEN error and no SYN, actual rc=%u outputs=%u",
+				invalid_destinations[i], rc, f.state.out_cnt);
+		free_output(&f.state);
 	}
-	return RESULT_PASS;
+	return ok ? RESULT_PASS : RESULT_FAIL;
 }
 
 static enum result test_unknown_ip_option(const char **why)

@@ -404,6 +404,14 @@ struct test_state {
 	uint8_t udp_port_filter_enabled;
 	uint16_t udp_bound_port_be;
 	uint8_t ip4_option_error_integration;
+	/* Raw native callback observations for Phase 8. No inferred state/reason. */
+	struct {
+		uint8_t enabled, overflow;
+		uint32_t conn_id;
+		unsigned connected, eof, closed;
+		size_t length;
+		uint8_t bytes[128];
+	} oracle;
 	struct {
 		uint8_t auto_close;
 		unsigned int count;
@@ -1152,6 +1160,14 @@ static void test_record_tcp_payload(struct test_state *state, void *handle,
 		const uint8_t *data, uint16_t len)
 {
 	uint16_t i;
+	if (state->oracle.enabled) {
+		if (len > sizeof(state->oracle.bytes) - state->oracle.length)
+			state->oracle.overflow = 1;
+		else {
+			memcpy(state->oracle.bytes + state->oracle.length, data, len);
+			state->oracle.length += len;
+		}
+	}
 
 	state->payload_chunk_count++;
 	state->payload_byte_count += len;
@@ -2468,4 +2484,5 @@ static enum result test_legacy_sack_generation(const char **why)
 }
 
 #include "conformance_tests.h"
+#include "test_oracle.h"
 #include "test_runner.h"

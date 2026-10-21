@@ -48,9 +48,12 @@ def mutate(dst, name):
             chunk=replace_once(chunk,'for (i = 0; i < cnt; i++) {','for (i = 0; i < cnt; i++) {\n                            if (j == 2) continue; /* injected defect */')
         else: raise ValueError(name)
         s=s[:a]+chunk+s[b:]
-    elif name=='checksum_disabled':
+    elif name in ('checksum_disabled', 'oracle_checksum_disabled'):
         a=s.index('static enum iip_rc ii_tcp_rx_csum_check');b=s.index('\n}',a)
         chunk=s[a:b];s=s[:a]+replace_once(chunk,'return ii_ipv4_l4_input__csum_with_pseudo(w, pb_id, opaque);','return IIP_ERR_OK; /* injected defect */')+s[b:]
+    elif name=='oracle_payload_suppressed':
+        s=replace_once(s, '\n\t\t\tIIP_OPS_TCP_PAYLOAD();',
+                       '\n\t\t\tiip_ret_int = 0; /* injected defect: suppress native delivery */')
     elif name=='missing_ts_drop':
         anchor='static bool ii_tcp_paws(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)\n{'
         code='\n    if ((II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_SET_TS) && !(II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS) && !(II_PB(pb_id).tcp.flags & (II_TCP_FLAG_SYN | II_TCP_FLAG_RST))) return true;'
@@ -69,6 +72,8 @@ def mutate(dst, name):
     p.write_text(s)
 
 EXPERIMENTS=[
+ ('oracle_checksum_disabled','ORACLE-TCP-CHECKSUM','FAIL','target-defect'),
+ ('oracle_payload_suppressed','ORACLE-TCP-STREAM','FAIL','target-defect'),
  ('life_missing_close_callback','TCP-LIFE-RST-AFTER-RTO','FAIL','target-defect'),
  ('life_retained_connection','TCP-LIFE-REPEAT-RESET','FAIL','target-defect'),
  ('life_retained_sent','TCP-LIFE-RST-AFTER-RTO','FAIL','target-defect'),

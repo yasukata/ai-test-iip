@@ -76,6 +76,7 @@ static void report_json_case(FILE *json, const struct test_case *c,
     fputs(",\"profile\":", json); json_string(json, c->profile);
     fputs(",\"status\":", json); json_string(json, result_name(result));
     fputs(",\"coverage\":", json); json_string(json, c->coverage);
+    fputs(",\"oracle_class\":", json); json_string(json, c->oracle_class);
     fputs(",\"reason\":", json); json_string(json, why);
     fputs("}", json);
     fflush(json);

@@ -113,3 +113,20 @@ check-phase7-mutations: check-registry
 	$(PYTHON) scripts/check_mutations.py --output artifacts/phase7/mutations \
 		--experiment life_missing_close_callback --experiment life_retained_connection \
 		--experiment life_retained_sent
+
+.PHONY: check-oracles check-phase8 check-phase8-asan check-phase8-ubsan check-phase8-mutations
+check-oracles: check-registry
+	$(PYTHON) scripts/audit_oracles.py
+
+check-phase8: check-oracles ai-test-iip
+	$(PYTHON) scripts/run_phase.py --phase 8 --output artifacts/phase8/normal ./ai-test-iip
+
+check-phase8-asan: check-oracles ai-test-iip-asan
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 $(PYTHON) scripts/run_phase.py --phase 8 --output artifacts/phase8/asan ./ai-test-iip-asan
+
+check-phase8-ubsan: check-oracles ai-test-iip-ubsan
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(PYTHON) scripts/run_phase.py --phase 8 --output artifacts/phase8/ubsan ./ai-test-iip-ubsan
+
+check-phase8-mutations: check-registry
+	$(PYTHON) scripts/check_mutations.py --output artifacts/phase8/mutations \
+		--experiment oracle_checksum_disabled --experiment oracle_payload_suppressed

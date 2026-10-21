@@ -2,6 +2,7 @@
 struct test_case {
     enum result (*run)(const char **);
     const char *id, *description, *requirement, *source, *strength, *profile, *coverage;
+    const char *oracle_class;
 };
 /* A separate harness executable may supply deterministic reporting cases. */
 #ifndef TEST_CASE_REGISTRY
@@ -65,7 +66,7 @@ int main(int argc, char **argv)
         if (only_tfo && strncmp(c->id, "TFO-", 4)) enabled[i] = false;
         if (!enabled[i]) continue;
         count++;
-        if (list) printf("%s\t%s\t%s\t%s\n", c->id, c->profile, c->source, c->description);
+        if (list) printf("%s\t%s\t%s\t%s\t%s\n", c->id, c->profile, c->source, c->description, c->oracle_class);
     }
     if (list) return report_stdout_failed() ? 2 : 0;
     if (!count) return main_usage();

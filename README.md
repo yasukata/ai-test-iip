@@ -100,6 +100,10 @@ Each protocol case runs in a child process with a 30-second timeout. Self-tests 
 | `make check-phase7` | Run lifecycle and resource safety cases marked `phase: 7` in the ledger |
 | `make check-phase7-asan` / `make check-phase7-ubsan` | Run phase 7 under each sanitizer |
 | `make check-phase7-mutations` | Check lifecycle defects in isolated source copies |
+| `make check-oracles` | Validate every case's oracle provenance and write the source inventory |
+| `make check-phase8` | Run four independent-oracle cases and the corrected invalid-OPEN case |
+| `make check-phase8-asan` / `make check-phase8-ubsan` | Run phase 8 under each sanitizer |
+| `make check-phase8-mutations` | Verify native checksum and delivery defect detection |
 | `make check-phase6-mutations` | Check four flow/congestion defects in isolated source copies |
 | `make check-mutations` | Run mutation experiments |
 | `make check-conformance` | Run with `--conformance` and capture the sources and run artifacts |
@@ -185,6 +189,55 @@ The evaluated system combines iip over IPv4 with this repository's callbacks, pa
 Cases that place a state directly and traces that reach it through transitions provide different observations. Receive-window boundary cases use an emitted advertised window as a precondition rather than relying only on internal buffer capacity. If a required precondition cannot be observed, the case is `INCONCLUSIVE`.
 
 `IP4-OPT-2` uses a test-side adapter for IPv4 option validation and ICMP Parameter Problem generation. `UDP-PORT-1` uses test-side port binding and a callback for ICMP Port Unreachable generation. These cases do not measure those features as native iip functionality. The `strict-api` profile includes API contracts selected by the test suite; the BLAKE2 case does not establish cryptographic security.
+
+### Oracle provenance
+
+Every ledger entry has `oracle_class`, `oracle_dependencies`, and `oracle_review`.
+The class also appears in `--list` and JSON; captured requirement reports group
+statuses by class. Classes describe evidence, independently of MUST/SHOULD or
+the selected execution profile:
+
+| Class | Meaning |
+| --- | --- |
+| `external` | Verdict uses wire bytes and native callback/API observations; no connection-state oracle |
+| `white-box` | Includes internal fixture placement, helper calls, or internal assertions; may also verify external behavior |
+| `adapter` | The property includes behavior supplied by a test-side adapter; read the dependency description |
+| `harness` | Tests observers/builders/synthetic events, with no claim of independent target conformance |
+| `unavailable` | Missing target capability is explicitly recorded as INCONCLUSIVE |
+
+The dependency catalog identifies listener policy, source selection/routes,
+input filtering, ICMP error generation, ISN/TFO hashing, configuration setters,
+derived events and fault injection. In particular, timer/retransmission/loss
+events inferred by `test_api_record_run_events` and CLOSED reasons inferred
+from connection flags are internal observations. Synthetic runner and mutation
+observer counterexamples do not count as native protocol evidence.
+
+`make check-oracles` writes `artifacts/phase8/oracle-audit.json`, with every case's
+entry location, reachable helpers, internal-access candidates and ledger hash.
+The preprocessor expands generated wrappers. The inventory follows direct calls
+and stops at the documented native/ABI boundaries; it is not a complete C
+analysis, a path-feasibility proof, or an automatic certification of independence.
+The conservative `white-box` label includes fixtures even when the final check
+is an external one. Existing useful white-box cases are retained.
+
+`ORACLE-TCP-*` uses native OPEN/SEND/CLOSE/RUN and a separate byte-oriented peer.
+It obtains sequence numbers from emitted SYNs, validates output lengths and
+checksums, and compares actual callback bytes, including wraparound, gap filling,
+duplicates, bad-checksum rejection and fresh-data recovery. The callback binding
+still decodes iip's descriptor ABI, and the harness supplies packet/clock/pool
+initialization. These cases are independent of connection-state expectations,
+not independent of all integration code.
+
+`ORACLE-TCP-LINUX` executes the same two-write/EOF/reverse-write application trace
+using Linux loopback TCP sockets. Both implementations must match explicit
+expected bytes/EOF before their normalized observations are compared. Segment
+boundaries, ISNs, ACK timing and congestion behavior are not compared. This is
+application-level differential testing, not iip-to-Linux packet interoperability.
+It needs permission to create ordinary sockets on `127.0.0.1`; missing Linux or
+socket availability is INCONCLUSIVE, never a silent skip. Socket timeouts bound
+execution only; native protocol tests use virtual time and no real-time sleeps.
+Agreement does not establish RFC compliance. The ledger's `oracle_review` and
+`gaps` fields describe each case's scope and remaining limitations.
 
 The ledger records requirement strength in `strength` and, for applicable cases, `strength_basis`. `PROTOCOL` denotes a protocol processing instruction, while `PROFILE` denotes a selected test condition; violations of either are reported as `FAIL`. Some cases separate recommended ACK observations from state and delivery conditions. See each entry's `applicability`, `oracle`, and `gaps` for its preconditions and limits.
 

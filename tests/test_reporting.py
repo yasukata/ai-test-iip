@@ -29,6 +29,12 @@ class Reporting(HarnessRun, unittest.TestCase):
         self.assertIn('1..1\n',r.stdout)
         self.assertEqual([c['id'] for c in j['cases']],['MUST-7'])
         self.assertEqual(j['conformance'],'NOT_ESTABLISHED')
+        self.assertEqual(j['cases'][0]['oracle_class'], 'white-box')
+
+    def test_external_oracle_provenance_is_reported(self):
+        r, j = self.run_case('--case', 'ORACLE-TCP-STREAM')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(j['cases'][0]['oracle_class'], 'external')
 
     def test_unknown_case_is_error(self):
         r,j = self.run_case('--case','DOES-NOT-EXIST')
@@ -97,6 +103,7 @@ class SyntheticReporting(HarnessRun, unittest.TestCase):
                 report = json.loads(dest.read_text())
                 self.assertEqual(report["exit_code"], 2)
                 self.assertEqual(report["cases"][0]["status"], status)
+                self.assertEqual(report["cases"][0]["oracle_class"], 'harness')
 
     def test_list_reports_stdout_failure(self):
         with open("/dev/full", "w") as output:

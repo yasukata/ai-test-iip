@@ -48,10 +48,15 @@ def main():
         result = json.loads((dest/'results.json').read_text())
         ledger = {c['id']:c for c in json.loads((ROOT/'requirements.json').read_text())['cases']}
         groups = {}
+        oracle_summary = {}
         for c in result['cases']:
             entry = dict(ledger[c['id']]); entry.update(c)
             groups.setdefault(c['requirement_id'], []).append(entry)
-        (dest/'requirements-report.json').write_text(json.dumps(dict(conformance='NOT_ESTABLISHED', requirements=groups),indent=2)+'\n')
+            counts = oracle_summary.setdefault(entry['oracle_class'], {})
+            counts[c['status']] = counts.get(c['status'], 0) + 1
+        (dest/'requirements-report.json').write_text(json.dumps(dict(conformance='NOT_ESTABLISHED',
+            oracle_summary=oracle_summary, oracle_dependencies=json.loads((ROOT/'requirements.json').read_text())['oracle_dependencies'],
+            requirements=groups),indent=2)+'\n')
     print(f'{dest}: exit={r.returncode}')
     return r.returncode if r.returncode >= 0 else 128-r.returncode
 
