@@ -347,10 +347,13 @@ static enum result test_required_options(const char **why)
 			return RESULT_FAIL;
 		}
 		f.conn->state = II_TCP_STATE_SYN_SENT;
+		/* A SYN-SENT endpoint has sent its SYN: SND.NXT = ISS + 1, SND.UNA = ISS. */
+		f.conn->seq = f.conn->sent_seq = f.conn->iss + 1U;
+		f.conn->acked_seq = f.conn->iss;
 		f.conn->flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
 		fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 		spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
-		spec.ack_seq = f.conn->seq + 1;
+		spec.ack_seq = f.conn->iss + 1U;
 		if (variant)
 			tcp_packet_add_nop(&spec);
 		/* The zero inside this MSS value is data, not an EOL kind. */

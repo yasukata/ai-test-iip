@@ -334,11 +334,14 @@ static int mss_boundary_case(uint16_t advertised_mss)
 	if (!fixture_init(&f))
 		return 0;
 	f.conn->state = II_TCP_STATE_SYN_SENT;
+	/* A SYN-SENT endpoint has sent its SYN: SND.NXT = ISS + 1, SND.UNA = ISS. */
+	f.conn->seq = f.conn->sent_seq = f.conn->iss + 1U;
+	f.conn->acked_seq = f.conn->iss;
 	/* Exercise small MSS without Timestamp option overhead. */
 	f.conn->flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
 	fixture_incoming_spec(&f, &spec, 100, NULL, 0);
 	spec.tcp_flags = TEST_TCP_SYN | TEST_TCP_ACK;
-	spec.ack_seq = f.conn->seq + 1;
+	spec.ack_seq = f.conn->iss + 1U;
 	tcp_packet_add_mss(&spec, advertised_mss);
 	fixture_deliver(&f, build_tcp_packet(&spec, &f.state));
 	if (f.state.payload_chunk_count != 0)
