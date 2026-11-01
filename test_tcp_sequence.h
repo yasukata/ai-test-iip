@@ -116,6 +116,13 @@ static enum result tcp_seq_future_ack(const char **why, uint32_t start, int fin)
     const uint8_t data[] = { 0, 1 };
     if (!fixture_init(&f)) return RESULT_ERROR;
     tcp_seq_sender_at(&f, start);
+    /* The 8-octet MSS used to segment the sender stream is below the
+     * 12-octet option allowance iip_tcp_rxbuf_consumed() subtracts, so
+     * consuming received data from the callback would fail and abort
+     * ii_tcp_conn_work() before acknowledged buffers are released.  Keep
+     * the received octets unconsumed; this case does not test the receive
+     * window. */
+    f.state.defer_payload_consumption = 1;
     TEST_REQUIRE(why, tcp_seq_send(&f, 0, 8) && tcp_seq_wire_bytes(&f, start, 0, 8),
         "seq=%08x future ACK setup: missing data", start);
     free_output(&f.state);
