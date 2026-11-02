@@ -737,6 +737,12 @@ static enum result tcp_advertised_edge(const char **why, unsigned mode)
     if (!fixture_init(&f)) return RESULT_ERROR;
     tcp_seq_sender_at(&f, 20000);
     tcp_model_receive_at(&f, 10000);
+    /* tcp_seq_sender_at() uses an 8-octet MSS, below the 12-octet option
+     * allowance iip_tcp_rxbuf_consumed() subtracts; consuming from the
+     * payload callback would fail and abort input processing before the
+     * queued last byte is pulled. Keep received octets unconsumed; the
+     * capacity stays far above the advertised window. */
+    f.state.defer_payload_consumption = 1;
     TEST_REQUIRE(why, tcp_seq_send(&f, 0, 1), "edge setup: transmit byte failed");
     uint32_t window = 0;
     for (unsigned i = 0; i < f.state.out_cnt; i++) {
