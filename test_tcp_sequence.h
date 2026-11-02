@@ -243,7 +243,7 @@ static enum result tcp_seq_overlap(const char **why, uint32_t start)
             (unsigned long long)f.state.payload_byte_count, f.conn->seq_next_expected, f.state.deferred_payload_len);
         free_output(&f.state);
     }
-    TEST_REQUIRE(why, f.conn->buf.used == 12 && !test_ring_end(f.ws, &f.conn->rx_ring, 0),
+    TEST_REQUIRE(why, f.conn->buf.used == 12 && !test_ring_end(f.ws, &f.conn->pending_ring, 0),
         "seq=%08x overlap: expected 12 unconsumed bytes and empty reorder queue; used=%u", start, f.conn->buf.used);
     TEST_REQUIRE(why, test_api_consumed(f.ws, f.conn, 12, &f.state) == 0 &&
         f.conn->buf.used >= f.conn->buf.adv_cnt && f.conn->buf.used - f.conn->buf.adv_cnt == 0,

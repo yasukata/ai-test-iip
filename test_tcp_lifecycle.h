@@ -346,7 +346,7 @@ static enum result test_life_rst_all_queues(const char **why)
     /* Continue resource checks even when RST wrongly emitted queued packets. */
     TEST_ACCUMULATE(ok, f.state.payload_byte_count == 0 &&
         !ii_pb_ring_num_used(&p.conn->pending_ring) && !ii_pb_ring_num_used(&p.conn->sent_ring) &&
-        !ii_pb_ring_num_used(&p.conn->tx_ring) && !ii_pb_ring_num_used(&p.conn->rx_ring), "RST failed to discard queued data");
+        !ii_pb_ring_num_used(&p.conn->tx_ring), "RST failed to discard queued data");
     if (!life_balanced(&f, &base)) ok = 0;
     if (!life_silent_after_close(&f, &p)) ok = 0;
     if (ok) free(f.ws);

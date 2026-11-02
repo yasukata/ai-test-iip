@@ -48,7 +48,7 @@ static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
 		ii_pb_ring_num_used(&f.conn->sent_ring) == 0;
 	closing = !!(f.conn->flags & II_TCP_CONN_FLAGS_CLOSING);
 	/* Finish the deferred close and verify its externally visible callback
-	 * and all four descriptor queues. ASan also detects invalid cleanup. */
+	 * and all three descriptor queues. ASan also detects invalid cleanup. */
 	if (closing && ii_tcp_conn_close_check(f.ws,
 			test_conn_id(f.ws, f.conn), &f.state) != IIP_ERR_OK) {
 		*why = "zero-MSS connection cleanup failed";
@@ -62,7 +62,6 @@ static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
 		*why = "zero-MSS transmission did not request connection closure";
 	else if (test_event_count(&f.state, TEST_EVENT_CALLBACK,
 			TEST_CALLBACK_CLOSED) != 1 ||
-			ii_pb_ring_num_used(&f.conn->rx_ring) ||
 			ii_pb_ring_num_used(&f.conn->tx_ring) ||
 			ii_pb_ring_num_used(&f.conn->sent_ring) ||
 			ii_pb_ring_num_used(&f.conn->pending_ring))
