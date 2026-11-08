@@ -18,8 +18,10 @@ static void iip_ops_pkt_set_len(void *, uint16_t, void *);
 static void *iip_ops_pkt_clone(void *, void *);
 static void iip_ops_pkt_scatter_gather_chain_append(void *, void *, void *);
 static uint16_t test_pkt_get_capacity(void *, void *);
+static long test_pkt_data_read(void *, uint8_t *, uint16_t, uint16_t, void *);
+static long test_pkt_data_write(void *, const uint8_t *, uint16_t, uint16_t, void *);
 static void iip_ops_l2_push(void *, void *);
-static int test_backend_ethernet_header(uint8_t *, uint8_t *, uint16_t, void *);
+static int test_backend_ethernet_header(uint8_t *, const uint8_t *, uint16_t, void *);
 static bool test_backend_ethernet_match(uint8_t *, void *);
 static bool test_backend_ipv4_match(uint8_t *, void *);
 static bool test_backend_accept(struct iip_workspace *, uint32_t, void *);
@@ -40,6 +42,10 @@ static void test_backend_tcp_connect(struct iip_workspace *, uint32_t, void *);
 #define IIP_OPS_PKT_ALLOC() do { *pkt = iip_ops_pkt_alloc(opaque); iip_ret_int = *pkt ? 0 : -1; } while (0)
 #define IIP_OPS_PKT_FREE() do { iip_ops_pkt_free(pkt, opaque); iip_ret_int = 0; } while (0)
 #define IIP_OPS_PKT_GET_DATA() do { iip_ret_u8_ptr = iip_ops_pkt_get_data(pkt, opaque); } while (0)
+/* iip no longer dereferences packet memory directly; it copies through these
+ * bounded accessors.  off is relative to the start of the Ethernet frame. */
+#define IIP_OPS_PKT_DATA_READ() do { iip_ret_long = test_pkt_data_read(pkt, buf, len, off, opaque); } while (0)
+#define IIP_OPS_PKT_DATA_WRITE() do { iip_ret_long = test_pkt_data_write(pkt, buf, len, off, opaque); } while (0)
 #define IIP_OPS_PKT_GET_LEN() do { iip_ret_len = iip_ops_pkt_get_len(pkt, opaque); } while (0)
 #define IIP_OPS_PKT_SET_LEN() do { iip_ops_pkt_set_len(pkt, len, opaque); iip_ret_int = 0; } while (0)
 #define IIP_OPS_PKT_GET_CAPACITY() do { iip_ret_len = test_pkt_get_capacity(pkt, opaque); } while (0)

@@ -223,7 +223,7 @@ static enum result test_tcp_capacity_failure_preserves_existing_queue(
 		return RESULT_FAIL;
 	}
 	pending = test_ring_end(f.ws, &f.conn->tx_ring, 0);
-	pending_pkt = pending->part_pkt[0];
+	pending_pkt = pending->part_pkt[0].p;
 
 	payload = fixture_oversized_tcp_payload(&f);
 	if (!payload) {
@@ -247,7 +247,7 @@ static enum result test_tcp_capacity_failure_preserves_existing_queue(
 		*why = "existing send queue endpoints changed after failure";
 		return RESULT_FAIL;
 	}
-	if (pending->part_pkt[0] != pending_pkt) {
+	if (pending->part_pkt[0].p != pending_pkt) {
 		*why = "existing queued packet was released after failure";
 		return RESULT_FAIL;
 	}

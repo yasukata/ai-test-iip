@@ -105,7 +105,7 @@ static struct iip_ip4_hdr *test_pkt_ip4(void *pkt)
 
 static struct iip_ip4_hdr *test_pb_ip4(struct ii_pb *p)
 {
-	return test_pkt_ip4(p->part_pkt[0]);
+	return test_pkt_ip4(p->part_pkt[0].p);
 }
 
 static void *test_pkt_l4(void *pkt)
@@ -118,7 +118,7 @@ static void *test_pkt_l4(void *pkt)
 
 static void *test_pb_l4(struct ii_pb *p)
 {
-	return test_pkt_l4(p->part_pkt[0]);
+	return test_pkt_l4(p->part_pkt[0].p);
 }
 
 #undef PB_IP4
@@ -908,6 +908,44 @@ static void *iip_ops_pkt_get_data(void *pkt, void *opaque)
 	}
 }
 
+/* Bounded copy accessors used by iip.  Bounds are checked against the real
+ * backing allocation (not test_pkt_get_capacity(), whose capacity-sequence
+ * fixtures must not be advanced by data accesses).  A request crossing the
+ * end of the backing buffer fails with -1 and copies nothing. */
+static long test_pkt_data_bounds(void *pkt, uint16_t len, uint16_t off)
+{
+	long *buf;
+	long avail;
+
+	if (!pkt)
+		return -1;
+	buf = (long *)((long *) pkt)[1];
+	avail = buf[5] - ((long *) pkt)[3];
+	if ((long) off + (long) len > avail)
+		return -1;
+	return 0;
+}
+
+static long test_pkt_data_read(void *pkt, uint8_t *dst, uint16_t len,
+		uint16_t off, void *opaque)
+{
+	(void) opaque;
+	if (test_pkt_data_bounds(pkt, len, off))
+		return -1;
+	memcpy(dst, (uint8_t *) iip_ops_pkt_get_data(pkt, NULL) + off, len);
+	return len;
+}
+
+static long test_pkt_data_write(void *pkt, const uint8_t *src, uint16_t len,
+		uint16_t off, void *opaque)
+{
+	(void) opaque;
+	if (test_pkt_data_bounds(pkt, len, off))
+		return -1;
+	memmove((uint8_t *) iip_ops_pkt_get_data(pkt, NULL) + off, src, len);
+	return len;
+}
+
 static uint16_t iip_ops_pkt_get_len(void *pkt, void *opaque)
 {
 	return (uint16_t)((long *) pkt)[2];
@@ -1123,7 +1161,7 @@ static uint8_t iip_ops_tcp_accept(void *mem, struct ii_pb *m, void *opaque)
 	test_event_append(state, TEST_EVENT_CALLBACK, TEST_CALLBACK_ACCEPT,
 			m, accepted && state->listener_mode ? i + 1 : 0, 0, 0, 0);
 	if (accepted)
-		test_capture_return_route(state, NULL, m->part_pkt[0]);
+		test_capture_return_route(state, NULL, m->part_pkt[0].p);
 	(void)mem;
 	return accepted;
 }
@@ -1147,7 +1185,7 @@ static void *iip_ops_tcp_connected(void *mem, void *handle, void *m, void *opaqu
 			ii_htonl(conn->src_ip[0]), ii_htons(conn->src_port),
 			ii_htonl(conn->dst_ip[0]), ii_htons(conn->dst_port));
 	if (!route || !route->application_defined)
-		route = test_capture_return_route(opaque, handle, ((struct ii_pb *)m)->part_pkt[0]);
+		route = test_capture_return_route(opaque, handle, ((struct ii_pb *)m)->part_pkt[0].p);
 	test_event_append(opaque, TEST_EVENT_CALLBACK, TEST_CALLBACK_CONNECTED,
 			handle, 0, 0, 0, 0);
 	(void)mem; (void)m;

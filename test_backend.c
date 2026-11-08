@@ -6,7 +6,7 @@ static void test_backend_tcp_connect(struct iip_workspace *w, uint32_t conn_id, 
 	II_TCP_CONN(conn_id).diffserv = state->connect_diffserv;
 }
 
-static int test_backend_ethernet_header(uint8_t *buf, uint8_t *dst, uint16_t proto, void *opaque)
+static int test_backend_ethernet_header(uint8_t *buf, const uint8_t *dst, uint16_t proto, void *opaque)
 {
 	struct test_state *state = opaque;
 	memcpy(buf, dst, 6);
@@ -40,7 +40,7 @@ static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *w,
 		uint32_t id, void *opaque)
 {
 	const uint8_t *ip = (const uint8_t *)iip_ops_pkt_get_data(
-		w->pbs.array[id].part_pkt[0], opaque) + II_ETH_HDR_LEN;
+		w->pbs.array[id].part_pkt[0].p, opaque) + II_ETH_HDR_LEN;
 	uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
 	uint32_t dst = ii_ntohl(ii_extract_ipv4_dst_be(ip));
 	/* This fixture has no subnet mask, so directed broadcasts are not
@@ -116,7 +116,7 @@ static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 	if (state->udp_port_filter_enabled) {
 		uint8_t quote[60 + II_UDP_HDR_LEN];
 		IIP_PKT_LEN_T copied;
-		uint8_t *frame = iip_ops_pkt_get_data(p->part_pkt[0], opaque);
+		uint8_t *frame = iip_ops_pkt_get_data(p->part_pkt[0].p, opaque);
 		const uint8_t *ip = frame + II_ETH_HDR_LEN;
 		uint8_t ihl = ii_extract_ipv4_hdr_len(ip);
 		uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
@@ -161,7 +161,7 @@ static int test_backend_tcp_payload(struct iip_workspace *w,
 	struct ii_tcp_conn *conn = &w->tcp_conns.array[id];
 	struct ii_pb *p = &w->pbs.array[pb_id];
 	uint16_t len = p->tcp.payload_len - p->tcp.inc_head - p->tcp.dec_tail;
-	void *first = p->part_pkt[0];
+	void *first = p->part_pkt[0].p;
 	/* Offset of the first delivered octet in the reassembled IPv4 payload. */
 	uint32_t skip = PB_TCP_HDR_LEN(first) * 4 + p->tcp.inc_head;
 	uint16_t at = 0;
@@ -172,7 +172,7 @@ static int test_backend_tcp_payload(struct iip_workspace *w,
 	 * observation per fragment, as the original harness did.
 	 */
 	for (uint16_t i = 0; i < p->cnt && at < len; i++) {
-		void *pkt = p->part_pkt[i];
+		void *pkt = p->part_pkt[i].p;
 		const uint8_t *data = (const uint8_t *)iip_ops_pkt_get_data(pkt, opaque) +
 			iip_ops_l2_hdr_len(pkt, opaque) + PB_IP4_HDR_LEN(pkt);
 		uint32_t part_len = PB_IP4_TOTAL_LEN(pkt) - PB_IP4_HDR_LEN(pkt);
@@ -231,7 +231,7 @@ static int test_backend_callback(struct iip_workspace *w, uint32_t id, uint32_t 
 			conn->opaque, opaque);
 		break;
 	case TEST_BACKEND_URGENT:
-		test_event_tcp_urgent(opaque, conn, conn->opaque, p->part_pkt[0]);
+		test_event_tcp_urgent(opaque, conn, conn->opaque, p->part_pkt[0].p);
 		break;
 	case TEST_BACKEND_FASTOPEN_REQUEST:
 		test_tcp_fastopen_request(ii_htonl(conn->dst_ip[0]),

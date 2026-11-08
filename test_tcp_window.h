@@ -533,7 +533,7 @@ static int test_receive_window_right_edge(const char **why)
 	fixture_deliver(&crossing,
 			build_tcp_packet(&spec, &crossing.state));
 	p = test_ring_end(crossing.ws, &crossing.conn->pending_ring, 0);
-	if (!p || PB_TCP_PAYLOAD_LEN(p->part_pkt[0]) - p->tcp.inc_head -
+	if (!p || PB_TCP_PAYLOAD_LEN(p->part_pkt[0].p) - p->tcp.inc_head -
 			p->tcp.dec_tail != 1 || p->tcp.dec_tail != 1) {
 		*why = "receiver did not trim an out-of-order segment at the window right edge";
 		return 0;

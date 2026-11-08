@@ -430,7 +430,7 @@ static uint16_t fixture_transmit_with_capacity_failure(struct fixture *f,
 {
 	/* Existing input payload keeps its real capacity.  The first output
 	 * segment fits; the next allocation exercises failure after partial work. */
-	packet_capacity_exempt_payload = p->part_pkt[0];
+	packet_capacity_exempt_payload = p->part_pkt[0].p;
 	packet_capacity_sequence_begin(2048, failing_capacity);
 	enum iip_rc rc = ii_tcp_xmit_queued_data_one(f->ws,
 		test_conn_id(f->ws, f->conn), (uint32_t)(p - f->ws->pbs.array),
