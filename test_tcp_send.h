@@ -192,6 +192,7 @@ static int fixture_queue_data_at_zero_window(struct fixture *f)
 
 	fixture_prepare_sender(f);
 	f->conn->peer_win = 0;
+	f->conn->flow_win = 0;
 	payload = iip_ops_pkt_alloc(&f->state);
 	if (!payload)
 		return 0;

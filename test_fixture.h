@@ -383,6 +383,7 @@ static void fixture_prepare_sender(struct fixture *f)
 	fake_clock_set_ns(&f->state, 1000000000ULL);
 	f->conn->peer_win = 65535;
 	f->conn->ws = 0;
+	f->conn->flow_win = 65535;
 	f->conn->acked_seq = f->conn->seq;
 	f->conn->ack_seq_xmitted = f->conn->ack_seq;
 }

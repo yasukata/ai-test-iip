@@ -167,6 +167,7 @@ static int no_indefinite_buffering_scenario(void)
 		return 0;
 	fake_clock_set_ns(&f.state, 1000000000ULL);
 	f.conn->peer_win = 65535;
+	f.conn->flow_win = 65535;
 	f.conn->acked_seq = f.conn->seq;
 	f.conn->ack_seq_xmitted = f.conn->ack_seq;
 	payload = iip_ops_pkt_alloc(&f.state);

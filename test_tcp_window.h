@@ -150,6 +150,7 @@ static int test_fin_only_at_zero_window(const char **why)
 		return 0;
 	fixture_prepare_sender(&f);
 	f.conn->peer_win = 0;
+	f.conn->flow_win = 0;
 	if (test_api_close(f.ws, f.conn, &f.state) == 0xffff)
 		return 0;
 	fixture_run_timers(&f);
