@@ -49,7 +49,7 @@ static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
 	closing = !!(f.conn->flags & II_TCP_CONN_FLAGS_CLOSING);
 	/* Finish the deferred close and verify its externally visible callback
 	 * and all three descriptor queues. ASan also detects invalid cleanup. */
-	if (closing && ii_tcp_conn_close_check(f.ws,
+	if (closing && test_tcp_conn_close_check(f.ws,
 			test_conn_id(f.ws, f.conn), &f.state) != IIP_ERR_OK) {
 		*why = "zero-MSS connection cleanup failed";
 		return RESULT_FAIL;

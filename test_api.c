@@ -13,6 +13,41 @@ static uint32_t test_conn_id(struct iip_workspace *w, struct ii_tcp_conn *conn)
 	return (uint32_t)(conn - w->tcp_conns.array);
 }
 
+/*
+ * iip now walks only w->tcp.used_conns in ii_work(); connections that a
+ * fixture allocates directly with ii_alloc_tcp_conn() must be registered
+ * there, as iip_tcp_ipv4_ethernet_connect() and passive open do.
+ */
+static void test_used_conn_register(struct iip_workspace *w, uint32_t id)
+{
+	assert(id < II_CONF_POOL_NUM_TCP_CONN);
+	assert(w->tcp.used_conns.cnt <= II_CONF_POOL_NUM_TCP_CONN);
+	for (uint16_t i = 0; i < w->tcp.used_conns.cnt; i++)
+		if (w->tcp.used_conns.conn_id[i] == id)
+			return;
+	assert(w->tcp.used_conns.cnt < II_CONF_POOL_NUM_TCP_CONN);
+	w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt++] = (IIP_TCP_CONN_P)id;
+}
+
+/* Mirror ii_work(): run the close check and drop a released id from used_conns. */
+static enum iip_rc test_tcp_conn_close_check(struct iip_workspace *w, uint32_t id, void *opaque)
+{
+	bool closed = false;
+	enum iip_rc rc;
+	test_used_conn_register(w, id);
+	rc = ii_tcp_conn_close_check(w, (IIP_TCP_CONN_P)id, &closed, opaque);
+	if (rc != IIP_ERR_OK || !closed)
+		return rc;
+	for (uint16_t i = 0; i < w->tcp.used_conns.cnt; i++) {
+		if (w->tcp.used_conns.conn_id[i] == id) {
+			w->tcp.used_conns.conn_id[i] = w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt - 1];
+			w->tcp.used_conns.cnt--;
+			break;
+		}
+	}
+	return rc;
+}
+
 static struct ii_pb *test_ring_end(struct iip_workspace *w, struct ii_pb__ring *ring, unsigned int last)
 {
 	if (ring->head == ring->tail) return NULL;
@@ -65,6 +100,7 @@ static void test_api_set_local_address(void *opaque, const uint8_t *mac,
 static void test_api_conn_init(struct iip_workspace *w, struct ii_tcp_conn *conn, uint8_t *smac, uint32_t sip, uint16_t sport, uint8_t *dmac, uint32_t dip, uint16_t dport, uint8_t state, void *opaque)
 {
 	test_current_opaque = opaque;
+	test_used_conn_register(w, test_conn_id(w, conn));
 	ii_ipv4_tcp_conn_init(w, test_conn_id(w, conn), smac, sip, sport, dmac, dip, dport, 0);
 	conn->state = state;
 	test_event_tcp_state_set(opaque, conn, state);

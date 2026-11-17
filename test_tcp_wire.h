@@ -33,7 +33,7 @@ static int broadcast_multicast_scenario(void)
 		f.state.payload_byte_count == 1 &&
 		f.conn->seq_next_expected == 1 && f.state.out_cnt != 0;
 	ii_tcp_conn_enter_close_phase(f.ws, test_conn_id(f.ws, f.conn));
-	if (ii_tcp_conn_close_check(f.ws, test_conn_id(f.ws, f.conn),
+	if (test_tcp_conn_close_check(f.ws, test_conn_id(f.ws, f.conn),
 			&f.state) != IIP_ERR_OK)
 		ok = 0;
 	free_output(&f.state);
@@ -378,7 +378,7 @@ static enum result test_required_options(const char **why)
 				f.conn->seq_next_expected == 102;
 		}
 		ii_tcp_conn_enter_close_phase(f.ws, test_conn_id(f.ws, f.conn));
-		if (ii_tcp_conn_close_check(f.ws, test_conn_id(f.ws, f.conn),
+		if (test_tcp_conn_close_check(f.ws, test_conn_id(f.ws, f.conn),
 				&f.state) != IIP_ERR_OK)
 			accepted = 0;
 		free_output(&f.state);
