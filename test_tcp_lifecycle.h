@@ -552,10 +552,16 @@ static enum result test_life_descriptor_exhaustion(const char **why)
             "descriptor reservation failed at %u", n);
     uint16_t rc = test_api_connect(f.ws, f.local_mac, ii_htonl(LIFE_LOCAL_IP),
         ii_htons(15000), f.peer_mac, ii_htonl(LIFE_PEER_IP), ii_htons(21000), &f.state);
+    /* iip marks the failed OPEN CLOSING and releases the slot from ii_work()
+     * via w->tcp.used_conns; run one idle iteration before measuring. */
+    uint32_t next_us = 0;
+    uint16_t run_rc = test_api_run(f.ws, f.local_mac, ii_htonl(LIFE_LOCAL_IP),
+        NULL, 0, &next_us, &f.state);
     unsigned retained = f.ws->tcp_conns.used_cnt;
     for (unsigned n = 0; n < II_CONF_POOL_NUM_PB; n++)
         TEST_REQUIRE(why, ii_free_pb(&f.ws->pbs, reserved[n]) == IIP_ERR_OK,
             "descriptor reservation release failed at %u", n);
+    TEST_REQUIRE(why, run_rc != UINT16_MAX, "idle iteration after failed OPEN reported a stack error");
     TEST_REQUIRE(why, rc != 0 && f.state.out_cnt == 0, "descriptor-exhausted OPEN unexpectedly succeeded/emitted packets");
     /* Exercise recovery even if the failed OPEN retained a connection slot. */
     test_event_log_clear(&f.state);
