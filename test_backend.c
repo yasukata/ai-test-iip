@@ -122,7 +122,7 @@ static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 		uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
 		uint32_t dst = ii_ntohl(ii_extract_ipv4_dst_be(ip));
 		if (ihl < II_IPV4_HDR_LEN_MINIMAL || ihl > 60 ||
-				ii_pb_payload_copy(w, id, II_ETH_HDR_LEN, quote,
+				ii_pb_data_copy(w, id, II_ETH_HDR_LEN, quote,
 					ihl + II_UDP_HDR_LEN, &copied, opaque) != IIP_ERR_OK ||
 				copied != ihl + II_UDP_HDR_LEN)
 			return -1;
