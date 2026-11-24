@@ -103,6 +103,12 @@ static void test_api_conn_init(struct iip_workspace *w, struct ii_tcp_conn *conn
 	test_used_conn_register(w, test_conn_id(w, conn));
 	ii_ipv4_tcp_conn_init(w, test_conn_id(w, conn), smac, sip, sport, dmac, dip, dport, 0);
 	conn->state = state;
+#ifdef II_TCP_CONN_FLAGS_APP_ACCEPTED
+	/* A fabricated connection is owned by the application unless it models a
+	 * passive open that has not been reported through IIP_OPS_TCP_ACCEPTED. */
+	if (state != II_TCP_STATE_SYN_RECVD)
+		conn->flags |= II_TCP_CONN_FLAGS_APP_ACCEPTED;
+#endif
 	test_event_tcp_state_set(opaque, conn, state);
 	test_api_set_local_address(opaque, smac, sip);
 }

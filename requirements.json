@@ -18136,6 +18136,56 @@
       ],
       "requirement_basis": "existing-requirement-paraphrase; PROFILE may include local robustness conditions",
       "requirement_kind": "implementation-profile"
+    },
+    {
+      "id": "CLOSE-CB-1",
+      "function": "test_close_callback_ownership",
+      "description": "IIP_OPS_TCP_CLOSED only for connections owned by the application",
+      "requirement_id": "PROFILE:CLOSE-CB-1",
+      "source": "README.md#evaluation-scope",
+      "strength": "PROFILE",
+      "profile": "regression",
+      "applicability": "IPv4; selected integration; regression",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "Callback counts in test_close_callback_ownership: passive SYN-RECEIVED + RST and SYN,ACK timeout give 0 ACCEPTED/0 CLOSED; accepted + RST gives 1 CLOSED; failed connect gives 0 CLOSED",
+      "coverage": "partial",
+      "gaps": "No RFC requirement (RFC 9293 3.10.7.4 leaves passive-reset notification optional); finite scenarios",
+      "phase": 6,
+      "oracle_class": "white-box",
+      "oracle_dependencies": [
+        "packet-clock-abi",
+        "legacy-fixture"
+      ],
+      "oracle_review": "White-box scope includes scenario setup, internal helper calls and/or internal observations; retain useful wire/callback checks without claiming a native black-box oracle. See the case oracle and source inventory for the actual predicates.",
+      "rfc_references": [],
+      "requirement": "IIP_OPS_TCP_CLOSED only for connections owned by the application",
+      "requirement_basis": "legacy-summary; read cited normative text and oracle before extending this claim",
+      "requirement_kind": "implementation-profile"
+    },
+    {
+      "id": "TFO-CLOSE-1",
+      "function": "test_tcp_fast_open_close_callback",
+      "description": "TFO-accepted SYN-RECEIVED connection reports CLOSED once on RST",
+      "requirement_id": "PROFILE:TFO-CLOSE-1",
+      "source": "README.md#evaluation-scope",
+      "strength": "PROFILE",
+      "profile": "tfo",
+      "applicability": "IPv4; selected integration; tfo",
+      "responsibility": "iip + documented callbacks",
+      "oracle": "Callback counts in test_tcp_fast_open_close_callback: ACCEPTED in SYN-RECEIVED, then RST gives exactly 1 CLOSED",
+      "coverage": "partial",
+      "gaps": "No RFC requirement; single RST scenario",
+      "phase": 6,
+      "oracle_class": "white-box",
+      "oracle_dependencies": [
+        "packet-clock-abi",
+        "legacy-fixture"
+      ],
+      "oracle_review": "White-box scope includes scenario setup, internal helper calls and/or internal observations; retain useful wire/callback checks without claiming a native black-box oracle. See the case oracle and source inventory for the actual predicates.",
+      "rfc_references": [],
+      "requirement": "TFO-accepted SYN-RECEIVED connection reports CLOSED once on RST",
+      "requirement_basis": "legacy-summary; read cited normative text and oracle before extending this claim",
+      "requirement_kind": "implementation-profile"
     }
   ],
   "phase6_scope": {

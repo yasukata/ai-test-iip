@@ -1886,6 +1886,7 @@ static int legacy_test_main(void)
 #include "test_malformed.h"
 
 #include "test_tcp_extensions.h"
+#include "test_tcp_close_callback.h"
 
 static void fake_clock_self_test(void)
 {
