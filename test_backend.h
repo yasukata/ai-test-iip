@@ -53,9 +53,13 @@ static void test_backend_tcp_connect(struct iip_workspace *, uint32_t, void *);
 #define IIP_OPS_PKT_SCATTER_GATHER_APPEND() do { iip_ops_pkt_scatter_gather_chain_append(head_pkt, tail_pkt, opaque); iip_ret_int = 0; } while (0)
 #define IIP_OPS_ETHERNET_HDR_CRAFT() do { iip_ret_int = test_backend_ethernet_header(buf, dst_addr, proto_be, opaque); } while (0)
 #define IIP_OPS_ETHERNET_ADDR_MATCH() do { iip_ret_bool = test_backend_ethernet_match(buf, opaque); } while (0)
-#define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = test_backend_ipv4_match((uint8_t *)iip_ops_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16, opaque); } while (0)
+/* ARP handlers now receive pb_id instead of rx_pkt; the ARP target address is
+ * available in the copied frame head (head_len is checked by ii_arp_input). */
+#define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = test_backend_ipv4_match(&II_PB(pb_id).part_pkt[0].head[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16], opaque); } while (0)
 #define IIP_OPS_ETHERNET_PUSH() do { iip_ops_l2_push(pkt, opaque); iip_ret_int = 0; } while (0)
-#define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = test_backend_accept(w, pb_id, opaque); } while (0)
+/* ii_ipv4_tcp_input__inner3_has_syn() no longer receives opaque, so use the
+ * opaque recorded by the test API wrapper that entered iip. */
+#define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = test_backend_accept(w, pb_id, test_current_opaque); } while (0)
 #undef IIP_OPS_IPV4_TCP_INPUT_FILTER
 #define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { iip_ret_bool = test_backend_ipv4_tcp_input_filter(w, pb_id, opaque); } while (0)
 #define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_CONNECTED, opaque); } while (0)
@@ -63,7 +67,7 @@ static void test_backend_tcp_connect(struct iip_workspace *, uint32_t, void *);
 #define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_PAYLOAD, opaque); } while (0)
 #define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_CLOSE_WAIT, opaque); } while (0)
 #define IIP_OPS_TCP_CLOSED() do { iip_ret_int = test_backend_callback(w, conn_id, 0, TEST_BACKEND_CLOSED, opaque); } while (0)
-#define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = test_backend_arp(w, rx_pkt, opaque); } while (0)
+#define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = test_backend_arp(w, II_PB(pb_id).part_pkt[0].p, opaque); } while (0)
 #define IIP_OPS_UDP_PAYLOAD() do { iip_ret_int = test_backend_udp(w, pb_id, opaque); } while (0)
 #define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { test_event_ip4_negative_advice(test_current_opaque, &II_TCP_CONN(conn_id)); iip_ret_int = 0; } while (0)
 #define IIP_OPS_TCP_FASTOPEN_REQUEST() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_FASTOPEN_REQUEST, opaque); } while (0)
