@@ -367,8 +367,7 @@ static int mss_boundary_case(uint16_t advertised_mss)
 			NULL, 0, &f.state);
 	free_output(&f.state);
 	p = test_ring_end(f.ws, &f.conn->tx_ring, 0);
-	if (!p || ii_tcp_xmit_queued_data_one(f.ws,
-			test_conn_id(f.ws, f.conn), (uint32_t)(p - f.ws->pbs.array),
+	if (!p || ii_tcp_xmit_queued_data_one(f.conn, p,
 			0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
 		return 0;
 	for (unsigned int i = 0; i < f.state.out_cnt; i++) {

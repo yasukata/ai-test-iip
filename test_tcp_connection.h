@@ -680,8 +680,7 @@ static enum result test_default_send_mss(const char **why)
 			NULL, 0, &f.state);
 	free_output(&f.state);
 	p = test_ring_end(f.ws, &default_conn->tx_ring, 1);
-	if (ii_tcp_xmit_queued_data_one(f.ws, test_conn_id(f.ws, default_conn),
-			(uint32_t)(p - f.ws->pbs.array), 0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
+	if (ii_tcp_xmit_queued_data_one(default_conn, p, 0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
 		return RESULT_FAIL;
 	for (unsigned int i = 0; i < f.state.out_cnt; i++) {
 		uint16_t len = PB_TCP_PAYLOAD_LEN(f.state.out[i]);
@@ -720,8 +719,7 @@ static int effective_send_mss_scenario(uint16_t send_mss,
 			NULL, 0, &f.state);
 
 	p = test_ring_end(f.ws, &f.conn->tx_ring, 0);
-	if (ii_tcp_xmit_queued_data_one(f.ws, test_conn_id(f.ws, f.conn),
-			(uint32_t)(p - f.ws->pbs.array), 0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
+	if (ii_tcp_xmit_queued_data_one(f.conn, p, 0, p->tcp.payload_len, &f.state) != IIP_ERR_OK)
 		return 0;
 	for (unsigned int i = 0; i < f.state.out_cnt; i++) {
 		uint16_t payload_len = PB_TCP_PAYLOAD_LEN(f.state.out[i]);

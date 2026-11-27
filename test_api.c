@@ -26,7 +26,7 @@ static void test_used_conn_register(struct iip_workspace *w, uint32_t id)
 		if (w->tcp.used_conns.conn_id[i] == id)
 			return;
 	assert(w->tcp.used_conns.cnt < II_CONF_POOL_NUM_TCP_CONN);
-	w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt++] = (IIP_TCP_CONN_P)id;
+	w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt++] = id;
 }
 
 /* Mirror ii_work(): run the close check and drop a released id from used_conns. */
@@ -35,7 +35,7 @@ static enum iip_rc test_tcp_conn_close_check(struct iip_workspace *w, uint32_t i
 	bool closed = false;
 	enum iip_rc rc;
 	test_used_conn_register(w, id);
-	rc = ii_tcp_conn_close_check(w, (IIP_TCP_CONN_P)id, &closed, opaque);
+	rc = ii_tcp_conn_close_check(w, &w->tcp_conns.array[id], &closed, opaque);
 	if (rc != IIP_ERR_OK || !closed)
 		return rc;
 	for (uint16_t i = 0; i < w->tcp.used_conns.cnt; i++) {
@@ -58,14 +58,14 @@ static struct ii_pb *test_ring_end(struct iip_workspace *w, struct ii_pb__ring *
 
 static void test_ring_remove(struct iip_workspace *w, struct ii_pb__ring *ring, struct ii_pb *pb)
 {
-	uint32_t id;
+	uint16_t id;
 	assert(ii_pb_ring_pull(ring, &id) == IIP_ERR_OK);
 	assert(&w->pbs.array[id] == pb);
 }
 
 static void test_free_pb(struct iip_workspace *w, struct ii_pb *pb, void *opaque)
 {
-	assert(ii_free_pb_and_pkt(w, (uint32_t)(pb - w->pbs.array), opaque) == IIP_ERR_OK);
+	assert(ii_free_pb_and_pkt(w, pb, opaque) == IIP_ERR_OK);
 }
 
 static unsigned int test_fragments_pending(struct iip_workspace *w)
@@ -101,7 +101,7 @@ static void test_api_conn_init(struct iip_workspace *w, struct ii_tcp_conn *conn
 {
 	test_current_opaque = opaque;
 	test_used_conn_register(w, test_conn_id(w, conn));
-	ii_ipv4_tcp_conn_init(w, test_conn_id(w, conn), smac, sip, sport, dmac, dip, dport, 0);
+	ii_ipv4_tcp_conn_init(w, conn, smac, sip, sport, dmac, dip, dport, 0);
 	conn->state = state;
 #ifdef II_TCP_CONN_FLAGS_APP_ACCEPTED
 	/* A fabricated connection is owned by the application unless it models a
@@ -148,39 +148,39 @@ static uint16_t test_api_send(struct iip_workspace *w, struct ii_tcp_conn *conn,
 	(void)flags;
 	test_current_opaque = opaque;
 	test_api_set_time(w, opaque);
-	return iip_tcp_send(w, test_conn_id(w, conn), &pkt, pkt ? 1 : 0, opaque) == 0 ? 0 : UINT16_MAX;
+	return iip_tcp_send(w, conn, &pkt, pkt ? 1 : 0, opaque) == 0 ? 0 : UINT16_MAX;
 }
 
 static uint16_t test_api_close(struct iip_workspace *w, struct ii_tcp_conn *conn, void *opaque)
 {
 	test_current_opaque = opaque;
 	test_api_set_time(w, opaque);
-	int rc = iip_tcp_close(w, test_conn_id(w, conn), opaque);
+	int rc = iip_tcp_close(w, conn, opaque);
 	test_event_tcp_state_set(opaque, conn, conn->state);
 	return rc == IIP_ERR_OK ? 0 : UINT16_MAX;
 }
 
 static int test_api_consumed(struct iip_workspace *w, struct ii_tcp_conn *conn, uint32_t n, void *opaque)
 {
-	return iip_tcp_rxbuf_consumed(w, test_conn_id(w, conn), n, opaque);
+	return iip_tcp_rxbuf_consumed(w, conn, n, opaque);
 }
 
 static void test_api_push(struct iip_workspace *w, struct ii_tcp_conn *conn, void *pkt, uint8_t syn, uint8_t ack, uint8_t fin, uint8_t rst, uint16_t flags, uint8_t *cookie, uint8_t len, void *opaque)
 {
 	uint16_t tcp_flags = (syn ? II_TCP_FLAG_SYN : 0) | (ack ? II_TCP_FLAG_ACK : 0) | (fin ? II_TCP_FLAG_FIN : 0) | (rst ? II_TCP_FLAG_RST : 0) | flags;
 	(void)cookie; (void)len;
-	uint32_t id = test_conn_id(w, conn);
 	test_api_set_time(w, opaque);
-	if (pkt) assert(ii_tcp_send(w, id, tcp_flags, &pkt, 1, opaque) == IIP_ERR_OK);
-	else assert(ii_tcp_tx_push_control(w, id, tcp_flags) == IIP_ERR_OK);
+	if (pkt) assert(ii_tcp_send(w, conn, tcp_flags, &pkt, 1, opaque) == IIP_ERR_OK);
+	else assert(ii_tcp_tx_push_control(w, conn, tcp_flags) == IIP_ERR_OK);
 }
 
 static void *test_emit_queued(struct iip_workspace *w, struct ii_tcp_conn *conn, struct ii_pb *p, void *opaque)
 {
 	struct test_state *state = opaque;
 	unsigned int before = state->out_cnt;
+	(void)w;
 	test_api_set_local_address(opaque, conn->src_mac, ii_htonl(conn->src_ip[0]));
-	if (ii_tcp_xmit_queued_data_one(w, test_conn_id(w, conn), (uint32_t)(p - w->pbs.array), 0, p->tcp.payload_len, opaque) != IIP_ERR_OK) return NULL;
+	if (ii_tcp_xmit_queued_data_one(conn, p, 0, p->tcp.payload_len, opaque) != IIP_ERR_OK) return NULL;
 	assert(state->out_cnt == before + 1);
 	void *pkt = state->out[before];
 	state->out_cnt = before;

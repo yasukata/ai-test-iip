@@ -40,7 +40,7 @@ static enum result zero_send_mss_case(uint16_t mss, uint8_t timestamps,
 	}
 	sent_seq_before = f.conn->sent_seq;
 	rc = ii_tcp_conn_xmit_queued_data(f.ws,
-			test_conn_id(f.ws, f.conn), 4, &f.state);
+			f.conn, 4, &f.state);
 	progress_ok = !f.state.out_cnt &&
 		f.conn->sent_seq == sent_seq_before && p->tcp.sent_bytes == 0 &&
 		ii_pb_ring_num_used(&f.conn->tx_ring) == 1 &&

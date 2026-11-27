@@ -72,16 +72,14 @@ static int fixture_setup_failed(const char *detail)
 
 static int fixture_init(struct fixture *f)
 {
-	uint32_t conn_id;
 	memset(f, 0, sizeof(*f));
 	f->local_mac[0] = 0x02;
 	f->peer_mac[0] = 0x04;
 	f->ws = calloc(1, sizeof(*f->ws));
 	if (!f->ws) return fixture_setup_failed("workspace allocation failed");
 	test_workspace_init(f->ws);
-	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &conn_id) != IIP_ERR_OK)
+	if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &f->conn) != IIP_ERR_OK)
 		return fixture_setup_failed("connection allocation failed");
-	f->conn = &f->ws->tcp_conns.array[conn_id];
 	f->state.use_fake_clock = 1;
 	f->state.now_ns = 1000000000ULL;
 	f->ws->now_ms = 1000;
@@ -433,8 +431,7 @@ static uint16_t fixture_transmit_with_capacity_failure(struct fixture *f,
 	 * segment fits; the next allocation exercises failure after partial work. */
 	packet_capacity_exempt_payload = p->part_pkt[0].p;
 	packet_capacity_sequence_begin(2048, failing_capacity);
-	enum iip_rc rc = ii_tcp_xmit_queued_data_one(f->ws,
-		test_conn_id(f->ws, f->conn), (uint32_t)(p - f->ws->pbs.array),
+	enum iip_rc rc = ii_tcp_xmit_queued_data_one(f->conn, p,
 		0, p->tcp.payload_len, &f->state);
 	packet_capacity_sequence_end();
 	packet_capacity_exempt_payload = NULL;

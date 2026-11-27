@@ -1269,19 +1269,21 @@ static void buffer_shortage_self_test(void)
 {
 	struct test_state state = { 0 };
 	struct iip_workspace *ws = calloc(1, sizeof(*ws));
-	uint32_t id, before;
+	struct ii_pb *pb;
+	struct ii_tcp_conn *conn;
+	uint32_t before;
 	assert(ws);
 	test_workspace_init(ws);
 	/* Exhaustion must not overwrite an allocated descriptor or pool count. */
 	for (uint32_t i = 0; i < II_CONF_POOL_NUM_PB; i++) {
-		assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_OK);
-		assert(id == i);
+		assert(ii_alloc_pb(&ws->pbs, &pb) == IIP_ERR_OK);
+		assert(pb == &ws->pbs.array[i]);
 	}
 	before = ws->pbs.used_cnt;
-	assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_FATAL_MEM);
+	assert(ii_alloc_pb(&ws->pbs, &pb) == IIP_ERR_FATAL_MEM);
 	assert(ws->pbs.used_cnt == before);
-	assert(ii_free_pb(&ws->pbs, before - 1) == IIP_ERR_OK);
-	assert(ii_alloc_pb(&ws->pbs, &id) == IIP_ERR_OK && id == before - 1);
+	assert(ii_free_pb(&ws->pbs, &ws->pbs.array[before - 1]) == IIP_ERR_OK);
+	assert(ii_alloc_pb(&ws->pbs, &pb) == IIP_ERR_OK && pb == &ws->pbs.array[before - 1]);
 	uint64_t backing_base = test_packet_backings_live, clone_base = test_packet_clones_live;
 	/* Packet cloning remains independent of descriptor exhaustion. */
 	void *pkt = iip_ops_pkt_alloc(&state);
@@ -1302,12 +1304,12 @@ static void buffer_shortage_self_test(void)
 	iip_ops_pkt_free(clone, &state);
 	assert(test_packet_backings_live == backing_base && test_packet_clones_live == clone_base);
 	for (uint32_t i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++)
-		assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_OK && id == i);
+		assert(ii_alloc_tcp_conn(&ws->tcp_conns, &conn) == IIP_ERR_OK && conn == &ws->tcp_conns.array[i]);
 	before = ws->tcp_conns.used_cnt;
-	assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_FATAL_MEM);
+	assert(ii_alloc_tcp_conn(&ws->tcp_conns, &conn) == IIP_ERR_FATAL_MEM);
 	assert(ws->tcp_conns.used_cnt == before);
-	assert(ii_free_tcp_conn(&ws->tcp_conns, before - 1) == IIP_ERR_OK);
-	assert(ii_alloc_tcp_conn(&ws->tcp_conns, &id) == IIP_ERR_OK && id == before - 1);
+	assert(ii_free_tcp_conn(&ws->tcp_conns, &ws->tcp_conns.array[before - 1]) == IIP_ERR_OK);
+	assert(ii_alloc_tcp_conn(&ws->tcp_conns, &conn) == IIP_ERR_OK && conn == &ws->tcp_conns.array[before - 1]);
 	free(ws);
 }
 
@@ -1717,9 +1719,8 @@ static int legacy_test_main(void)
 		uint16_t local_port_be = 2;
 		uint32_t peer_ip4_be   = 3;
 		uint16_t peer_port_be  = 4;
-		struct ii_tcp_conn *conn = &ws[0].tcp_conns.array[0];
-		uint32_t conn_id;
-		assert(ii_alloc_tcp_conn(&ws[0].tcp_conns, &conn_id) == IIP_ERR_OK && conn_id == 0);
+		struct ii_tcp_conn *conn;
+		assert(ii_alloc_tcp_conn(&ws[0].tcp_conns, &conn) == IIP_ERR_OK && conn == &ws[0].tcp_conns.array[0]);
 		uint32_t sender_isn;
 		uint32_t receiver_isn = 0;
 		{ /* connection init */

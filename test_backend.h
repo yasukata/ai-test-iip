@@ -1,3 +1,6 @@
+struct ii_pb;
+struct ii_tcp_conn;
+
 enum test_backend_callback_type {
 	TEST_BACKEND_CONNECTED,
 	TEST_BACKEND_ACCEPTED,
@@ -24,19 +27,19 @@ static void iip_ops_l2_push(void *, void *);
 static int test_backend_ethernet_header(uint8_t *, const uint8_t *, uint16_t, void *);
 static bool test_backend_ethernet_match(uint8_t *, void *);
 static bool test_backend_ipv4_match(uint8_t *, void *);
-static bool test_backend_accept(struct iip_workspace *, uint32_t, void *);
-static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *, uint32_t, void *);
-static int test_backend_callback(struct iip_workspace *, uint32_t, uint32_t, enum test_backend_callback_type, void *);
-static int test_backend_udp(struct iip_workspace *, uint32_t, void *);
+static bool test_backend_accept(struct ii_pb *, void *);
+static bool test_backend_ipv4_tcp_input_filter(struct ii_pb *, void *);
+static int test_backend_callback(struct iip_workspace *, struct ii_tcp_conn *, struct ii_pb *, enum test_backend_callback_type, void *);
+static int test_backend_udp(struct iip_workspace *, struct ii_pb *, void *);
 static int test_backend_arp(struct iip_workspace *, void *, void *);
 static void test_event_ip4_negative_advice(void *, void *);
 static void test_event_tcp_icmp_error(void *, void *, uint8_t, uint8_t);
 static void *test_current_opaque;
-static void test_backend_tcp_connect(struct iip_workspace *, uint32_t, void *);
+static void test_backend_tcp_connect(struct ii_tcp_conn *, void *);
 /* Set the application's DS field before queuing the initial SYN, including TFO. */
 #undef II_HOOK_TCP_IPV4_ETHERNET_CONNECT
 #define II_HOOK_TCP_IPV4_ETHERNET_CONNECT() do { \
-	test_backend_tcp_connect(w, conn_id, opaque); \
+	test_backend_tcp_connect(conn_id, opaque); \
 } while (0)
 #define IIP_OPS_PKT_VALID() do { iip_ret_bool = pkt != NULL; } while (0)
 #define IIP_OPS_PKT_ALLOC() do { *pkt = iip_ops_pkt_alloc(opaque); iip_ret_int = *pkt ? 0 : -1; } while (0)
@@ -57,28 +60,26 @@ static void test_backend_tcp_connect(struct iip_workspace *, uint32_t, void *);
  * available in the copied frame head (head_len is checked by ii_arp_input). */
 #define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = test_backend_ipv4_match(&II_PB(pb_id).part_pkt[0].head[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16], opaque); } while (0)
 #define IIP_OPS_ETHERNET_PUSH() do { iip_ops_l2_push(pkt, opaque); iip_ret_int = 0; } while (0)
-/* ii_ipv4_tcp_input__inner3_has_syn() no longer receives opaque, so use the
- * opaque recorded by the test API wrapper that entered iip. */
-#define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = test_backend_accept(w, pb_id, test_current_opaque); } while (0)
+/* Accept hooks do not share a workspace/opaque parameter. The run wrapper
+ * records the test state for both passive open and the full-pool check. */
+#define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = test_backend_accept(pb_id, test_current_opaque); } while (0)
 #undef IIP_OPS_IPV4_TCP_INPUT_FILTER
-#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { iip_ret_bool = test_backend_ipv4_tcp_input_filter(w, pb_id, opaque); } while (0)
+#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { iip_ret_bool = test_backend_ipv4_tcp_input_filter(pb_id, opaque); } while (0)
 #define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_CONNECTED, opaque); } while (0)
 #define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_ACCEPTED, opaque); } while (0)
 #define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_PAYLOAD, opaque); } while (0)
 #define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_CLOSE_WAIT, opaque); } while (0)
-#define IIP_OPS_TCP_CLOSED() do { iip_ret_int = test_backend_callback(w, conn_id, 0, TEST_BACKEND_CLOSED, opaque); } while (0)
+#define IIP_OPS_TCP_CLOSED() do { iip_ret_int = test_backend_callback(w, conn_id, NULL, TEST_BACKEND_CLOSED, opaque); } while (0)
 #define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = test_backend_arp(w, II_PB(pb_id).part_pkt[0].p, opaque); } while (0)
 #define IIP_OPS_UDP_PAYLOAD() do { iip_ret_int = test_backend_udp(w, pb_id, opaque); } while (0)
 #define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { test_event_ip4_negative_advice(test_current_opaque, &II_TCP_CONN(conn_id)); iip_ret_int = 0; } while (0)
 #define IIP_OPS_TCP_FASTOPEN_REQUEST() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_FASTOPEN_REQUEST, opaque); } while (0)
-#define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = test_backend_fastopen(w, conn_id, tcp_opt + l + 2, tcp_opt[l + 1] - 2); } while (0)
-static bool test_backend_fastopen(struct iip_workspace *, uint32_t, const uint8_t *, uint8_t);
+#define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = test_backend_fastopen(conn_id, tcp_opt + l + 2, tcp_opt[l + 1] - 2); } while (0)
+static bool test_backend_fastopen(struct ii_tcp_conn *, const uint8_t *, uint8_t);
 
-/* IIP_OPS_TCP_URGENT() is expanded in ii_tcp_rx_push(), where pb_id is the
- * packet just received and push_pb_id is the in-order segment currently
- * being processed (possibly taken from the out-of-order queue). Report the
- * segment that carried URG so the application sees its SEG.SEQ and SEG.UP. */
-#define IIP_OPS_TCP_URGENT() do { iip_ret_int = test_backend_callback(w, conn_id, push_pb_id, TEST_BACKEND_URGENT, opaque); } while (0)
+/* In the RX helper, pb_id is the current in-order segment, including when
+ * it was pulled from the out-of-order queue. */
+#define IIP_OPS_TCP_URGENT() do { iip_ret_int = test_backend_callback(w, conn_id, pb_id, TEST_BACKEND_URGENT, opaque); } while (0)
 
 /* Apply the test backend's keyed tuple offset at connection initialization.
  * The core has already initialized the send sequence fields from ISS. */

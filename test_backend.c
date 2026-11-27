@@ -1,9 +1,9 @@
 /* Included after the packet backend; bindings share the test translation unit. */
 
-static void test_backend_tcp_connect(struct iip_workspace *w, uint32_t conn_id, void *opaque)
+static void test_backend_tcp_connect(struct ii_tcp_conn *conn, void *opaque)
 {
 	struct test_state *state = opaque;
-	II_TCP_CONN(conn_id).diffserv = state->connect_diffserv;
+	conn->diffserv = state->connect_diffserv;
 }
 
 static int test_backend_ethernet_header(uint8_t *buf, const uint8_t *dst, uint16_t proto, void *opaque)
@@ -31,16 +31,15 @@ static int test_backend_arp(struct iip_workspace *w, void *pkt, void *opaque)
 	return 0;
 }
 
-static bool test_backend_accept(struct iip_workspace *w, uint32_t id, void *opaque)
+static bool test_backend_accept(struct ii_pb *p, void *opaque)
 {
-	return iip_ops_tcp_accept(w, &w->pbs.array[id], opaque);
+	return iip_ops_tcp_accept(NULL, p, opaque);
 }
 
-static bool test_backend_ipv4_tcp_input_filter(struct iip_workspace *w,
-		uint32_t id, void *opaque)
+static bool test_backend_ipv4_tcp_input_filter(struct ii_pb *p, void *opaque)
 {
 	const uint8_t *ip = (const uint8_t *)iip_ops_pkt_get_data(
-		w->pbs.array[id].part_pkt[0].p, opaque) + II_ETH_HDR_LEN;
+		p->part_pkt[0].p, opaque) + II_ETH_HDR_LEN;
 	uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
 	uint32_t dst = ii_ntohl(ii_extract_ipv4_dst_be(ip));
 	/* This fixture has no subnet mask, so directed broadcasts are not
@@ -109,9 +108,8 @@ static int test_backend_ip4_option_error(void *pkt, void *opaque)
 	return result;
 }
 
-static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
+static int test_backend_udp(struct iip_workspace *w, struct ii_pb *p, void *opaque)
 {
-	struct ii_pb *p = &w->pbs.array[id];
 	struct test_state *state = opaque;
 	if (state->udp_port_filter_enabled) {
 		uint8_t quote[60 + II_UDP_HDR_LEN];
@@ -122,7 +120,7 @@ static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 		uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ip));
 		uint32_t dst = ii_ntohl(ii_extract_ipv4_dst_be(ip));
 		if (ihl < II_IPV4_HDR_LEN_MINIMAL || ihl > 60 ||
-				ii_pb_data_copy(w, id, II_ETH_HDR_LEN, quote,
+				ii_pb_data_copy(p, II_ETH_HDR_LEN, quote,
 					ihl + II_UDP_HDR_LEN, &copied, opaque) != IIP_ERR_OK ||
 				copied != ihl + II_UDP_HDR_LEN)
 			return -1;
@@ -149,17 +147,14 @@ static int test_backend_udp(struct iip_workspace *w, uint32_t id, void *opaque)
 	return 0;
 }
 
-static bool test_backend_fastopen(struct iip_workspace *w, uint32_t id, const uint8_t *cookie, uint8_t len)
+static bool test_backend_fastopen(struct ii_tcp_conn *conn, const uint8_t *cookie, uint8_t len)
 {
-	struct ii_tcp_conn *conn = &w->tcp_conns.array[id];
 	return test_tcp_fastopen_check(ii_htonl(conn->dst_ip[0]), ii_htonl(conn->src_ip[0]), cookie, len) == 0;
 }
 
 static int test_backend_tcp_payload(struct iip_workspace *w,
-		uint32_t id, uint32_t pb_id, void *opaque)
+		struct ii_tcp_conn *conn, struct ii_pb *p, void *opaque)
 {
-	struct ii_tcp_conn *conn = &w->tcp_conns.array[id];
-	struct ii_pb *p = &w->pbs.array[pb_id];
 	uint16_t len = p->tcp.payload_len - p->tcp.inc_head - p->tcp.dec_tail;
 	void *first = p->part_pkt[0].p;
 	/* Offset of the first delivered octet in the reassembled IPv4 payload. */
@@ -194,23 +189,21 @@ static int test_backend_tcp_payload(struct iip_workspace *w,
 	if (state->defer_payload_consumption)
 		state->deferred_payload_len += len;
 	else
-		return iip_tcp_rxbuf_consumed(w, id, len, opaque);
+		return iip_tcp_rxbuf_consumed(w, conn, len, opaque);
 	return 0;
 }
 
-static int test_backend_callback(struct iip_workspace *w, uint32_t id, uint32_t pb_id, enum test_backend_callback_type type, void *opaque)
+static int test_backend_callback(struct iip_workspace *w, struct ii_tcp_conn *conn, struct ii_pb *p, enum test_backend_callback_type type, void *opaque)
 {
 	struct test_state *state = opaque;
 	if (state->oracle.enabled) {
 		if (type == TEST_BACKEND_CONNECTED) {
-			state->oracle.conn_id = id;
+			state->oracle.conn_id = ii_idx_tcp_conn(&w->tcp_conns, conn);
 			state->oracle.connected++;
 		}
 		if (type == TEST_BACKEND_CLOSE_WAIT) state->oracle.eof++;
 		if (type == TEST_BACKEND_CLOSED) state->oracle.closed++;
 	}
-	struct ii_tcp_conn *conn = &w->tcp_conns.array[id];
-	struct ii_pb *p = &w->pbs.array[pb_id];
 	test_event_tcp_state_set(opaque, conn, conn->state);
 	switch (type) {
 	case TEST_BACKEND_CONNECTED:
@@ -220,7 +213,7 @@ static int test_backend_callback(struct iip_workspace *w, uint32_t id, uint32_t 
 		conn->opaque = iip_ops_tcp_accepted(w, conn, p, opaque);
 		break;
 	case TEST_BACKEND_PAYLOAD:
-		return test_backend_tcp_payload(w, id, pb_id, opaque);
+		return test_backend_tcp_payload(w, conn, p, opaque);
 	case TEST_BACKEND_CLOSE_WAIT:
 		test_tcp_state_close_wait(w, conn, opaque);
 		break;

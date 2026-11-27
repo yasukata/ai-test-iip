@@ -152,10 +152,8 @@ static enum result malformed_observe(struct fixture *f, const uint8_t *p,
     bool state_ok = (may_reset && reset) ||
         (f->conn->state == original_state && f->conn->seq_next_expected == original_seq);
     if (reset && may_reset) {
-        uint32_t id;
-        if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &id) != IIP_ERR_OK)
+        if (ii_alloc_tcp_conn(&f->ws->tcp_conns, &f->conn) != IIP_ERR_OK)
             return RESULT_ERROR;
-        f->conn = &f->ws->tcp_conns.array[id];
         test_api_conn_init(f->ws, f->conn, f->local_mac, ii_htonl(0xc0000201U),
             ii_htons(10001), f->peer_mac, ii_htonl(0xc6336402U),
             ii_htons(20001), II_TCP_STATE_ESTABLISHED, &f->state);

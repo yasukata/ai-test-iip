@@ -543,7 +543,7 @@ static enum result test_life_connection_exhaustion(const char **why)
 static enum result test_life_descriptor_exhaustion(const char **why)
 {
     struct fixture f; struct life_baseline base; struct life_peer fresh;
-    uint32_t reserved[II_CONF_POOL_NUM_PB];
+    struct ii_pb *reserved[II_CONF_POOL_NUM_PB];
     if (!life_init(&f, &base)) return RESULT_ERROR;
     /* Reserve only unused descriptors, without modifying any live connection.
      * Release exactly these reservations; never repair failed OPEN state. */

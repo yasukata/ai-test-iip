@@ -232,7 +232,7 @@ static int oracle_half_close(struct oracle_transcript *t)
     uint8_t *data = iip_ops_pkt_get_data(packet, &p.state);
     for (unsigned i = 0; i < 16; i++) data[i] = 0xa0 + i;
     iip_ops_pkt_set_len(packet, 16, &p.state);
-    TEST_CONDITION(iip_tcp_send(p.ws, p.state.oracle.conn_id, &packet, 1, &p.state) == 0 &&
+    TEST_CONDITION(iip_tcp_send(p.ws, &p.ws->tcp_conns.array[p.state.oracle.conn_id], &packet, 1, &p.state) == 0 &&
         oracle_run(&p, NULL), "half-close: SEND after peer FIN failed");
     uint8_t seen[16] = {0};
     for (unsigned i = 0; i < p.state.out_cnt; i++) {
@@ -252,7 +252,7 @@ static int oracle_half_close(struct oracle_transcript *t)
         TEST_CONDITION(seen[i], "half-close: missing output byte %u", i);
     p.tx += 16; free_output(&p.state);
     TEST_CONDITION(oracle_input(&p, p.rx, 0x10, NULL, 0, 0), "half-close: data ACK failed");
-    TEST_CONDITION(iip_tcp_close(p.ws, p.state.oracle.conn_id, &p.state) == 0 &&
+    TEST_CONDITION(iip_tcp_close(p.ws, &p.ws->tcp_conns.array[p.state.oracle.conn_id], &p.state) == 0 &&
         oracle_run(&p, NULL) && oracle_control(&p, 0x11), "half-close: local FIN missing");
     p.tx++;
     TEST_CONDITION(oracle_input(&p, p.rx, 0x10, NULL, 0, 0) && p.state.oracle.closed == 1,
